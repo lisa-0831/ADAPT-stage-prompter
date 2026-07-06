@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Stage Prompter</title>
+<style>
+  /* ── Reset & base ── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:         #0a0a0a;
+    --bg2:        #111111;
+    --bg3:        #1a1a1a;
+    --amber:      #f5c842;
+    --amber-dim:  #b8922e;
+    --cream:      #f0e8d0;
+    --cream-dim:  #8a7e68;
+    --direction:  #c8903a;
+    --lyric:      #4a9e5c;
+    --red:        #c0392b;
+    --green:      #27ae60;
+    --border:     #2a2a2a;
+    --font-mono:  'Courier New', 'Courier', monospace;
+    --font-ui:    'Helvetica Neue', Arial, sans-serif;
+    --vh: 1vh;
+  }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--cream);
+    font-family: var(--font-mono);
+    overflow: hidden;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+  }
+
+  /* ── Layout shells ── */
+  #app { width: 100%; height: 100%; display: flex; flex-direction: column; }
+
+  /* ── DISPLAY AREA ── */
+ #stage {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: center;
+    padding: 4vw 6vw;
+    position: relative;
+    overflow: hidden;
+    cursor: pointer;
+  }
+
+ #slide-title {
+    font-family: var(--font-ui);
+    font-size: clamp(0.7rem, 1.5vw, 1.1rem);
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    color: var(--amber-dim);
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    width: 100%;
+    padding: 1.2vh 0 1.5vh;
+    border-bottom: 1px solid #222;
+    margin-bottom: 0;
+    flex-shrink: 0;
+  }
+
+  #stage-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: center;
+    width: 100%;
+    overflow: hidden;
+    padding-top: 5vh;
+  }
+
+  #lines-container {
+    width: 100%;
+    max-width: 1100px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35em;
+    align-items: stretch;
+  }
+
+  /* ── Row: char name sidebar + line text ── */
+  .line-row {
+    display: flex;
+    align-items: baseline;
+    gap: 1.2em;
+    width: 100%;
+    transition: opacity 0.18s ease;
+  }
+  .line-row.past   { opacity: 0.45; }
+  .line-row.future { opacity: 0.35; }
+
+  .char-name {
+    font-family: var(--font-ui);
+    font-size: clamp(0.7rem, 1.3vw, 0.95rem);
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--amber-dim);
+    min-width: 110px;
+    max-width: 110px;
+    text-align: right;
+    flex-shrink: 0;
+    padding-top: 0.2em;
+    line-height: 1.4;
+  }
+  .char-name.empty { visibility: hidden; }
+
+  /* ── Line text ── */
+  .script-line {
+    flex: 1;
+    line-height: 1.4;
+    max-width: 100%;
+    word-break: break-word;
+    font-size: clamp(1.5rem, 3.2vw, 2.4rem);
+    color: var(--amber);
+    transition: color 0.18s ease;
+  }
+
+  /* Stage direction — {…} — italic warm brown */
+  .script-line.direction {
+    font-style: italic;
+    color: var(--direction) !important;
+  }
+
+  /* Song lyrics — ##…## — dark green */
+  .script-line.lyric {
+    color: var(--lyric) !important;
+  }
+
+  /* Highlight bar under current line */
+  #cursor-bar {
+    width: clamp(60px, 12vw, 160px);
+    height: 3px;
+    background: var(--amber);
+    border-radius: 2px;
+    margin-top: 1.2vh;
+    opacity: 0.7;
+    transition: opacity 0.2s;
+  }
+
+  /* ── Progress strip ── */
+  #progress {
+    height: 3px;
+    background: var(--bg3);
+    position: relative;
+    flex-shrink: 0;
+  }
+  #progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--amber-dim), var(--amber));
+    transition: width 0.25s ease;
+  }
+
+  /* ── CONTROLLER PANEL ── */
+  #controller {
+    background: var(--bg2);
+    border-top: 1px solid var(--border);
+    padding: 12px 16px 16px;
+    display: none;
+    flex-direction: column;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+  #controller.visible { display: flex; }
+
+  .ctrl-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .btn {
+    font-family: var(--font-ui);
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 8px 14px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg3);
+    color: var(--cream-dim);
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+    white-space: nowrap;
+  }
+  .btn:hover { background: #222; color: var(--cream); border-color: #444; }
+  .btn:active { background: #2a2a2a; }
+
+  .btn.primary {
+    background: var(--amber);
+    color: #000;
+    border-color: var(--amber);
+    font-size: 0.95rem;
+    padding: 10px 22px;
+  }
+  .btn.primary:hover { background: #f0be30; }
+
+  .btn.danger { border-color: var(--red); color: var(--red); }
+  .btn.danger:hover { background: var(--red); color: #fff; }
+
+  .btn.nav-big {
+    font-size: 1.2rem;
+    padding: 10px 20px;
+    min-width: 54px;
+    text-align: center;
+  }
+
+  #slide-select {
+    font-family: var(--font-ui);
+    font-size: 0.8rem;
+    background: var(--bg3);
+    color: var(--cream);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 8px 10px;
+    flex: 1;
+    min-width: 120px;
+    cursor: pointer;
+  }
+
+  #ctrl-status {
+    font-family: var(--font-ui);
+    font-size: 0.72rem;
+    color: var(--cream-dim);
+    letter-spacing: 0.05em;
+    flex: 1;
+    text-align: right;
+  }
+
+  /* Script upload area */
+  #upload-area {
+    display: none;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px;
+    border: 1px dashed var(--border);
+    border-radius: 4px;
+  }
+  #upload-area.open { display: flex; }
+
+  #script-textarea {
+    width: 100%;
+    min-height: 120px;
+    background: var(--bg);
+    color: var(--cream);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    padding: 8px;
+    resize: vertical;
+  }
+
+  .upload-hint {
+    font-family: var(--font-ui);
+    font-size: 0.7rem;
+    color: var(--cream-dim);
+    line-height: 1.5;
+  }
+
+  /* ── Connection indicator ── */
+  #conn-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--red);
+    display: inline-block;
+    margin-right: 5px;
+    transition: background 0.3s;
+    flex-shrink: 0;
+  }
+  #conn-dot.connected { background: var(--green); }
+
+  /* ── Exit guard overlay ── */
+  #exit-guard {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.92);
+    z-index: 100;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 28px;
+  }
+  #exit-guard.show { display: flex; }
+  #exit-guard h2 {
+    font-family: var(--font-ui);
+    font-size: 1.4rem;
+    color: var(--amber);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  #exit-guard p {
+    font-family: var(--font-ui);
+    font-size: 0.9rem;
+    color: var(--cream-dim);
+    text-align: center;
+    max-width: 320px;
+    line-height: 1.6;
+  }
+  #exit-guard .btn-row { display: flex; gap: 16px; }
+
+  /* ── Stage click zones ── */
+  #stage-click-zones {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    pointer-events: none;
+  }
+  .zone {
+    flex: 1;
+    pointer-events: auto;
+    cursor: pointer;
+  }
+  #zone-prev { flex: 0 0 28%; }
+  #zone-next { flex: 1; }
+
+  /* ── Connecting overlay ── */
+  #connecting {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    z-index: 10;
+  }
+  #connecting p {
+    font-family: var(--font-ui);
+    color: var(--cream-dim);
+    font-size: 1rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%,100% { opacity: 0.3; }
+    50%      { opacity: 1;   }
+  }
+
+  /* ── Viewer label ── */
+  #viewer-label {
+    position: absolute;
+    top: 14px;
+    right: 18px;
+    font-family: var(--font-ui);
+    font-size: 0.65rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--amber-dim);
+    opacity: 0.5;
+  }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div id="stage">
+    <div id="connecting"><p>Connecting…</p></div>
+    <div id="viewer-label"></div>
+    <div id="slide-title"></div>
+    <div id="stage-content">
+      <div id="lines-container"></div>
+      <div id="cursor-bar"></div>
+    </div>
+
+    <div id="stage-click-zones">
+      <div class="zone" id="zone-prev"></div>
+      <div class="zone" id="zone-next"></div>
+    </div>
+  </div>
+
+  <div id="progress"><div id="progress-fill"></div></div>
+
+  <div id="controller">
+    <div class="ctrl-row">
+      <span><span id="conn-dot"></span></span>
+      <button class="btn nav-big" id="btn-prev-slide" title="Previous slide">⏮</button>
+      <button class="btn nav-big primary" id="btn-prev">◀ Prev</button>
+      <button class="btn nav-big primary" id="btn-next">Next ▶</button>
+      <button class="btn nav-big" id="btn-next-slide" title="Next slide">⏭</button>
+      <select id="slide-select"></select>
+      <span id="ctrl-status">—</span>
+    </div>
+
+    <div class="ctrl-row">
+      <button class="btn" id="btn-upload-toggle">📄 Replace Script</button>
+      <button class="btn danger" id="btn-exit">Exit</button>
+    </div>
+
+    <div id="upload-area">
+      <p class="upload-hint">
+        Paste script below. Separate slides with <strong>---</strong> on its own line.
+        Start each slide with <strong># Title</strong>.<br>
+        <strong>[NAME]</strong> on its own line = character name shown in sidebar &nbsp;·&nbsp;
+        <strong>{…}</strong> = stage direction (italic brown) &nbsp;·&nbsp;
+        <strong>##…##</strong> = lyrics (dark green)
+      </p>
+      <textarea id="script-textarea" placeholder="# Scene 1&#10;[DOROTHY]&#10;Line of dialogue...&#10;---&#10;# Scene 2&#10;..."></textarea>
+      <div class="ctrl-row">
+        <button class="btn primary" id="btn-upload-submit">Upload &amp; Go Live</button>
+        <button class="btn" id="btn-upload-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="exit-guard">
+  <h2>Exit Prompter?</h2>
+  <p>Tap <strong>Confirm Exit</strong> to leave, or <strong>Stay</strong> to keep the show running.</p>
+  <div class="btn-row">
+    <button class="btn" id="btn-stay">Stay on Stage</button>
+    <button class="btn danger" id="btn-confirm-exit">Confirm Exit</button>
+  </div>
+</div>
+
+<script>
+// ── Role detection ────────────────────────────────────────────────────
+const params = new URLSearchParams(location.search);
+const role = params.get('role') || 'viewer';
+const isController = role === 'controller';
+
+// ── State ─────────────────────────────────────────────────────────────
+let slides = [];
+let state = { slideIndex: 0, lineIndex: 0 };
+
+// ── DOM refs ──────────────────────────────────────────────────────────
+const dom = {
+  connecting:     document.getElementById('connecting'),
+  viewerLabel:    document.getElementById('viewer-label'),
+  slideTitle:     document.getElementById('slide-title'),
+  linesContainer: document.getElementById('lines-container'),
+  cursorBar:      document.getElementById('cursor-bar'),
+  progressFill:   document.getElementById('progress-fill'),
+  controller:     document.getElementById('controller'),
+  connDot:        document.getElementById('conn-dot'),
+  ctrlStatus:     document.getElementById('ctrl-status'),
+  slideSelect:    document.getElementById('slide-select'),
+  btnPrev:        document.getElementById('btn-prev'),
+  btnNext:        document.getElementById('btn-next'),
+  btnPrevSlide:   document.getElementById('btn-prev-slide'),
+  btnNextSlide:   document.getElementById('btn-next-slide'),
+  btnUploadToggle:document.getElementById('btn-upload-toggle'),
+  btnUploadSubmit:document.getElementById('btn-upload-submit'),
+  btnUploadCancel:document.getElementById('btn-upload-cancel'),
+  scriptTextarea: document.getElementById('script-textarea'),
+  uploadArea:     document.getElementById('upload-area'),
+  btnExit:        document.getElementById('btn-exit'),
+  exitGuard:      document.getElementById('exit-guard'),
+  btnStay:        document.getElementById('btn-stay'),
+  btnConfirmExit: document.getElementById('btn-confirm-exit'),
+  zonePrev:       document.getElementById('zone-prev'),
+  zoneNext:       document.getElementById('zone-next'),
+};
+
+// ── Role setup ────────────────────────────────────────────────────────
+if (isController) {
+  dom.controller.classList.add('visible');
+  dom.viewerLabel.textContent = 'CONTROLLER';
+  document.title = '🎭 Prompter — Controller';
+  dom.zonePrev.onclick = () => send({ type: 'navigate', direction: 'prev' });
+  dom.zoneNext.onclick = () => send({ type: 'navigate', direction: 'next' });
+} else {
+  dom.viewerLabel.textContent = 'VIEWER';
+  document.title = '🎭 Stage Prompter';
+  dom.zonePrev.style.display = 'none';
+  dom.zoneNext.style.display = 'none';
+}
+
+// ── WebSocket ─────────────────────────────────────────────────────────
+let ws;
+let reconnectTimer;
+
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}`);
+
+  ws.onopen = () => {
+    clearTimeout(reconnectTimer);
+    dom.connDot.classList.add('connected');
+    dom.connecting.style.display = 'none';
+  };
+
+  ws.onclose = () => {
+    dom.connDot.classList.remove('connected');
+    dom.connecting.style.display = 'flex';
+    reconnectTimer = setTimeout(connect, 1500);
+  };
+
+  ws.onmessage = (evt) => {
+    const msg = JSON.parse(evt.data);
+    if (msg.type === 'script') {
+      slides = msg.slides;
+      rebuildSlideSelect();
+    } else if (msg.type === 'state') {
+      state = msg.state;
+      render();
+    }
+  };
+}
+
+function send(msg) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(msg));
+  }
+}
+
+connect();
+
+// ── Line type helpers ─────────────────────────────────────────────────
+
+// Each line is now { text, speaker } from the server.
+// Returns 'direction' | 'lyric' | 'dialogue'
+function lineType(text) {
+  if (/^\s*\{/.test(text)) return 'direction';
+  if (/^\s*##/.test(text))  return 'lyric';
+  return 'dialogue';
+}
+
+// Strip display markers from raw text
+function displayText(text, type) {
+  if (type === 'direction') return text.replace(/^\s*\{/, '').replace(/\}\s*$/, '').trim();
+  // For lyrics: strip leading ## and trailing ## (the ## may appear at start or end of any line in the block)
+  if (type === 'lyric') return text.replace(/^\s*##\s*/, '').replace(/\s*##.*$/, '').trim();
+  return text;
+}
+
+// ── Render ────────────────────────────────────────────────────────────
+function render() {
+  if (!slides.length) return;
+  const slide = slides[state.slideIndex] || { title: '', lines: [] };
+  const li    = state.lineIndex;
+  const lines = slide.lines; // array of { text, speaker }
+
+  dom.slideTitle.textContent = slide.title;
+
+  const from = Math.max(0, li - 3);
+  const to   = Math.min(lines.length - 1, li + 3);
+
+  dom.linesContainer.innerHTML = '';
+
+  for (let i = from; i <= to; i++) {
+    const { text, speaker } = lines[i];
+    const type     = lineType(text);
+    const position = i < li ? 'past' : i === li ? 'current' : 'future';
+
+    // Show speaker name only when it changes relative to previous rendered line
+    const prevSpeaker = i > from ? (lines[i - 1].speaker || '') : '';
+    const showName = speaker && speaker !== prevSpeaker;
+
+    // Extra top gap before stage directions for breathing room
+    const isDirection = type === 'direction';
+
+    // Row wrapper
+    const row = document.createElement('div');
+    row.className = `line-row ${position}`;
+    if (type === 'direction') {
+      if (i > from) row.style.marginTop = '2.8em';
+      row.style.marginBottom = '2.8em';
+    }
+
+    // Left: character name sidebar
+    const nameEl = document.createElement('div');
+    nameEl.className = showName ? 'char-name' : 'char-name empty';
+    nameEl.textContent = showName ? speaker : '';
+
+    // Right: line text
+    const textEl = document.createElement('div');
+    textEl.className = `script-line ${type}`;
+    textEl.textContent = displayText(text, type);
+
+    row.appendChild(nameEl);
+    row.appendChild(textEl);
+    dom.linesContainer.appendChild(row);
+  }
+
+  // Progress
+  const totalLines = slides.reduce((s, sl) => s + sl.lines.length, 0);
+  const doneLines  = slides.slice(0, state.slideIndex).reduce((s, sl) => s + sl.lines.length, 0) + state.lineIndex;
+  dom.progressFill.style.width = totalLines > 0 ? `${(doneLines / (totalLines - 1)) * 100}%` : '0%';
+
+  if (dom.slideSelect.value !== String(state.slideIndex)) {
+    dom.slideSelect.value = String(state.slideIndex);
+  }
+
+  dom.ctrlStatus.textContent = `Slide ${state.slideIndex + 1}/${slides.length} · Line ${state.lineIndex + 1}/${lines.length}`;
+}
+
+function rebuildSlideSelect() {
+  dom.slideSelect.innerHTML = '';
+  slides.forEach((s, i) => {
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = `${i + 1}. ${s.title}`;
+    dom.slideSelect.appendChild(opt);
+  });
+  render();
+}
+
+// ── Controller actions ────────────────────────────────────────────────
+if (isController) {
+  dom.btnNext.onclick      = () => send({ type: 'navigate', direction: 'next' });
+  dom.btnPrev.onclick      = () => send({ type: 'navigate', direction: 'prev' });
+  dom.btnNextSlide.onclick = () => send({ type: 'navigate', direction: 'nextSlide' });
+  dom.btnPrevSlide.onclick = () => send({ type: 'navigate', direction: 'prevSlide' });
+
+  dom.slideSelect.onchange = () => {
+    send({ type: 'goto', slideIndex: parseInt(dom.slideSelect.value), lineIndex: 0 });
+  };
+
+  dom.btnUploadToggle.onclick = () => {
+    dom.uploadArea.classList.toggle('open');
+    if (dom.uploadArea.classList.contains('open')) {
+      fetch('/script').then(r => r.text()).then(t => { dom.scriptTextarea.value = t; });
+    }
+  };
+  dom.btnUploadCancel.onclick = () => dom.uploadArea.classList.remove('open');
+  dom.btnUploadSubmit.onclick = async () => {
+    const text = dom.scriptTextarea.value.trim();
+    if (!text) return;
+    const res = await fetch('/script', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: text,
+    });
+    if (res.ok) {
+      dom.uploadArea.classList.remove('open');
+    } else {
+      alert('Upload failed — check server.');
+    }
+  };
+}
+
+// ── Keyboard navigation ───────────────────────────────────────────────
+document.addEventListener('keydown', (e) => {
+  if (!isController) return;
+  if (document.activeElement.tagName === 'TEXTAREA' || document.activeElement.tagName === 'SELECT') return;
+
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') {
+    e.preventDefault();
+    send({ type: 'navigate', direction: 'next' });
+  } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    send({ type: 'navigate', direction: 'prev' });
+  } else if (e.key === 'PageDown') {
+    e.preventDefault();
+    send({ type: 'navigate', direction: 'nextSlide' });
+  } else if (e.key === 'PageUp') {
+    e.preventDefault();
+    send({ type: 'navigate', direction: 'prevSlide' });
+  }
+});
+
+// ── Exit guard ────────────────────────────────────────────────────────
+dom.btnExit.onclick = () => dom.exitGuard.classList.add('show');
+dom.btnStay.onclick = () => dom.exitGuard.classList.remove('show');
+dom.btnConfirmExit.onclick = () => { location.href = 'about:blank'; };
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    if (dom.exitGuard.classList.contains('show')) {
+      dom.exitGuard.classList.remove('show');
+    } else {
+      dom.exitGuard.classList.add('show');
+    }
+  }
+});
+
+// ── Touch swipe ───────────────────────────────────────────────────────
+let touchStartX = 0, touchStartY = 0;
+document.addEventListener('touchstart', e => {
+  touchStartX = e.touches[0].clientX;
+  touchStartY = e.touches[0].clientY;
+}, { passive: true });
+document.addEventListener('touchend', e => {
+  if (!isController) return;
+  const dx = e.changedTouches[0].clientX - touchStartX;
+  const dy = e.changedTouches[0].clientY - touchStartY;
+  if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50) {
+    send({ type: 'navigate', direction: dx < 0 ? 'next' : 'prev' });
+  }
+}, { passive: true });
+</script>
+</body>
+</html>
