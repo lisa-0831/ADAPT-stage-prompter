@@ -40,6 +40,19 @@
   #app { width: 100%; height: 100%; display: flex; flex-direction: column; }
 
   /* ── DISPLAY AREA ── */
+  #stage::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.88);
+    z-index: 0;
+  }
+
+  #stage > * {
+    position: relative;
+    z-index: 1;
+  }
+
  #stage {
     flex: 1;
     display: flex;
@@ -50,6 +63,9 @@
     position: relative;
     overflow: hidden;
     cursor: pointer;
+    background-image: url('background.jpg');
+    background-size: cover;
+    background-position: center;
   }
 
  #slide-title {
@@ -77,23 +93,55 @@
     align-items: center;
     width: 100%;
     overflow: hidden;
-    padding-top: 5vh;
+    /* padding-top: 5vh; */
   }
 
-  #lines-container {
+  /* #lines-container {
     width: 100%;
     max-width: 1100px;
     display: flex;
     flex-direction: column;
     gap: 0.35em;
     align-items: stretch;
-  }
+  } */
+
+  #lines-past {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: stretch;
+  width: 100%;
+  max-width: 1100px;
+  gap: 0.35em;
+  padding-bottom: 0.5em;
+  overflow: hidden;
+}
+
+#lines-current {
+  width: 100%;
+  max-width: 1100px;
+  flex-shrink: 0;
+}
+
+#lines-future {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: stretch;
+  width: 100%;
+  max-width: 1100px;
+  gap: 0.35em;
+  padding-top: 0.5em;
+  overflow: hidden;
+}
 
   /* ── Row: char name sidebar + line text ── */
   .line-row {
     display: flex;
     align-items: baseline;
-    gap: 1.2em;
+    gap: 2em;
     width: 100%;
     transition: opacity 0.18s ease;
   }
@@ -102,13 +150,13 @@
 
   .char-name {
     font-family: var(--font-ui);
-    font-size: clamp(0.7rem, 1.3vw, 0.95rem);
+    font-size: clamp(1rem, 1.6vw, 1.3rem);
     font-weight: 700;
     letter-spacing: 0.14em;
     text-transform: uppercase;
     color: var(--amber-dim);
-    min-width: 110px;
-    max-width: 110px;
+    min-width: 160px;
+    max-width: 160px;
     text-align: right;
     flex-shrink: 0;
     padding-top: 0.2em;
@@ -373,7 +421,10 @@
     <div id="viewer-label"></div>
     <div id="slide-title"></div>
     <div id="stage-content">
-      <div id="lines-container"></div>
+      <!-- <div id="lines-container"></div> -->
+       <div id="lines-past"></div>
+       <div id="lines-current"></div>
+       <div id="lines-future"></div>
       <div id="cursor-bar"></div>
     </div>
 
@@ -442,7 +493,10 @@ const dom = {
   connecting:     document.getElementById('connecting'),
   viewerLabel:    document.getElementById('viewer-label'),
   slideTitle:     document.getElementById('slide-title'),
-  linesContainer: document.getElementById('lines-container'),
+  // linesContainer: document.getElementById('lines-container'),
+  linesPast:    document.getElementById('lines-past'),
+  linesCurrent: document.getElementById('lines-current'),
+  linesFuture:  document.getElementById('lines-future'),
   cursorBar:      document.getElementById('cursor-bar'),
   progressFill:   document.getElementById('progress-fill'),
   controller:     document.getElementById('controller'),
@@ -550,21 +604,19 @@ function render() {
   const from = Math.max(0, li - 3);
   const to   = Math.min(lines.length - 1, li + 3);
 
-  dom.linesContainer.innerHTML = '';
+  // dom.linesContainer.innerHTML = '';
+  dom.linesPast.innerHTML = '';
+  dom.linesCurrent.innerHTML = '';
+  dom.linesFuture.innerHTML = '';
 
   for (let i = from; i <= to; i++) {
     const { text, speaker } = lines[i];
     const type     = lineType(text);
     const position = i < li ? 'past' : i === li ? 'current' : 'future';
 
-    // Show speaker name only when it changes relative to previous rendered line
     const prevSpeaker = i > from ? (lines[i - 1].speaker || '') : '';
     const showName = speaker && speaker !== prevSpeaker;
 
-    // Extra top gap before stage directions for breathing room
-    const isDirection = type === 'direction';
-
-    // Row wrapper
     const row = document.createElement('div');
     row.className = `line-row ${position}`;
     if (type === 'direction') {
@@ -572,19 +624,20 @@ function render() {
       row.style.marginBottom = '2.8em';
     }
 
-    // Left: character name sidebar
     const nameEl = document.createElement('div');
     nameEl.className = showName ? 'char-name' : 'char-name empty';
     nameEl.textContent = showName ? speaker : '';
 
-    // Right: line text
     const textEl = document.createElement('div');
     textEl.className = `script-line ${type}`;
     textEl.textContent = displayText(text, type);
 
     row.appendChild(nameEl);
     row.appendChild(textEl);
-    dom.linesContainer.appendChild(row);
+
+    if (i < li)      dom.linesPast.appendChild(row);
+    else if (i === li) dom.linesCurrent.appendChild(row);
+    else             dom.linesFuture.appendChild(row);
   }
 
   // Progress

@@ -189,6 +189,7 @@ function handleNavigate(dir) {
 // ── HTTP routes ────────────────────────────────────────────────────────
 app.use(express.text({ type: 'text/plain', limit: '5mb' }));
 app.use(express.json());
+app.use(express.static(__dirname));
 
 // Serve the single-page app
 app.get('/', (req, res) => {
