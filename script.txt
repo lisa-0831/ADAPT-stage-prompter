@@ -1,11 +1,10 @@
-# Welcome to 
-ADAPT Community Network’s
+# Welcome to ADAPT Community Network’s
 JOURNEY THROUGH OZ 
 {An Immersive} 
-## Sing-A-Long! ##
+<Sing-A-Long!>
 ---
 # Kansas Place in Brooklyn, New York
-##SOMEWHERE OVER THE RAINBOW, 
+<SOMEWHERE OVER THE RAINBOW, 
 WAY UP HIGH, 
 THERE'S A LAND THAT I HEARD OF ONCE IN A LULLABY. 
 SOMEWHERE OVER THE RAINBOW, SKIES ARE BLUE, 
@@ -19,19 +18,16 @@ SOMEDAY I'LL WISH UPON A STAR AND WAKE UP WHERE THE CLOUDS ARE FAR BEHIND ME.
 WHERE TROUBLES MELT LIKE LEMON DROPS AWAY ABOVE THE CHIMNEY TOPS, 
 THAT'S WHERE YOU'LL FIND ME. 
 SOMEWHERE OVER THE RAINBOW, BLUEBIRDS FLY. 
-BIRDS FLY OVER THE RAINBOW; WHY, THEN, OH WHY CAN'T I? 
-##
+BIRDS FLY OVER THE RAINBOW; WHY, THEN, OH WHY CAN'T I?>
 
 [DOROTHY]
-Oh Toto, sometimes I fear I will never leave home. I will just stay here on Kansas Place forever. Me. You. And My Chair.
+Oh Toto, sometimes I fear I will never leave home. I will just stay here on Kansas Place forever. Me. You. And My Chair. 
 
-##
-IF HAPPY LITTLE BLUEBIRDS FLY BEYOND THE RAINBOW, 
-WHY, OH, WHY CAN'T I?
-##
+##IF HAPPY LITTLE BLUEBIRDS FLY BEYOND THE RAINBOW, 
+WHY, OH, WHY CAN'T I?##
 
 [GULCH]
-Where is that pest?!  
+Where is that pest?!
 
 [DOROTHY]
 What do you want with Toto? He never did anything to you. 
@@ -67,7 +63,8 @@ I need to see the world!
 You don’t know how to travel yet.
 [UNCLE HENRY]
 You may not be accepted. They won’t understand you.
-Nor'easter and storm sounds begin. 
+
+{Nor'easter and storm sounds begin. }
  
 [AUNT EM] 
 Everybody move! The Nor’easter is here! Get inside and away from the windows. 
@@ -108,7 +105,7 @@ I’m not a witch at all! I’m from Kansas Place in New York. Where am I?
 I am Glinda, the Good Witch of the Southeast. You’re in Oz! More specifically, Munchkinland.  Come out, come out munchkins!  
  
 [AUDIENCE]
-{Giggling as Munchkins} HEHEHEHE!
+<(Giggling as Munchkins)HEHEHEHE!>
 
 [GLINDA]
 And what is your name, dear?
@@ -296,7 +293,7 @@ Elphaba grabs her broom and disappears.
 # The Cornfield 
 
 [DOROTHY] 
-75% Battery left. Now which way do we go? 
+75% Battery left. Now which way do we go?
 
  
 [SCARECROW] 
@@ -410,7 +407,7 @@ GET 'EM UP, GET 'EM UP, EASE ON DOWN THE ROAD
 
 # The Man Made of Tin
 [TIN MAN] 
-Oiiiiil. I don’t got no damn oil. 
+Oiiiiil. I don’t got no damn oil.
  
 [DOROTHY] 
 Why, Scarecrow, look! It’s a man made of tin. He looks stuck! 
@@ -843,7 +840,9 @@ Sounds like a plan. This is just the beginning of our beautiful relationship.
  
 [ELPHABA & GLINDA]
 UNLIMITED TOGETHER WE’RE UNLIMITED 
-TOGETHER WE’LL BE THE GREATEST TEAM THERE’S EVER BEEN. [GLINDA] 
+TOGETHER WE’LL BE THE GREATEST TEAM THERE’S EVER BEEN. 
+
+[GLINDA] 
 DREAMS THE WAY WE PLANNED ‘EM 
  
 [GLINDA] 
@@ -859,7 +858,7 @@ THEY’LL NEVER BRING US DOWN
 AND NOBODY IN ALL OF OZ 
  
 [ELPHABA] 
-NO [WIZARD] THAT THERE IS OR WAS 
+NO WIZARD THAT THERE IS OR WAS 
  
 [ALL]
 IS EVER GONNA BRING US DOWN! 

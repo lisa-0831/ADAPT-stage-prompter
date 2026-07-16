@@ -20,15 +20,37 @@ let state = {
 };
 
 // ── Script loading ─────────────────────────────────────────────────────
-function loadScript() {
+// function loadScript() {
+//   if (!fs.existsSync(SCRIPT_FILE)) {
+//     fs.writeFileSync(SCRIPT_FILE, defaultScript());
+//     console.log('[server] Created default script.txt');
+//   }
+//   const raw = fs.readFileSync(SCRIPT_FILE, 'utf8');
+//   slides = parseScript(raw);
+//   state.slideIndex = 0;
+//   state.lineIndex = 0;
+//   console.log(`[server] Loaded ${slides.length} slide(s)`);
+//   broadcast({ type: 'script', slides });
+//   broadcast({ type: 'state', state });
+// }
+
+function loadScript(preservePosition = false) {
   if (!fs.existsSync(SCRIPT_FILE)) {
     fs.writeFileSync(SCRIPT_FILE, defaultScript());
     console.log('[server] Created default script.txt');
   }
   const raw = fs.readFileSync(SCRIPT_FILE, 'utf8');
   slides = parseScript(raw);
-  state.slideIndex = 0;
-  state.lineIndex = 0;
+
+  if (preservePosition) {
+    // Clamp to new script bounds in case it got shorter
+    state.slideIndex = clamp(state.slideIndex, 0, slides.length - 1);
+    state.lineIndex  = clamp(state.lineIndex, 0, currentSlide().lines.length - 1);
+  } else {
+    state.slideIndex = 0;
+    state.lineIndex  = 0;
+  }
+
   console.log(`[server] Loaded ${slides.length} slide(s)`);
   broadcast({ type: 'script', slides });
   broadcast({ type: 'state', state });
@@ -47,26 +69,35 @@ function parseScript(text) {
     const lines = [];
     let speaker = '';
     let inLyric = false;
+    let inSingalong = false;
     for (const raw of rest) {
-      const nameMatch = raw.match(/^\s*\[([^\]]+)\]\s*$/);
+      const nameMatch = raw.match(/^\s*\[([^\]]+)\](?:\s*&\s*\[([^\]]+)\])?\s*$/);
       if (nameMatch) {
-        speaker = nameMatch[1];
+        speaker = nameMatch[2] ? `${nameMatch[1]} & ${nameMatch[2]}` : nameMatch[1];
         continue;
       }
 
-      const startsLyric = /^\s*##/.test(raw);
-      const endsLyric   = /##\s*$/.test(raw);
+      const startsLyric    = /^\s*##/.test(raw);
+      const endsLyric      = /##\s*$/.test(raw);
+      const startsSingalong = /^\s*</.test(raw);
+      const endsSingalong   = />[\s]*$/.test(raw);
 
-      if (startsLyric) inLyric = true;
+      if (startsLyric)    inLyric = true;
+      if (startsSingalong) inSingalong = true;
 
-      const text = inLyric
-        ? '## ' + raw.replace(/^\s*##\s*/, '').replace(/\s*##\s*$/, '').trim()
-        : raw;
+      let text;
+      if (inLyric) {
+        text = '## ' + raw.replace(/^\s*##\s*/, '').replace(/\s*##\s*$/, '').trim();
+      } else if (inSingalong) {
+        text = '<' + raw.replace(/^\s*<\s*/, '').replace(/\s*>\s*$/, '').trim();
+      } else {
+        text = raw;
+      }
 
       lines.push({ text, speaker });
       speaker = '';
-
-      if (endsLyric) inLyric = false;
+      if (endsLyric)     inLyric = false;
+      if (endsSingalong) inSingalong = false;
     }
     return { title, lines };
   }).filter(Boolean);
@@ -203,7 +234,7 @@ app.post('/script', (req, res) => {
     return res.status(400).json({ error: 'Empty script' });
   }
   fs.writeFileSync(SCRIPT_FILE, body, 'utf8');
-  loadScript();
+  loadScript(true); // preserve current position if possible
   res.json({ ok: true, slides: slides.length });
 });
 

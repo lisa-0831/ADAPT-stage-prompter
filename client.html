@@ -7,6 +7,33 @@
 <style>
   /* ── Reset & base ── */
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  @font-face {
+    font-family: 'Engravers Gothic';
+    src: url("fonts/Engravers-Gothic-Regular.otf") format('opentype');
+    font-weight: normal;
+    font-style: normal;
+  }
+
+  @font-face {
+    font-family: 'Netto';
+    src: url('fonts/Netto-Regular.otf') format('opentype');
+    font-weight: normal;
+    font-style: normal;
+  }
+
+  @font-face {
+    font-family: 'Netto';
+    src: url('fonts/Netto-Regular-Italic.otf') format('opentype');
+    font-weight: normal;
+    font-style: italic;
+  }
+
+  @font-face {
+    font-family: 'TT Rounds Condensed';
+    src: url('fonts/TTRoundsCondensed-Black.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+  }
 
   :root {
     --bg:         #0a0a0a;
@@ -21,8 +48,9 @@
     --red:        #c0392b;
     --green:      #27ae60;
     --border:     #2a2a2a;
-    --font-mono:  'Courier New', 'Courier', monospace;
-    --font-ui:    'Helvetica Neue', Arial, sans-serif;
+    --singalong:  #ff5fa0;
+    --font-mono:  'Netto', 'Courier New', monospace;
+    --font-ui:    'Engravers Gothic', 'Helvetica Neue', sans-serif;
     --vh: 1vh;
   }
 
@@ -70,7 +98,7 @@
 
  #slide-title {
     font-family: var(--font-ui);
-    font-size: clamp(0.7rem, 1.5vw, 1.1rem);
+    font-size: clamp(1.4rem, 2.8vw, 2.2rem);
     letter-spacing: 0.25em;
     text-transform: uppercase;
     color: var(--amber-dim);
@@ -144,13 +172,14 @@
     gap: 2em;
     width: 100%;
     transition: opacity 0.18s ease;
+    margin-bottom: 1em;
   }
   .line-row.past   { opacity: 0.45; }
   .line-row.future { opacity: 0.35; }
 
   .char-name {
     font-family: var(--font-ui);
-    font-size: clamp(1rem, 1.6vw, 1.3rem);
+    font-size: clamp(1.3rem, 2vw, 1.7rem);
     font-weight: 700;
     letter-spacing: 0.14em;
     text-transform: uppercase;
@@ -177,6 +206,7 @@
 
   /* Stage direction — {…} — italic warm brown */
   .script-line.direction {
+    font-family: 'Netto', 'Courier New', monospace;
     font-style: italic;
     color: var(--direction) !important;
   }
@@ -184,6 +214,11 @@
   /* Song lyrics — ##…## — dark green */
   .script-line.lyric {
     color: var(--lyric) !important;
+  }
+
+  .script-line.singalong {
+    color: var(--singalong) !important;
+    font-family: 'TT Rounds Condensed', 'Helvetica Neue', sans-serif;
   }
 
   /* Highlight bar under current line */
@@ -231,7 +266,7 @@
 
   .btn {
     font-family: var(--font-ui);
-    font-size: 0.78rem;
+    font-size: 1rem;
     font-weight: 600;
     letter-spacing: 0.06em;
     text-transform: uppercase;
@@ -251,7 +286,7 @@
     background: var(--amber);
     color: #000;
     border-color: var(--amber);
-    font-size: 0.95rem;
+    font-size: 1.2rem;
     padding: 10px 22px;
   }
   .btn.primary:hover { background: #f0be30; }
@@ -268,7 +303,7 @@
 
   #slide-select {
     font-family: var(--font-ui);
-    font-size: 0.8rem;
+    font-size: 1.2rem;
     background: var(--bg3);
     color: var(--cream);
     border: 1px solid var(--border);
@@ -281,7 +316,7 @@
 
   #ctrl-status {
     font-family: var(--font-ui);
-    font-size: 0.72rem;
+    font-size: 1rem;
     color: var(--cream-dim);
     letter-spacing: 0.05em;
     flex: 1;
@@ -314,7 +349,7 @@
 
   .upload-hint {
     font-family: var(--font-ui);
-    font-size: 0.7rem;
+    font-size: 1rem;
     color: var(--cream-dim);
     line-height: 1.5;
   }
@@ -458,7 +493,8 @@
         Start each slide with <strong># Title</strong>.<br>
         <strong>[NAME]</strong> on its own line = character name shown in sidebar &nbsp;·&nbsp;
         <strong>{…}</strong> = stage direction (italic brown) &nbsp;·&nbsp;
-        <strong>##…##</strong> = lyrics (dark green)
+        <strong>##…##</strong> = lyrics (dark green)&nbsp;·&nbsp;
+        <strong>&lt;…&gt;</strong> = sing-along (pink)
       </p>
       <textarea id="script-textarea" placeholder="# Scene 1&#10;[DOROTHY]&#10;Line of dialogue...&#10;---&#10;# Scene 2&#10;..."></textarea>
       <div class="ctrl-row">
@@ -581,6 +617,7 @@ connect();
 function lineType(text) {
   if (/^\s*\{/.test(text)) return 'direction';
   if (/^\s*##/.test(text))  return 'lyric';
+  if (/^\s*</.test(text))  return 'singalong';
   return 'dialogue';
 }
 
@@ -589,6 +626,7 @@ function displayText(text, type) {
   if (type === 'direction') return text.replace(/^\s*\{/, '').replace(/\}\s*$/, '').trim();
   // For lyrics: strip leading ## and trailing ## (the ## may appear at start or end of any line in the block)
   if (type === 'lyric') return text.replace(/^\s*##\s*/, '').replace(/\s*##.*$/, '').trim();
+  if (type === 'singalong') return text.replace(/^\s*<\s*/, '').replace(/\s*>\s*$/, '').trim();
   return text;
 }
 
