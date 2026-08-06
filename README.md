@@ -59,37 +59,59 @@ Viewers see every change instantly with no controls of their own.
 Edit `script.txt` in this folder, then on the controller click  
 **📄 Replace Script → Upload & Go Live** (or send a POST request).
 
-### Option C — HTTP API
-```bash
-curl -X POST http://localhost:3000/script \
-  -H "Content-Type: text/plain" \
-  --data-binary @my_script.txt
-```
-
 ---
 
 ## Script format
 
+### Line types
+
+| Syntax | What it does |
+|---|---|
+| `# Title` | Starts a new scene |
+| `---` | Separates scenes (required between every scene) |
+| `@image: images/file.jpg` | Shows an image before the first line (optional) |
+| `[NAME]` on its own line | Character name shown in left sidebar |
+| `[NAME] & [NAME]` | Two characters speaking together |
+| `{stage direction}` | Italic brown text |
+| `## first lyric line` / `last lyric line ##` | Dark green lyrics block |
+| `<first sing-along line` / `last sing-along line>` | Pink sing-along block |
+| Plain text | Amber dialogue |
+
+### Example
+
 ```
-# Act One — Scene 1
-ELEANOR
-I never thought I'd come back here.
+# Scene 1 | Kansas Place in Brooklyn, New York
+@image: images/scene1.jpg
+{DOROTHY enters. TOTO is with her.}
+[DOROTHY]
+Oh Toto, I don't think we're in New York anymore.
+[GULCH]
+Where is that pest?!
+[DOROTHY] & [GULCH]
+This isn't over!
+## SOMEWHERE OVER THE RAINBOW, WAY UP HIGH,
+THERE'S A LAND THAT I HEARD OF ONCE IN A LULLABY. ##
+<SING ALONG WITH US NOW,
+EVERYBODY JOIN IN!>
 
-[She crosses to the window]
-
-The house looks the same.
----
-# Scene 2
-MARCUS enters from stage left.
-
-MARCUS
-You shouldn't have come alone.
+# Scene 2 | Munchkinland
+{GLINDA appears in her flying bubble.}
+[DOROTHY]
+Where are we?
 ```
 
 - Separate slides with `---` on its own line
 - Start each slide with `# Title` (shown as the amber header)
 - Lines starting with `[` or `(` render in amber italic as stage directions
 - Blank lines between speeches are ignored
+
+### Notes
+- `---` must be on its own line with no spaces before or after
+- No blank lines immediately before or after `---`
+- `##` only needed at the very start and very end of a lyrics block
+- `<` and `>` only needed at the very start and very end of a sing-along block
+- Blank lines elsewhere in the script are ignored
+- Image files go in the `prompter/images/` folder
 
 ---
 

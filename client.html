@@ -87,7 +87,7 @@
     flex-direction: column;
     justify-content: flex-start;
     align-items: center;
-    padding: 4vw 6vw;
+    padding: 4vw 2vw;
     position: relative;
     overflow: hidden;
     cursor: pointer;
@@ -107,10 +107,28 @@
     overflow: hidden;
     text-overflow: ellipsis;
     width: 100%;
-    padding: 1.2vh 0 1.5vh;
+    padding: 0.5vh 0 0.6vh;
     border-bottom: 1px solid #222;
     margin-bottom: 0;
     flex-shrink: 0;
+  }
+
+  #title-image-overlay {
+    display: none;
+    width: 100%;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    padding: 2vh 2vw;
+  }
+  #title-image-overlay.show {
+    display: flex;
+  }
+  #title-image {
+    max-width: 90%;
+    max-height: 80vh;
+    object-fit: contain;
+    border-radius: 4px;
   }
 
   #stage-content {
@@ -123,7 +141,6 @@
     overflow: hidden;
     /* padding-top: 5vh; */
   }
-
   /* #lines-container {
     width: 100%;
     max-width: 1100px;
@@ -140,7 +157,7 @@
   justify-content: flex-end;
   align-items: stretch;
   width: 100%;
-  max-width: 1100px;
+  max-width: 1300px;
   gap: 0.35em;
   padding-bottom: 0.5em;
   overflow: hidden;
@@ -148,7 +165,7 @@
 
 #lines-current {
   width: 100%;
-  max-width: 1100px;
+  max-width: 1300px;
   flex-shrink: 0;
 }
 
@@ -159,7 +176,7 @@
   justify-content: flex-start;
   align-items: stretch;
   width: 100%;
-  max-width: 1100px;
+  max-width: 1300px;
   gap: 0.35em;
   padding-top: 0.5em;
   overflow: hidden;
@@ -455,6 +472,9 @@
     <div id="connecting"><p>Connecting…</p></div>
     <div id="viewer-label"></div>
     <div id="slide-title"></div>
+    <div id="title-image-overlay">
+      <img id="title-image" src="" alt="">
+    </div>
     <div id="stage-content">
       <!-- <div id="lines-container"></div> -->
        <div id="lines-past"></div>
@@ -554,6 +574,8 @@ const dom = {
   btnConfirmExit: document.getElementById('btn-confirm-exit'),
   zonePrev:       document.getElementById('zone-prev'),
   zoneNext:       document.getElementById('zone-next'),
+  titleOverlay: document.getElementById('title-image-overlay'),
+  titleImage:   document.getElementById('title-image'),
 };
 
 // ── Role setup ────────────────────────────────────────────────────────
@@ -638,6 +660,15 @@ function render() {
   const lines = slide.lines; // array of { text, speaker }
 
   dom.slideTitle.textContent = slide.title;
+
+  if (state.showTitleImage && slides[state.slideIndex].titleImage) {
+    dom.titleImage.src = slides[state.slideIndex].titleImage;
+    dom.titleOverlay.classList.add('show');
+    return; // don't render lines while image is showing
+  } else {
+    dom.titleOverlay.classList.remove('show');
+    dom.titleImage.src = '';
+  }
 
   const from = Math.max(0, li - 3);
   const to   = Math.min(lines.length - 1, li + 3);

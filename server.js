@@ -17,6 +17,7 @@ let state = {
   slideIndex: 0,
   lineIndex: 0,
   showLine: true,      // false = show full slide
+  showTitleImage: false,
 };
 
 // ── Script loading ─────────────────────────────────────────────────────
@@ -70,7 +71,16 @@ function parseScript(text) {
     let speaker = '';
     let inLyric = false;
     let inSingalong = false;
+    let titleImage = null;
+
     for (const raw of rest) {
+      if (raw.trim() === '') continue;
+
+      if (/^\s*@image:\s*/.test(raw)) {
+        titleImage = raw.replace(/^\s*@image:\s*/, '').trim();
+        continue;
+      }
+
       const nameMatch = raw.match(/^\s*\[([^\]]+)\](?:\s*&\s*\[([^\]]+)\])?\s*$/);
       if (nameMatch) {
         speaker = nameMatch[2] ? `${nameMatch[1]} & ${nameMatch[2]}` : nameMatch[1];
@@ -99,7 +109,7 @@ function parseScript(text) {
       if (endsLyric)     inLyric = false;
       if (endsSingalong) inSingalong = false;
     }
-    return { title, lines };
+    return { title, lines, titleImage };
   }).filter(Boolean);
 }
 
@@ -162,6 +172,7 @@ wss.on('connection', (ws) => {
       case 'goto':
         if (msg.slideIndex !== undefined) state.slideIndex = clamp(msg.slideIndex, 0, slides.length - 1);
         if (msg.lineIndex !== undefined) state.lineIndex = clamp(msg.lineIndex, 0, currentSlide().lines.length - 1);
+        state.showTitleImage = !!(currentSlide().titleImage && state.lineIndex === 0);
         broadcast({ type: 'state', state });
         break;
       case 'reloadScript':
@@ -181,36 +192,83 @@ function clamp(val, min, max) {
   return Math.max(min, Math.min(max, val));
 }
 
+// function handleNavigate(dir) {
+//   const slide = currentSlide();
+//   const maxLine = slide.lines.length - 1;
+
+//   if (dir === 'next') {
+//     if (state.lineIndex < maxLine) {
+//       state.lineIndex++;
+//     } else if (state.slideIndex < slides.length - 1) {
+//       state.slideIndex++;
+//       state.lineIndex = 0;
+//     }
+//   } else if (dir === 'prev') {
+//     if (state.lineIndex > 0) {
+//       state.lineIndex--;
+//     } else if (state.slideIndex > 0) {
+//       state.slideIndex--;
+//       state.lineIndex = currentSlide().lines.length - 1;
+//       // re-read after changing slide
+//       const newSlide = slides[state.slideIndex];
+//       state.lineIndex = newSlide.lines.length - 1;
+//     }
+//   } else if (dir === 'nextSlide') {
+//     if (state.slideIndex < slides.length - 1) {
+//       state.slideIndex++;
+//       state.lineIndex = 0;
+//     }
+//   } else if (dir === 'prevSlide') {
+//     if (state.slideIndex > 0) {
+//       state.slideIndex--;
+//       state.lineIndex = 0;
+//     }
+//   }
+
+//   broadcast({ type: 'state', state });
+// }
+
 function handleNavigate(dir) {
   const slide = currentSlide();
   const maxLine = slide.lines.length - 1;
 
   if (dir === 'next') {
-    if (state.lineIndex < maxLine) {
+    if (state.showTitleImage) {
+      state.showTitleImage = false; // advance past image into first line
+    } else if (state.lineIndex < maxLine) {
       state.lineIndex++;
     } else if (state.slideIndex < slides.length - 1) {
       state.slideIndex++;
       state.lineIndex = 0;
+      state.showTitleImage = !!(slides[state.slideIndex].titleImage);
     }
   } else if (dir === 'prev') {
-    if (state.lineIndex > 0) {
+    if (state.showTitleImage) {
+      if (state.slideIndex > 0) {
+        state.slideIndex--;
+        state.lineIndex = slides[state.slideIndex].lines.length - 1;
+        state.showTitleImage = false;
+      }
+    } else if (state.lineIndex === 0 && slide.titleImage) {
+      state.showTitleImage = true;
+    } else if (state.lineIndex > 0) {
       state.lineIndex--;
     } else if (state.slideIndex > 0) {
       state.slideIndex--;
-      state.lineIndex = currentSlide().lines.length - 1;
-      // re-read after changing slide
-      const newSlide = slides[state.slideIndex];
-      state.lineIndex = newSlide.lines.length - 1;
+      state.lineIndex = slides[state.slideIndex].lines.length - 1;
+      state.showTitleImage = false;
     }
   } else if (dir === 'nextSlide') {
     if (state.slideIndex < slides.length - 1) {
       state.slideIndex++;
       state.lineIndex = 0;
+      state.showTitleImage = !!(slides[state.slideIndex].titleImage);
     }
   } else if (dir === 'prevSlide') {
     if (state.slideIndex > 0) {
       state.slideIndex--;
       state.lineIndex = 0;
+      state.showTitleImage = !!(slides[state.slideIndex].titleImage);
     }
   }
 

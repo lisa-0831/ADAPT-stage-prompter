@@ -1,10 +1,12 @@
-# Welcome to ADAPT Community Network’s
-JOURNEY THROUGH OZ 
-{An Immersive} 
-<Sing-A-Long!>
+# WELCOME TO ADAPT COMMUNITY NETWORK’S
+@image: images/Title_Card.jpeg
+{AN IMMERSIVE} 
+<SING-A-LONG!>
 ---
-# Kansas Place in Brooklyn, New York
-<SOMEWHERE OVER THE RAINBOW, 
+# KANSAS PLACE IN BROOKLYN, NEW YORK
+
+@image: images/Cap_Back2.jpeg
+## SOMEWHERE OVER THE RAINBOW, 
 WAY UP HIGH, 
 THERE'S A LAND THAT I HEARD OF ONCE IN A LULLABY. 
 SOMEWHERE OVER THE RAINBOW, SKIES ARE BLUE, 
@@ -13,323 +15,330 @@ SOMEDAY I'LL WISH UPON A STAR AND WAKE UP WHERE THE CLOUDS ARE FAR BEHIND ME.
 WHERE TROUBLES MELT LIKE LEMON DROPS AWAY ABOVE THE CHIMNEY TOPS, 
 THAT'S WHERE YOU'LL FIND ME. 
 SOMEWHERE OVER THE RAINBOW, BLUEBIRDS FLY. 
-BIRDS FLY OVER THE RAINBOW; WHY, THEN, OH WHY CAN'T I? 
-SOMEDAY I'LL WISH UPON A STAR AND WAKE UP WHERE THE CLOUDS ARE FAR BEHIND ME. 
-WHERE TROUBLES MELT LIKE LEMON DROPS AWAY ABOVE THE CHIMNEY TOPS, 
-THAT'S WHERE YOU'LL FIND ME. 
-SOMEWHERE OVER THE RAINBOW, BLUEBIRDS FLY. 
-BIRDS FLY OVER THE RAINBOW; WHY, THEN, OH WHY CAN'T I?>
+BIRDS FLY OVER THE RAINBOW; WHY, THEN, OH WHY CAN'T I?  ##
 
 [DOROTHY]
-Oh Toto, sometimes I fear I will never leave home. I will just stay here on Kansas Place forever. Me. You. And My Chair. 
+OH TOTO, SOMETIMES I FEAR I WILL NEVER LEAVE HOME. I WILL JUST STAY HERE ON KANSAS PLACE FOREVER. ME. YOU. AND MY CHAIR. 
 
 ##IF HAPPY LITTLE BLUEBIRDS FLY BEYOND THE RAINBOW, 
 WHY, OH, WHY CAN'T I?##
 
 [GULCH]
-Where is that pest?!
+WHERE IS THAT PEST?
 
 [DOROTHY]
-What do you want with Toto? He never did anything to you. 
+WHAT DO YOU WANT WITH TOTO? HE NEVER DID ANYTHING TO YOU. 
  
 [GULCH]
-He bit my leg. He belongs in the pound. 
+HE BIT MY DERRIER. HE BELONGS IN THE DUMPSTER. 
 
 [AUNT EM]
-What are you doing here? Get the ffffunk out of here. 
+WHAT ARE YOU DOING HERE? GET THE FFFFUNK OUT OF HERE. 
 
 [GULCH]
-I’ll get you. And your little dog too.
+I’LL GET YOU MY PRETTY. AND YOUR LITTLE DOG TOO.
 
-{Wicked Witch Music Plays}
+{WICKED WITCH MUSIC PLAYS}
 
 [AUNT EM] 
-Don’t be sad, Dorothy. Be happy. Don’t worry about that old bat.  
+DON’T BE SAD, DOROTHY. BE HAPPY. DON’T WORRY ABOUT THAT OLD BAT.  
 [DOROTHY] 
-I don’t know why she is so mean. Maybe if we got to know her? Or brought her some flowers.
+I DON’T KNOW WHY SHE IS SO MEAN. MAYBE IF WE GOT TO KNOW HER? OR BROUGHT HER SOME FLOWERS.
 [AUNT EM] 
-You are so naive. That is a bad lady. She is dangerous and mean. 
+YOU ARE SO NAIVE. THAT IS A BAD LADY. SHE IS DANGEROUS AND MEAN. 
 [DOROTHY] 
-But even mean ladies don’t deserve to be bitten!  
+BUT EVEN MEAN LADIES DON’T DESERVE TO BE BITTEN!  
 [AUNT EM] 
-I hope you never lose your hope and faith in the goodness of people. 
+I HOPE YOU NEVER LOSE YOUR HOPE AND FAITH IN THE GOODNESS OF PEOPLE. 
 [DOROTHY]
-Maybe if you let me be more independent and learn for myself who to trust and not trust. 
+MAYBE IF YOU LET ME BE MORE INDEPENDENT AND LEARN FOR MYSELF WHO TO TRUST AND NOT TRUST. 
 [AUNT EM]
-You can’t go out there! People may make fun of you. They may laugh at you.
+YOU CAN’T GO OUT THERE! PEOPLE MAY MAKE FUN OF YOU. THEY MAY LAUGH AT YOU.
 [DOROTHY]
-I need to see the world!
+I NEED TO SEE THE WORLD!
 [AUNT EM]
-You don’t know how to travel yet.
+YOU DON’T KNOW HOW TO TRAVEL YET.
 [UNCLE HENRY]
-You may not be accepted. They won’t understand you.
+YOU MAY NOT BE ACCEPTED. THEY WON’T UNDERSTAND YOU.
 
-{Nor'easter and storm sounds begin. }
+{NOR'EASTER AND STORM SOUNDS BEGIN. }
  
 [AUNT EM] 
-Everybody move! The Nor’easter is here! Get inside and away from the windows. 
+EVERYBODY MOVE! THE NOR’EASTER IS HERE! GET INSIDE AND AWAY FROM THE WINDOWS. 
  
 [TOTO]
-Woof! Woof!
+WOOF! WOOF!
  
 [DOROTHY]  
-Toto! Come back here! Waiiit for me!  
+TOTO! COME BACK HERE! WAIIIT FOR ME!  
 ---
-# The Nor’Easter 
-Music: “Cyclone” from The Wizard of Oz.
-{Loud wind noises, witch cackle, lightning crashes, TOTO barking.}
+# THE NOR’EASTER 
+MUSIC: “CYCLONE” FROM THE WIZARD OF OZ.
+{LOUD WIND NOISES, WITCH CACKLE, LIGHTNING CRASHES, TOTO BARKING.}
  
 ---
 
-# Munchkinland
+# MUNCHKINLAND
  
 [DOROTHY] 
-Where are we? Toto, I don’t think we are in New York anymore.  At least my chair is fully charged! 
+WHERE ARE WE? TOTO, I DON’T THINK WE ARE IN NEW YORK ANYMORE.  AT LEAST MY CHAIR IS FULLY CHARGED! 
  
 [DOROTHY] 
-Oh my god I did not mean to—are you hurt!? 
+OH MY GOD I DID NOT MEAN TO—ARE YOU HURT!? 
  
 [GLINDA] 
-You popped my bubble! I think my leg and maybe my arm are broken!
+YOU POPPED MY BUBBLE! I THINK MY LEG AND MAYBE MY ARM ARE BROKEN!
  
 [DOROTHY] 
-Oh no! I’m so sorry! We need to get you to a hospital! I don’t even know where I am? This is not New York is it? 
+OH NO! I’M SO SORRY! WE NEED TO GET YOU TO A HOSPITAL! I DON’T EVEN KNOW WHERE I AM? THIS IS NOT NEW YORK IS IT? 
  
 [GLINDA] 
-I’ve never heard of New York. Calm, calm hon. Are you lost?  Are you a good witch or a bad witch? 
+I’VE NEVER HEARD OF NEW YORK. CALM, CALM HON. ARE YOU LOST?  ARE YOU A GOOD WITCH OR A BAD WITCH? 
  
 [DOROTHY] 
-I’m not a witch at all! I’m from Kansas Place in New York. Where am I? 
+I’M NOT A WITCH AT ALL! I’M FROM KANSAS PLACE IN NEW YORK. WHERE AM I? 
  
 [GLINDA] 
-I am Glinda, the Good Witch of the Southeast. You’re in Oz! More specifically, Munchkinland.  Come out, come out munchkins!  
+I AM GLINDA, THE GOOD WITCH OF THE SOUTHEAST. YOU’RE IN OZ! MORE SPECIFICALLY, MUNCHKINLAND.  COME OUT, COME OUT MUNCHKINS!  
  
 [AUDIENCE]
-<(Giggling as Munchkins)HEHEHEHE!>
+<HEHEHEHE!>
 
 [GLINDA]
-And what is your name, dear?
+AND WHAT IS YOUR NAME, DEAR?
  
 [DOROTHY] 
-Oh goodness! Hello everyone! My name is Dorothy. This is my dog, Toto! I’ve never heard of Oz. I need to get back home & Glinda needs to get to the hospital. Can you help me? 
+OH GOODNESS! HELLO EVERYONE! MY NAME IS DOROTHY. THIS IS MY DOG, TOTO! I’VE NEVER HEARD OF OZ. I NEED TO GET BACK HOME & GLINDA NEEDS TO GET TO THE HOSPITAL. CAN YOU HELP ME? 
  
 [GLINDA] 
-I’m all right. The poppies here in Oz have healing powers. One smell & the pain is gone.
-The Wicked Witch of the East can hardly use her wheels anymore, with your house landing on her. Take them. 
+I’M ALL RIGHT. THE POPPIES HERE IN OZ HAVE HEALING POWERS. ONE SMELL & THE PAIN IS GONE.
+THE WICKED WITCH OF THE EAST CAN HARDLY USE HER WHEELS ANYMORE, WITH YOUR HOUSE LANDING ON HER. TAKE THEM. 
  
 [DOROTHY] 
-Oh no, I couldn’t. I didn’t mean to – is she okay? 
+OH NO, I COULDN’T. I DIDN’T MEAN TO – IS SHE OKAY? 
  
 [CORONER]
-## As coroner I must aver 
-I’ve thoroughly examined her 
-Not only is she nearly dead 
-She’s really most sincerely dead ##
+## AS CORONER I MUST AVER 
+I’VE THOROUGHLY EXAMINED HER 
+NOT ONLY IS SHE NEARLY DEAD 
+SHE’S REALLY MOST SINCERELY DEAD ##
  
 [DOROTHY]  
-Oh no. I’m so sorry, I don’t know where I am or how any of this happened. Oh Glinda, how will I ever get home?! 
+OH NO. I’M SO SORRY, I DON’T KNOW WHERE I AM OR HOW ANY OF THIS HAPPENED. OH GLINDA, HOW WILL I EVER GET HOME?! 
 
 [GLINDA]
-First you’ll be needing a new set of wheels. And I think a bit of a makeover.
+FIRST YOU’LL BE NEEDING A NEW SET OF WHEELS. AND I THINK A BIT OF A MAKEOVER.
 
 [DOROTHY]
-You really don’t have to do that.
+YOU REALLY DON’T HAVE TO DO THAT.
 
 [GLINDA]
-I know. That’s what makes me so nice.
+I KNOW. THAT’S WHAT MAKES ME SO NICE.
  
-## POPULAR 
+## FABULOUS 
 [GLINDA] 
-WHENEVER I SEE SOMEONE LESS FORTUNATE THAN I 
-AND LET'S FACE IT, WHO ISN'T LESS FORTUNATE THAN I? 
-MY TENDER HEART TENDS TO START TO BLEED 
-AND WHEN SOMEONE NEEDS A MAKEOVER 
-I SIMPLY HAVE TO TAKE OVER! 
-I KNOW, I KNOW EXACTLY WHAT THEY NEED!
-AND EVEN IN YOUR CASE 
-THOUGH IT'S THE TOUGHEST CASE I'VE YET TO FACE 
-DON'T WORRY, I'M DETERMINED TO SUCCEED! 
-FOLLOW MY LEAD 
-AND YES INDEED, YOU WILL BE 
-POPULAR! 
-YOU'RE GONNA BE POPULAR! 
-I'LL TEACH YOU THE PROPER PLOYS 
-WHEN YOU TALK TO BOYS 
-LITTLE WAYS TO FLIRT AND FLOUNCE 
-OOH! 
-I'LL SHOW YOU WHAT SHOES TO WEAR! 
-HOW TO FIX YOUR HAIR! 
-EVERYTHING THAT REALLY COUNTS TO BE 
-POPULAR! 
-I'LL HELP YOU BE POPULAR! 
-YOU'LL HANG WITH THE RIGHT COHORTS 
-YOU'LL BE GOOD AT SPORTS 
-KNOW THE SLANG YOU'VE GOT TO KNOW 
-SO LET'S START 
-'CAUSE YOU'VE GOT AN AWFULLY LONG WAY TO GO! 
-DON'T BE OFFENDED BY MY FRANK ANALYSIS 
-THINK OF IT AS PERSONALITY DIALYSIS 
-NOW THAT I'VE CHOSEN TO BECOME A 
-PAL, A SISTER AND ADVISOR 
-THERE'S NOBODY WISER! 
-NOT WHEN IT COMES TO 
-POPULAR! 
-I KNOW ABOUT POPULAR 
-AND WITH AN ASSIST FROM ME 
-TO BE WHO YOU'LL BE 
-INSTEAD OF DREARY WHO YOU WERE 
-WELL, ARE 
-THERE'S NOTHING THAT CAN STOP YOU 
-FROM BECOMING POPU-LER... LAR 
-LA LA, LA LA! 
-WE'RE GONNA MAKE YOU POP-YOU-LAR! 
-WHEN I SEE DEPRESSING CREATURES 
-WITH UNPREPOSSESSING FEATURES 
-I REMIND THEM ON THEIR OWN BEHALF 
-TO THINK OF 
-CELEBRATED HEADS OF STATE 
-OR SPECIALLY GREAT COMMUNICATORS! 
-DID THEY HAVE BRAINS OR KNOWLEDGE? 
-DON'T MAKE ME LAUGH! 
-THEY WERE POPULAR! 
+ITS OUT WITH THE OLD AND IN WITH THE NEW,
+GOODBYE CLOUDS OF GRAY, HELLO SKIES OF BLUE
+A DIP IN THE POOL, A TRIP TO THE SPA
+ENDLESS DAYS IN MY CHAISE
+THE WHOLE WORLD ACCORDING TO MOI
+"EXCUSE ME, THANK YOU"
+ICED TEA IMPORTED FROM ENGLAND,
+LIFEGUARDS IMPORTED FROM SPAIN,
+TOWELS IMPORTED FROM TURKEY,
+TURKEY IMPORTED FROM MAINE,
+WE'RE GONNA RELAX AND RENEW,
+YOU, GO, DO!
+I WANT ##
+<FABULOUS,> 
+##THAT IS MY SIMPLE REQUEST,
+ALL THINGS ##
+ <FABULOUS,> 
+##BIGGER AND BETTER AND BEST,
+I NEED SOMETHING INSPIRING TO HELP ME GET ALONG,
+I NEED A LITTLE ##
+<FABULOUS>
+## IS THAT SO WRONG?
+FETCH ME THOSE RED RUBY SLIPPERS,
+LET’S MAKE THAT WHEELCHAIR GLOW
+YOU NEED SOME SHIMMERY LIP GLOSS,
+AND THEN I CAN GO FOR A FLOAT.
+A JOURNEY LIKE NEVER BEFORE
+I WANT MORE!
+SHE WANTS ##
+ <FABULOUS,>
+##THAT IS HER SIMPLE REQUEST,
+ALL THINGS ##
+<FABULOUS,>
+##BIGGER AND BETTER AND BEST,
+SHE NEEDS SOMETHING INSPIRING TO HELP HER GET ALONG,
+SHE NEEDS A LITTLE FABULOUS IS THAT SO WRONG? ##
+<FABULOUS>
+## POOL, (YO) ##
+<FABULOUS> 
+##SPLASH,##
+<FABULOUS>
+## PARTIES EVEN##
+ <FABULOUS> 
+##TRASH##
+<FABULOUS> 
+##FASHION, (NO) ##
+<FABULOUS> 
+##BLING,
+SHE'S GOT TO HAVE ##
+<FABULOUS> 
+##EVERYTHING. 
+NOTHING TO DISCUSS
+EVERYTHING'S GOT TO BE PERFECT FOR ME
+SHE WANTS ##
+<FABULOUS>,
+##THAT IS HER SIMPLE REQUEST,
+ALL THINGS ##
+ <FABULOUS>
+##BIGGER AND BETTER AND BEST,
+SHE NEEDS SOMETHING INSPIRING TO HELP HER GET ALONG,
+SHE NEEDS A LITTLE ##
+ <FABULOUS> 
+## IS THAT SO WRONG?
+THIS WON'T DO, THAT'S A BORE,
+THAT'S INSULTING, I NEED MORE!
+I NEED, I NEED,
+I NEED, I NEED,
+I NEED, I NEED
+I NEED ## 
+<FABULOUS> 
+## (I WANT FABULOUS) ##
+<FABULOUS>  
+## HAIR ## 
+<FABULOUS> STYLE,
+<FABULOUS> 
+## EYES AND THAT ## 
+<FABULOUS> 
+## SMILE.
+OH, I LIKE WHAT I SEE,
+I LIKE IT A LOT
+IS THIS ABSOLUTELY ## 
+<FABULOUS?
+FABULOUS, FABULOUS, FABULOUS?
+ABSOLUTELY... FABULOSO!>
 
-PLEASE! 
-IT'S ALL ABOUT POPULAR 
-IT'S NOT ABOUT APTITUDE 
-IT'S THE WAY YOU'RE VIEWED 
-SO IT'S VERY SHREWD TO BE 
-VERY VERY POPULAR
-LIKE ME! 
-AND THOUGH YOU PROTEST YOUR DISINTEREST 
-I KNOW IT’S MEANT TO BE 
-YOU’RE GONNA GRIN ND BARE IT  
-YOUR NEWFOUND POPULARITY 
-
-LA LA LA LA
-LA LA LA LA 
-LA LA LA LA 
-YOU’LL BE POPULAR 
-JUST NOT QUITE AS POPULAR AS 
-MEEEEEEE! ##
  
 [DOROTHY] 
-Well that was very lovely. But I don’t need to be popular. I need to get back home! 
+WELL THAT WAS VERY LOVELY. BUT I DON’T NEED TO BE FABULOUS. I NEED TO GET BACK HOME! 
  
 [GLINDA] 
-You must be popular to get to see The Wizard of Oz. 
+YOU MUST BE FABULOUS TO GET TO SEE THE WIZARD OF OZ. 
 
 [DOROTHY]
-The Wizard…?
+THE WIZARD…?
 
 [GLINDA]
-He is the only one who can help you get home. He controls the Department of Transportation and the OTA” Ozmopolitan Transit Authority. Luckily, you are already quite popular around here.  Word travels fast.
+HE IS THE ONLY ONE WHO CAN HELP YOU GET HOME. HE CONTROLS OZ'S DEPARTMENT OF TRANSPORTATION. LUCKILY, YOU ARE ALREADY QUITE POPULAR AROUND HERE.  WORD TRAVELS FAST.
  
-We hear the WITCH’s cackle and she appears in a puff of smoke. 
- 
-[ELPHABA] 
-Who killed my sister? Where are her wheels? 
- 
-[GLINDA] 
-You’re too late – there they are. And there they will stay. 
+*THE WITCH CACKLES*
  
 [ELPHABA] 
-Give me back my sister’s ruby wheels. They are of no use to you. They belong to me. Give them back! 
+WHO KILLED MY SISTER? WHERE ARE HER WHEELS? 
  
 [GLINDA] 
-Quick - off with you, good luck my dear! I know you’ll find your way! Just follow the yellow brick road! It will lead you to the Wizard of Oz – he will take you home! 
+YOU’RE TOO LATE – THERE THEY ARE. AND THERE THEY WILL STAY. 
+ 
+[ELPHABA] 
+GIVE ME BACK MY SISTER’S RUBY WHEELS. THEY ARE OF NO USE TO YOU. THEY BELONG TO ME. GIVE THEM BACK! 
+ 
+[GLINDA] 
+QUICK - OFF WITH YOU, GOOD LUCK MY DEAR! I KNOW YOU’LL FIND YOUR WAY! JUST FOLLOW THE YELLOW BRICK ROAD! IT WILL LEAD YOU TO THE WIZARD OF OZ – HE WILL TAKE YOU HOME! 
 
 [DOROTHY]
-Looking at her Chair. 80% Battery left. Better get a move on, Toto.
+80% BATTERY LEFT. BETTER GET A MOVE ON, TOTO.
 
 [GLINDA] 
-That’s right, you just take that one road the whole time! I hope they don’t get lost, I am so bad at giving directions. Hopefully they fixed that on-ramp to the cornfields and re-paved the haunted forest. Accessibility has really gone downhill since The Wiz took over.
-(to Elphaba) I don’t believe we have anything further to say to one another. 
+THAT’S RIGHT, YOU JUST TAKE THAT ONE ROAD THE WHOLE TIME! I HOPE THEY DON’T GET LOST, I AM SO BAD AT GIVING DIRECTIONS. HOPEFULLY THEY FIXED THAT ON-RAMP TO THE CORNFIELDS. ACCESSIBILITY HAS REALLY GONE DOWNHILL SINCE THE WIZ TOOK OVER.
  
 [ELPHABA] 
-I wanted something to remember her by and all that was left of her were those wheels! And now that wretched little farm girl has rolled off with them! 
+I WANTED SOMETHING TO REMEMBER HER BY AND ALL THAT WAS LEFT OF HER WERE THOSE WHEELS! AND NOW THAT WRETCHED LITTLE FARM GIRL HAS ROLLED OFF WITH THEM! 
    
 [GLINDA] 
-Elphie, don’t blame yourself. It’s dreadful, it is to have a house fall on you, but accidents will happen. 
+ELPHIE, DON’T BLAME YOURSELF. IT’S DREADFUL TO HAVE A HOUSE FALL ON YOU, BUT ACCIDENTS WILL HAPPEN. 
  
 [ELPHABA] 
-You call this an accident? 
+YOU CALL THIS AN ACCIDENT?  SO YOU THINK CYCLONES JUST APPEAR OUT OF THE BLUE? 
  
 [GLINDA] 
-Yes! Well maybe not an accident… 
+WELL I DON’T KNOW. I NEVER— 
  
 [ELPHABA] 
-Then what would you call it? 
-  
+OF COURSE YOU NEVER! YOU’RE TOO BUSY TELLING EVERYONE HOW FABULOUS EVERYTHING IS! 
+ 
 [GLINDA] 
-A bazaar and unexpected twister of fate. 
+WELL I’M A PUBLIC FIGURE NOW AND PEOPLE EXPECT ME— 
  
 [ELPHABA] 
-So you think cyclones just appear out of the blue? 
+TO LIE? 
  
 [GLINDA] 
-Well I don’t know. I never— 
+TO BE ENCOURAGING! AND JUST WHAT EXACTLY HAVE YOU BEEN DOING BESIDES RIDING AROUND ON THAT FILTHY OLD THING? 
  
 [ELPHABA] 
-Of course you never! You’re too busy telling everyone how wonderful everything is! 
+WELL WE CAN’T ALL COME AND GO BY BUBBLE!  
+
  
 [GLINDA] 
-Well I’m a public figure now and people expect me— 
- 
-[ELPHABA] 
-To lie? 
- 
-[GLINDA] 
-To be encouraging! And just what exactly have you been doing besides riding around on that filthy old thing? 
- 
-[ELPHABA] 
-Well we can’t all come and go by bubble!  
-Elphaba grabs her broom and disappears. 
- 
-[GLINDA] 
-(to the audience)  Well what are you all waiting for? Follow the Yellow Brick Road and try to get to Dorothy before the witch does! 
+(TO THE AUDIENCE)  WELL WHAT ARE YOU ALL WAITING FOR? FOLLOW THE YELLOW BRICK ROAD AND TRY TO GET TO DOROTHY BEFORE THE WITCH DOES! 
+
+< AND THOUGH YOU PROTEST
+YOUR DISINTEREST
+I KNOW IT'S MEANT TO BE
+YOU'RE GONNA GRIN AND BARE IT
+YOUR NEWFOUND POPULARITY
+LA LA LA LA
+LA LA LA LA
+LA LA LA LAAA
+YOU'LL BE POPULAR
+JUST NOT QUITE AS POPULAR AS ME! >
 
 ---
 
-# The Cornfield 
+# THE CORNFIELD 
 
 [DOROTHY] 
-75% Battery left. Now which way do we go?
+75% BATTERY LEFT. NOW WHICH WAY DO WE GO?
 
  
 [SCARECROW] 
-(mumbling) That way is a very nice way.  
+(MUMBLING) THAT WAY IS A VERY NICE WAY.  
 
  
 [DOROTHY] 
-Who said that? Don't be silly, Toto.     Scarecrows... don't talk. 
+WHO SAID THAT? DON'T BE SILLY, TOTO.     SCARECROWS... DON'T TALK. 
  
 [SCARECROW] 
-Of course, people do go both ways. 
+OF COURSE, PEOPLE DO GO BOTH WAYS. 
  
 [DOROTHY] 
-Why....you did say something, didn't you?  Are you... alive?! Maybe if I help you down—oh my god your mouth is stitched shut!       
+WHY....YOU DID SAY SOMETHING, DIDN'T YOU?  ARE YOU... ALIVE?! MAYBE IF I HELP YOU DOWN—OH MY GOD YOUR MOUTH IS STITCHED SHUT!       
   
 [SCARECROW] 
-Thank you for opening my mouth, I was silent for so long! Help me free too, would you?  
+THANK YOU FOR OPENING MY MOUTH, I WAS SILENT FOR SO LONG! HELP ME FREE TOO, WOULD YOU?  
  
 [DOROTHY] 
-Of course, and you’re welcome! 
+OF COURSE, AND YOU’RE WELCOME! 
  
 [SCARECROW] 
-Thank you. The birds have been making fun of me for not being able to read, but I haven’t been able to tell them that I have a disability. I haven't got a brain – only straw. 
+THANK YOU. THE BIRDS HAVE BEEN MAKING FUN OF ME FOR NOT BEING ABLE TO READ, BUT I HAVEN’T BEEN ABLE TO TELL THEM THAT I HAVE A DISABILITY. I HAVEN'T GOT A BRAIN – ONLY STRAW. 
  
  
 [DOROTHY] 
-How can you talk if you haven't got a brain? 
+HOW CAN YOU TALK IF YOU HAVEN'T GOT A BRAIN? 
 
  
 [SCARECROW] 
-I don't know. But some people without brains do an awful lot of talking, don't they? 
+I DON'T KNOW. BUT SOME PEOPLE WITHOUT BRAINS DO AN AWFUL LOT OF TALKING, DON'T THEY? 
 
-Boo! Scat! You see, I can't even scare a crow! They come from miles around just to eat in my field and laugh in my face! Oh, I'm a failure, because I haven't got a brain. 
+BOO! SCAT! YOU SEE, I CAN'T EVEN SCARE A CROW! THEY COME FROM MILES AROUND JUST TO EAT IN MY FIELD AND LAUGH IN MY FACE! OH, I'M A FAILURE, BECAUSE I HAVEN'T GOT A BRAIN. 
  
 [DOROTHY] 
-Well, what would you do with a brain if you had one? 
+WELL, WHAT WOULD YOU DO WITH A BRAIN IF YOU HAD ONE? 
 
 ## IF I ONLY HAD A BRAIN
 [SCARECROW] 
@@ -340,7 +349,7 @@ AND MY HEAD I'D BE A SCRATCHIN'
 WHILE MY THOUGHTS ARE BUSY HATCHIN' 
 IF I ONLY HAD A BRAIN. 
  
-I'D UNRAVEL EV'RY RIDDLE FOR MY 
+I'D UNRAVEL EV'RY RIDDLE FOR ANY 
 INDIVIDDLE 
 IN TROUBLE OR IN PAIN 
 WITH THE THOUGHTS THAT YOU'LL BE THINKIN' 
@@ -359,10 +368,10 @@ EVEN WORTHY EVEN YOU
 IF I ONLY HAD A BRAIN.  ##
  
 [DOROTHY] 
-The Wizard can give you a brain! We can advocate for more educational supports for you! And he can help me get home. And hopefully he can help charge my wheelchair! I’m at 70%. We have to get to the Emerald City. 
+THE WIZARD CAN GIVE YOU A BRAIN! WE CAN ADVOCATE FOR MORE EDUCATIONAL SUPPORTS FOR YOU! AND HE CAN HELP ME GET HOME. AND HOPEFULLY HE CAN HELP CHARGE MY WHEELCHAIR! I’M AT 70%. WE HAVE TO GET TO THE EMERALD CITY. 
  
 [SCARECROW] 
-Well how do we get there? 
+WELL HOW DO WE GET THERE? 
  
 ## EASE ON DOWN THE ROAD
 [DOROTHY] 
@@ -392,10 +401,6 @@ EASE ON DOWN, EASE ON DOWN THE ROAD
 DON'T YOU CARRY NOTHING THAT MIGHT BE A LOAD 
 COME ON, EASE ON DOWN, EASE ON DOWN, DOWN THE... 
  
-OH, THERE MAY BE TIMES WHEN YOU WISH YOU WASN'T BORN 
-(AND YOU WAKE ONE MORNING JUST TO FIND THAT YOUR COURAGE'S GONE) 
-BUT JUST KNOW THAT FEELING ONLY LASTS A LITTLE WHILE 
-YOU JUST STICK WITH US AND WE'LL SHOW YOU HOW TO SMILE, YEAH 
  
 GET 'EM UP, GOIN' DOWN, EASE ON DOWN 
 GET 'EM UP, GOIN' DOWN, EASE ON DOWN 
@@ -405,28 +410,27 @@ GET 'EM UP, GET 'EM UP, EASE ON DOWN THE ROAD
 ##
 ---
 
-# The Man Made of Tin
+# THE MAN MADE OF TIN
+
+@image: images/Cap_Back3.jpeg
 [TIN MAN] 
-Oiiiiil. I don’t got no damn oil.
+OIIIIIL. I DON’T GOT NO DAMN OIL.
  
 [DOROTHY] 
-Why, Scarecrow, look! It’s a man made of tin. He looks stuck! 
+WHY, SCARECROW, LOOK! IT’S A MAN MADE OF TIN. HE LOOKS STUCK! 
  
 [SCARECROW]  
-He needs his oil can. (Finding the can on the ground) Here it is! 
- 
-Dorothy & Scarecrow Oil his arms, knees, feet, neck, and finally his mouth. 
+HE NEEDS HIS OIL CAN. (FINDING THE CAN ON THE GROUND) HERE IT IS! 
  
 [TIN MAN] 
-Thank you! I haven’t been able to use my voice for weeks. The price of oil. Now, if I only had a heart. 
+THANK YOU! I HAVEN’T BEEN ABLE TO USE MY VOICE FOR WEEKS. THE PRICE OF OIL. NOW, IF I ONLY HAD A HEART. 
  
 [SCARECROW] & [DOROTHY] 
-No heart?! 
- 
-## WHAT WOULD I DO IF I COULD FEEL
+NO HEART?! 
 [TIN MAN] 
 THAT'S THE WHOLE TRAGIC POINT, MY FRIENDS 
-WHAT WOULD I DO IF I COULD SUDDENLY FEEL 
+ 
+## WHAT WOULD I DO IF I COULD SUDDENLY FEEL?
 AND TO KNOW ONCE AGAIN THAT WHAT I FEEL IS REAL 
 I COULD CRY, I COULD SMILE 
 I MIGHT LAY BACK FOR A WHILE 
@@ -444,13 +448,13 @@ OH, TELL ME WHAT (WHAT, WHAT WOULD I DO)
 OH, TELL ME WHAT (WHAT) WHAT WOULD I DO IF I COULD FEEL? ##
  
 [DOROTHY] 
-I know who could help you feel! The Wizard! 
+I KNOW WHO COULD HELP YOU FEEL! THE WIZARD! 
  
 [TIN MAN] 
-But how do we get to the Wizard? 
+BUT HOW DO WE GET TO THE WIZARD? 
  
 [DOROTHY] 
-Well, you Follow the Yellow Brick Road! 
+WELL, YOU FOLLOW THE YELLOW BRICK ROAD! 
 
 ## FOLLOW THE YELLOW BRICK ROAD
 ALL 
@@ -466,27 +470,25 @@ BECAUSE, BECAUSE, BECAUSE, BECAUSE, BECAUSE
 BECAUSE OF THE WONDERFUL THINGS HE DOES. 
 WE'RE OFF TO SEE THE [WIZARD], THE WONDERFUL [WIZARD] OF OZ! ##
 ---
-# The Haunted Forest
+# THE HAUNTED FOREST
 
 [DOROTHY] 
-This is my first time here. Where are we? 
+THIS IS MY FIRST TIME HERE. WHERE ARE WE? 
 [TIN MAN] 
-The Haunted Forest.  Watch out for lions and tigers 
+THE HAUNTED FOREST.  WATCH OUT FOR LIONS AND TIGERS 
 [SCARECROW]
-And bears 
+AND BEARS 
 [DOROTHY]
-Oh my 
+OH MY 
 [ALL]
-Lions and Tigers and Bears Oh MY
-Lions and Tigers and Bears Oh MY
-Lions and Tigers and Bears Oh MY
+LIONS AND TIGERS AND BEARS OH MY
+LIONS AND TIGERS AND BEARS OH MY
+LIONS AND TIGERS AND BEARS OH MY
  
 [SCARECROW] 
-What’s that over there?! 
+WHAT’S THAT OVER THERE?! 
 
-##MEAN OLE LION
-
-SAY WHAT YOU WANNA 
+## SAY WHAT YOU WANNA 
 BUT I'M HERE TO STAY 
 'CAUSE I'M A MEAN OLE LION
 YOU CAN GO WHERE YOU'RE GONNA 
@@ -522,177 +524,145 @@ I'M A MEAN OLE LION
 I'M A MEAN OLE LION ##
  
 [LION] 
-*Roars* You should all be very afraid of me! Very afraid! *Roar* 
+*ROARS* YOU SHOULD ALL BE VERY AFRAID OF ME! VERY AFRAID! *ROAR* 
  
 [DOROTHY] 
-I’m not afraid of you at all.  
+I’M NOT AFRAID OF YOU AT ALL.  
  
 [TIN MAN] 
-You seem like a swell guy.  
+YOU SEEM LIKE A SWELL GUY.  
  
 [SCARECROW] 
-And a great singer! 
+AND A GREAT SINGER! 
  
 [LION]  
-That’s my problem. Nobody is afraid of me. (He cries)
+THAT’S MY PROBLEM. NOBODY IS AFRAID OF ME. (HE CRIES)
  
 [DOROTHY] 
-It’s alright. Not all lions need to be scary. You’re quite gentle. 
+IT’S ALRIGHT. NOT ALL LIONS NEED TO BE SCARY. YOU’RE QUITE GENTLE. 
  
 [LION]  
-But I don’t have any courage! Or “social awareness.” I don’t fit in. And I’m terrified of the w-w-w-wicked witch.
+BUT I DON’T HAVE ANY COURAGE! OR “SOCIAL AWARENESS.” I DON’T FIT IN. AND I’M TERRIFIED OF THE W-W-W-WICKED WITCH.
  
 [DOROTHY] 
-Well maybe the Wizard can help with that! Also I don’t know if witches are evil anymore. 
+WELL MAYBE THE WIZARD CAN HELP WITH THAT! ALSO I DON’T KNOW IF WITCHES ARE EVIL ANYMORE. 
   
 [ELPHABA] 
-Cackles. HAHAHAHAHAHAHA. Hi Dorothy. What are you doing here? Are you trying to see the Wizard?  
+CACKLES. HAHAHAHAHAHAHA. HI DOROTHY. WHAT ARE YOU DOING HERE? ARE YOU TRYING TO SEE THE WIZARD?  
  
 [DOROTHY] 
-Hell yeah. 
+HELL YEAH. 
  
 [ELPHABA] 
-Good luck my pretty.  Watch out Scarecrow!  
+GOOD LUCK MY PRETTY.  WATCH OUT SCARECROW!  
  
 [DOROTHY] 
-Why are you so mean?   
+WHY ARE YOU SO MEAN?   
  
 [ELPHABA] 
-I WANT THOSE WHEELS. They were my sister’s! She was the only one I loved and who cared about me. 
+I WANT THOSE WHEELS. THEY WERE MY SISTER’S! SHE WAS THE ONLY ONE I LOVED AND WHO CARED ABOUT ME. 
  
 [DOROTHY] 
-Well if I could give you the wheels, I would. But I need them to get home. That’s why I’m going to see the Wizard. 
+WELL IF I COULD GIVE YOU THE WHEELS, I WOULD. BUT I NEED THEM TO GET HOME. THAT’S WHY I’M GOING TO SEE THE WIZARD. 
  
 [ELPHABA] 
-The Wizard! Ha! He isn’t going to help. This is all his fault. There is a discrimination problem in Oz.  Ableism! The Scarecrow was cast into the corn fields because he doesn’t have a brain. The Tin Man was left to rust by the railroad tracks – he couldn’t work anymore because he lost mobility. The price of oil is through the roof! And the poor Lion hides all alone in the forest because he was hunted by the Wizard’s flying monkeys.  
+THE WIZARD! HA! HE ISN’T GOING TO HELP. THIS IS ALL HIS FAULT. THERE IS A DISCRIMINATION PROBLEM IN OZ.  ABLEISM! THE SCARECROW WAS CAST INTO THE CORN FIELDS BECAUSE HE DOESN’T HAVE A BRAIN. THE TIN MAN WAS LEFT TO RUST BY THE RAILROAD TRACKS – HE COULDN’T WORK ANYMORE BECAUSE HE LOST MOBILITY. THE PRICE OF OIL IS THROUGH THE ROOF! AND THE POOR LION HIDES ALL ALONE IN THE FOREST BECAUSE HE WAS HUNTED BY THE WIZARD’S FLYING MONKEYS.  
  
 [DOROTHY] 
-I had no idea! What are we going to do about it? How can we make him see how hard it can be just to be different?
+I HAD NO IDEA! WHAT ARE WE GOING TO DO ABOUT IT? HOW CAN WE MAKE HIM SEE HOW HARD IT CAN BE JUST TO BE DIFFERENT?
 
 [SCARECROW]
-And how much of a difference we could make! If I was the Wizard, I’d use my wisdom to teach everyone to dance.
+AND HOW MUCH OF A DIFFERENCE WE COULD MAKE! IF I WAS THE WIZARD, I’D USE MY WISDOM TO TEACH EVERYONE TO DANCE.
 
 [LION]
-I would do away with hate. Bullying would be illegal! 
+I WOULD DO AWAY WITH HATE. BULLYING WOULD BE ILLEGAL! 
  
 [ELPHABA]  
-Come with me. I’ll show you. And watch your step! No curb cuts around these parts.
+COME WITH ME. I’LL SHOW YOU. AND WATCH YOUR STEP! NO CURB CUTS AROUND THESE PARTS.
 
-##NO PLACE LIKE HOME
-WHY DO I LOVE THIS PLACE 
-THAT'S NEVER LOVED ME? 
-A PLACE THAT SEEMS TO DEVOTED 
-AND EVEN WANTING TO 
-BUT OZ IS MORE THAN JUST A PLACE 
-IT'S A PROMISE, AN IDEA 
-I WANT TO HELP MAKE IT COME TRUE 
-WHY SHOULD A LAND HAVE SO MUCH MEANING 
-WHEN DARK TIMES ARE FALLING? 
-IT'S ONLY LAND AND DIRT AND RUG AND WALL 
-IT'S JUST A PLACE THAT'S FAMILIAR 
-AND HOME'S JUST WHAT WE CALL IT 
-BUT THERE'S NO PLACE LIKE HOME 
-DON'T WE ALL KNOW? 
-THERE'S NO PLACE LIKE HOME ##
+##WHY DO I LOVE THIS PLACE
+THAT'S NEVER LOVED ME?
+A PLACE THAT SEEMS TO BE DEVOLVING
+AND EVEN WANTING TO?
+BUT OZ IS MORE THAN JUST A PLACE
+IT'S A PROMISE, AN IDEA
+AND I WANT TO HELP MAKE IT COME TRUE
+WHY SHOULD A LAND HAVE SO MUCH MEANING
+WHEN DARK TIMES BEFALL IT?
+IT'S ONLY LAND, MADE OF DIRT AND ROCK AND LOAM
+IT'S JUST A PLACE THAT'S FAMILIAR
+AND HOME'S JUST WHAT WE CALL IT
+BUT THERE'S NO PLACE LIKE HOME
+DON'T WE ALL KNOW
+THERE'S NO PLACE LIKE HOME? ##
 ---
 
-# The Castle
+# THE CASTLE
  
+@image: images/Cap_Back4.jpeg
 [ELPHABA]
-Welcome to my Castle. Have some poppy tea. It will help us all calm down. 
+WELCOME TO MY CASTLE. HAVE SOME POPPY TEA. IT WILL HELP US ALL CALM DOWN. 
  
-##HOME
-[DOROTHY] 
-WHEN I THINK OF HOME 
-I THINK OF A PLACE 
-WHERE THERE'S LOVE OVERFLOWING 
-I WISH I WAS HOME, I WISH I WAS BACK THERE 
-WITH THE THINGS I'VE BEEN KNOWING 
-WIND THAT MAKES THE TALL GRASS BEND INTO LEANING 
-SUDDENLY THE RAINDROPS THAT FALL, THEY HAVE A MEANING 
-SPRINKLING THE SCENE 
-MAKES IT ALL CLEAN 
-SUDDENLY MY WORLD'S GONE AND CHANGED ITS FACE 
-BUT I STILL KNOW WHERE I'M GOING 
-I HAVE HAD MY MIND SPUN AROUND IN SPACE 
-AND YET I'VE 
-I'VE WATCHED IT GROWING 
-OH, AND IF YOU'RE LISTENING GOD, PLEASE DON'T MAKE IT HARD 
-TO KNOW IF WE SHOULD BELIEVE THE THINGS THAT WE SEE 
-AND TELL US SHOULD WE TRY AND STAY? 
-OR SHOULD WE RUN AWAY? 
-OR IS IT BETTER JUST TO LET THINGS BE? 
- 
-[ELPHABA]  
-You are not my enemy anymore. I’m your friend. 
- 
-[DOROTHY] 
-And you are mine. 
-NO PLACE LIKE HOME (Part 2)
-WITCH AND [DOROTHY]  
-WHEN YOU FEEL YOU CAN'T FIGHT ANYMORE 
-JUST TELL YOURSELF 
-"THERE'S NO PLACE LIKE HOME" 
-WHEN YOU FEEL IT'S NOT WORTH FIGHTING FOR 
-COMPEL YOURSELF BECAUSE 
-THERE'S NO PLACE LIKE HOME 
-WHEN YOU WANT TO LEAVE DISCOURAGED AND RESIGN 
-THAT'S WHAT THEY WANT YOU TO DO 
-BUT THINK HOW YOU'LL GRIEVE FOR ALL YOU'LL LEAVE BEHIND 
-OZ BELONGS TO YOU TOO 
- 
-THOSE WHO WERE TAKEN FROM YOU 
-SPOUT A LIE TO SELL YOURSELF 
-AND GO THEIR WAY OR GO 
-IT'S THEIR WILL YOU'LL BE DEFEATING 
-IF WE KEEP ON REPEATING 
-"THERE'S NO PLACE LIKE HOME" 
- 
-THERE'S NO PLACE LIKE HOME 
-THERE'S NO PLACE LIKE HOME 
- 
-IF WE JUST KEEP FIGHTING FOR IT 
-WE WILL WIN BACK AND RESTORE IT 
-THERE'S NO PLACE LIKE HOME  ##
+##WHEN YOU FEEL YOU CAN'T FIGHT ANYMORE
+JUST TELL YOURSELF
+THERE'S NO PLACE LIKE HOME
+WHEN YOU FEEL IT'S NOT WORTH FIGHTING FOR
+COMPEL YOURSELF
+BECAUSE THERE'S NO PLACE LIKE HOME
+WHEN YOU WANT TO LEAVE
+DISCOURAGED AND RESIGNED
+THAT'S WHAT THEY WANT YOU TO DO
+BUT THINK HOW YOU WILL GRIEVE
+FOR ALL YOU LEAVE BEHIND
+OZ BELONGS TO YOU TOO
+THOSE WHO WOULD TAKE IT FROM YOU
+SPOUT A LIE TO SELL YOURSELF
+YOU GO THEIR WAY OR GO
+IT'S THEM WE'LL BE DEFEATING
+IF WE KEEP ON REPEATING
+THERE'S NO PLACE LIKE HOME
+THERE'S NO PLACE LIKE HOME
+THERE'S NO PLACE LIKE HOME
+IF WE JUST KEEP FIGHTING FOR IT
+WE WILL WIN BACK AND RESTORE IT
+THERE'S NO PLACE LIKE HOME ##
  
 [LION] 
-So... you’re a good witch? 
+SO... YOU’RE A GOOD WITCH? 
  
 [GLINDA] 
-Suddenly appearing. Of course she’s good. She’s beautiful. But you’re all in great danger. The Wizard has a very bad plan. 
+OF COURSE SHE’S GOOD. SHE’S BEAUTIFUL. BUT YOU’RE ALL IN GREAT DANGER. THE WIZARD HAS A VERY BAD PLAN. 
  
 [LION]
-Danger?! What? Where? 
+DANGER?! WHAT? WHERE? 
  
 [GLINDA] 
-He appears to be a nice man, but he has no real power. He uses peoples’ differences to tear them apart.  
+HE APPEARS TO BE A NICE MAN, BUT HE HAS NO REAL POWER. HE USES PEOPLES’ DIFFERENCES TO TEAR THEM APART.  
  
 [DOROTHY] 
-No real power? So he can’t help me get home.  
+NO REAL POWER? SO HE CAN’T HELP ME GET HOME.  
  
 [GLINDA] 
-I’ll admit it – you've had the power to yourself the whole time. All you need to do is spin your ruby chair around three times and say “There’s No Place Like Home.” 
+I’LL ADMIT IT – YOU'VE HAD THE POWER TO YOURSELF THE WHOLE TIME. ALL YOU NEED TO DO IS SPIN YOUR RUBY CHAIR AROUND THREE TIMES AND SAY “THERE’S NO PLACE LIKE HOME.” 
  
 [DOROTHY] 
-Well that makes sense. But, I think my home is right here. With you all.  
+WELL THAT MAKES SENSE. BUT, I THINK MY HOME IS RIGHT HERE. WITH YOU ALL.  
  
 [TIN MAN] 
-That’s very sweet. But won’t your Aunt and Uncle miss you? You can always come back and visit.  Okay okay – let's hatchet a plan. 
+THAT’S VERY SWEET. BUT WON’T YOUR AUNT AND UNCLE MISS YOU? YOU CAN ALWAYS COME BACK AND VISIT.  OKAY OKAY – LET'S HATCHET A PLAN. 
  
-{The group whispers the plan down the line to one another. }
+{THE GROUP WHISPERS THE PLAN DOWN THE LINE TO ONE ANOTHER. }
  
 [ELPHABA] 
-We’re off to see the wizard. 
+WE’RE OFF TO SEE THE WIZARD. 
 ---
 
-# Emerald City 
+# EMERALD CITY 
 
-##SO YOU WANTED TO SEE THE [WIZARD]?
-
-
+##
 [WIZARD] 
 I AM OZ. THE GREAT AND POWERFUL. 
-SO YOU WANTED TO MEET THE WIZARD?
+## SO YOU WANTED TO MEET THE WIZARD?
 LET ME TELL YOU THAT YOU'VE COME TO THE RIGHT PLACE 
 SHALL I MAKE YOU A FROG OR A LIZARD 
 YOU SHOULD SEE THE STRANGE EXPRESSION ON YOUR FACE 
@@ -704,7 +674,7 @@ LET ME TELL YOU THAT WILL MAKE YOU GO AWAY!
  
 I FLY, AND THE MAGIC OF MY POWER TAKES ME HIGHER 
 TO A LEVEL WHERE THE CLOUDS TURN INTO FIRE 
-IN THE WARMNESS OF THE FIRE 
+IN THE WARM OF THE FIRE 
 I FEEL FINE 
  
 JUST KEEP YOUR EYES OPEN AND THE MAGIC YOU WILL SEE 
@@ -717,84 +687,88 @@ NOW COME AND TAKE MY HAND
 AND WE WILL DANCE 
 UPON THE WIND 
 SO YOU WANTED TO MEET THE WIZARD!!##
+
+[WIZARD]
+WHAT THE FUNK DO YOU WANT?
  
 [DOROTHY] 
-I’m trying to get back home. 
+I’M TRYING TO GET BACK HOME. 
  
 [SCARECROW] 
-Can you help me get a brain? 
+CAN YOU HELP ME GET A BRAIN? 
  
 [TIN MAN] 
-I need a heart. 
+I NEED A HEART. 
  
-{The lion is hiding. The others encourage him to talk to the wizard.}
+{THE LION IS HIDING. THE OTHERS ENCOURAGE HIM TO TALK TO THE WIZARD.}
  
 [LION] 
-I need courage.  
- 
-THE [WIZARD] 
-Bring me the broomstick of the Wicked Witch of the West and I will grant all your wishes. Now off with you before I change my mind! 
- 
-[ELPHABA] 
-Oh no you don’t! Come out here right now. 
+I NEED COURAGE.  
  
 [WIZARD] 
-Elphaba, is that you? What the heck?! I banished you and your sister! Where is she!
+BRING ME THE BROOMSTICK OF THE WICKED WITCH OF THE WEST AND I WILL GRANT ALL YOUR WISHES. NOW OFF WITH YOU BEFORE I CHANGE MY MIND! 
  
 [ELPHABA] 
-She’s gone.
+OH NO YOU DON’T! COME OUT HERE RIGHT NOW. 
+ 
+[WIZARD] 
+ELPHABA, IS THAT YOU? WHAT THE HECK?! I BANISHED YOU AND YOUR SISTER! WHERE IS SHE!
+ 
+[ELPHABA] 
+SHE’S GONE.
 
 [WIZARD]
-(Saracastically) Boo hoo! You are all alone! Nobody could love a mean, green witch. You all make me sick! I wanna throw up! I’m outta here!
+(SARACASTICALLY) BOO HOO! YOU ARE ALL ALONE! NOBODY COULD LOVE A MEAN, GREEN WITCH. YOU ALL MAKE ME SICK! I WANNA THROW UP! I’M OUTTA HERE!
 
-He tries to exit. 
+HE TRIES TO EXIT. 
  
 [GLINDA] 
-Not so fast. Where do you think you’re going?!
+NOT SO FAST. WHERE DO YOU THINK YOU’RE GOING?!
 
 [WIZARD]
-What is this? Why won’t you just let me leave?
+WHAT IS THIS? WHY WON’T YOU JUST LET ME LEAVE?
  
 [DOROTHY] 
-There need to be some changes here in Oz. IF I were the wizard I’d have everybody travel in a wheelchair for one day. 
+THERE NEED TO BE SOME CHANGES HERE IN OZ. IF I WERE THE WIZARD I’D HAVE EVERYBODY TRAVEL IN A WHEELCHAIR FOR ONE DAY. 
  
 [SCARECROW] 
-Accommodations need to be made so people without brains can get an education! 
+ACCOMMODATIONS NEED TO BE MADE SO PEOPLE WITHOUT BRAINS CAN GET AN EDUCATION! 
  
 [TIN MAN] 
-And that road of yours needs ramps and rails for people with mobility disorders. And stop taxing the oil cans! 
+AND THAT ROAD OF YOURS NEEDS RAMPS AND RAILS FOR PEOPLE WITH MOBILITY DISORDERS. AND STOP TAXING THE OIL CANS! 
  
 [LION] 
-And why is the haunted forest so... scary? There needs to be a welcoming, safe space for scaredy cats like me.  
+AND WHY IS THE HAUNTED FOREST SO... SCARY? THERE NEEDS TO BE A WELCOMING, SAFE SPACE FOR SCAREDY CATS LIKE ME.  
  
 [DOROTHY] 
-And lastly, you need to stop blaming everything on the Wicked Witch – I mean – on Elphaba. She may be green, but she is not mean, and she has a hell of a lot of heart, brains, and courage. And moxy and guts!  And I love her!
+AND LASTLY, YOU NEED TO STOP BLAMING EVERYTHING ON THE WICKED WITCH – I MEAN – ON ELPHABA. SHE MAY BE GREEN, BUT SHE IS NOT MEAN, AND SHE HAS A HELL OF A LOT OF HEART, BRAINS, AND COURAGE. AND MOXY AND GUTS!  AND I LOVE HER!
 
 [ALL]
-We love you Elphaba.
+WE LOVE YOU ELPHABA.
  
 [GLINDA] 
-I want you to leave Oz. I’ll make the pronouncement myself: that the strains of Wizardship have been too much, and you’re taking an indefinite—leave of absence. You’d better go get your balloon ready!
+I WANT YOU TO LEAVE OZ. I’LL MAKE THE PRONOUNCEMENT MYSELF: THAT THE STRAINS OF WIZARDSHIP HAVE BEEN TOO MUCH, AND YOU’RE TAKING AN INDEFINITE—LEAVE OF ABSENCE. YOU’D BETTER GO GET YOUR BALLOON READY!
 
 [ALL]
-Get out of here! Don’t trip on your road on your way out. 
+GET OUT OF HERE! DON’T TRIP ON YOUR ROAD ON YOUR WAY OUT. 
 
 [ELPHABA]
-And never return!
+AND NEVER RETURN!
 
 [GLINDA]
-I think Elphaba may just be our new Wiz. 
+I THINK ELPHABA MAY JUST BE OUR NEW WIZ. 
  
 [ELPHABA] 
-I don’t know about that.
-But, I think it’s time I help Dorothy go home now. 
+I DON’T KNOW ABOUT THAT.
+BUT, I THINK IT’S TIME I HELP DOROTHY GO HOME NOW. 
 
-[ELPHABA] Magically Summons a Hot Air Balloon.
  
 [DOROTHY] 
-Oh, but I will miss you all so much. 
+OH, BUT I WILL MISS YOU ALL SO MUCH. 
 ---
-# The Hot Air Balloon
+# THE HOT AIR BALLOON
+
+@image: images/Title_Card.jpeg
  
 ##DEFYING GRAVITY
 [DOROTHY]
@@ -833,10 +807,10 @@ KISS ME GOODBYE I’M DEFYING GRAVITY
 THEY’LL NEVER BRING US DOWN##
  
 [ELPHABA] 
-Glinda, Oz needs more than one ruler. Think of what we could do – Together. 
+GLINDA, OZ NEEDS MORE THAN ONE RULER. THINK OF WHAT WE COULD DO – TOGETHER. 
 
 [GLINDA]
-Sounds like a plan. This is just the beginning of our beautiful relationship.
+SOUNDS LIKE A PLAN. THIS IS JUST THE BEGINNING OF OUR BEAUTIFUL RELATIONSHIP.
  
 [ELPHABA & GLINDA]
 UNLIMITED TOGETHER WE’RE UNLIMITED 
