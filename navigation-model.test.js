@@ -2,6 +2,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  cueDistance,
+  cueIndex,
   movePosition,
   normalizePosition,
   positionsEqual,
@@ -74,4 +76,42 @@ test('normalizes invalid positions to script bounds', () => {
     }),
     { slideIndex: 3, lineIndex: 0, showTitleImage: false },
   );
+});
+
+test('assigns cue indexes across lines, images, and empty scenes', () => {
+  assert.equal(cueIndex(slides, {
+    slideIndex: 0,
+    lineIndex: 0,
+    showTitleImage: true,
+  }), 0);
+  assert.equal(cueIndex(slides, {
+    slideIndex: 0,
+    lineIndex: 0,
+    showTitleImage: false,
+  }), 1);
+  assert.equal(cueIndex(slides, {
+    slideIndex: 1,
+    lineIndex: 0,
+    showTitleImage: false,
+  }), 3);
+  assert.equal(cueIndex(slides, {
+    slideIndex: 2,
+    lineIndex: 0,
+    showTitleImage: true,
+  }), 4);
+  assert.equal(cueIndex(slides, {
+    slideIndex: 3,
+    lineIndex: 0,
+    showTitleImage: false,
+  }), 5);
+});
+
+test('calculates whether live is ahead, behind, or at the actor position', () => {
+  const actor = { slideIndex: 0, lineIndex: 1, showTitleImage: false };
+  const liveAhead = { slideIndex: 2, lineIndex: 0, showTitleImage: true };
+  const liveBehind = { slideIndex: 0, lineIndex: 0, showTitleImage: true };
+
+  assert.equal(cueDistance(slides, actor, liveAhead), 2);
+  assert.equal(cueDistance(slides, actor, liveBehind), -2);
+  assert.equal(cueDistance(slides, actor, actor), 0);
 });

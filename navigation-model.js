@@ -113,5 +113,42 @@
       && Boolean(left.showTitleImage) === Boolean(right.showTitleImage);
   }
 
-  return { movePosition, normalizePosition, positionsEqual };
+  function cueCount(slide) {
+    const lines = linesFor(slide);
+    if (slide && slide.titleImage) return Math.max(1, lines.length + 1);
+    return Math.max(1, lines.length);
+  }
+
+  function cueIndex(slides, position) {
+    if (!Array.isArray(slides) || slides.length === 0 || !position) return null;
+
+    const current = normalizePosition(slides, position);
+    const priorCues = slides
+      .slice(0, current.slideIndex)
+      .reduce((total, slide) => total + cueCount(slide), 0);
+    const slide = slides[current.slideIndex];
+    const lines = linesFor(slide);
+
+    if (slide.titleImage) {
+      if (current.showTitleImage || lines.length === 0) return priorCues;
+      return priorCues + current.lineIndex + 1;
+    }
+
+    return priorCues + (lines.length > 0 ? current.lineIndex : 0);
+  }
+
+  function cueDistance(slides, actorPosition, livePosition) {
+    const actorCue = cueIndex(slides, actorPosition);
+    const liveCue = cueIndex(slides, livePosition);
+    if (actorCue === null || liveCue === null) return null;
+    return liveCue - actorCue;
+  }
+
+  return {
+    cueDistance,
+    cueIndex,
+    movePosition,
+    normalizePosition,
+    positionsEqual,
+  };
 }));

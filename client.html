@@ -287,17 +287,33 @@
     flex-shrink: 0;
   }
   #actor-controls.visible { display: flex; }
+  #actor-status {
+    flex: 1 1 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    text-align: center;
+  }
   #actor-mode-status {
     font-family: var(--font-ui);
     font-size: 0.85rem;
     letter-spacing: 0.12em;
     color: var(--cream-dim);
-    min-width: 170px;
-    text-align: center;
   }
   #actor-mode-status[data-mode="FOLLOW_LIVE"] { color: var(--green); }
   #actor-mode-status[data-mode="BROWSING"] { color: var(--amber); }
   #actor-mode-status[data-mode="DISCONNECTED"] { color: var(--red); }
+  #actor-live-position,
+  #actor-live-relative {
+    font-family: var(--font-ui);
+    font-size: 0.82rem;
+    letter-spacing: 0.05em;
+    color: var(--cream-dim);
+  }
+  #actor-live-relative { color: var(--amber); }
+  #actor-live-relative:empty { display: none; }
 
   .ctrl-row {
     display: flex;
@@ -556,7 +572,11 @@
   </div>
 
   <div id="actor-controls">
-    <span id="actor-mode-status" data-mode="DISCONNECTED">CONNECTING</span>
+    <div id="actor-status">
+      <span id="actor-mode-status" data-mode="DISCONNECTED">CONNECTING</span>
+      <span id="actor-live-position">Live position unavailable</span>
+      <span id="actor-live-relative"></span>
+    </div>
     <button class="btn nav-big primary" id="btn-actor-prev">◀ Prev</button>
     <button class="btn nav-big primary" id="btn-actor-next">Next ▶</button>
     <button class="btn" id="btn-return-live" disabled>Return to Live</button>
@@ -611,6 +631,8 @@ const dom = {
   controller:     document.getElementById('controller'),
   actorControls:  document.getElementById('actor-controls'),
   actorModeStatus:document.getElementById('actor-mode-status'),
+  actorLivePosition:document.getElementById('actor-live-position'),
+  actorLiveRelative:document.getElementById('actor-live-relative'),
   connDot:        document.getElementById('conn-dot'),
   ctrlStatus:     document.getElementById('ctrl-status'),
   slideSelect:    document.getElementById('slide-select'),
@@ -820,6 +842,55 @@ function rebuildSlideSelect() {
 }
 
 // ── Actor actions ─────────────────────────────────────────────────────
+function livePositionLabel() {
+  if (!liveState || !slides.length) return 'Live position unavailable';
+
+  const position = NavigationModel.normalizePosition(slides, liveState);
+  const slide = slides[position.slideIndex];
+  let cueLabel = 'No dialogue';
+
+  if (position.showTitleImage && slide.titleImage) {
+    cueLabel = 'Title image';
+  } else if (slide.lines.length > 0) {
+    cueLabel = `Line ${position.lineIndex + 1}/${slide.lines.length}`;
+  }
+
+  const isFresh = connectionStatus === 'connected' && !waitingForLiveState;
+  const prefix = isFresh ? 'Live' : 'Last known live';
+  return `${prefix}: Scene ${position.slideIndex + 1}/${slides.length} · ${cueLabel}`;
+}
+
+function updateActorLiveAwareness() {
+  if (!isActor) return;
+
+  dom.actorLivePosition.textContent = livePositionLabel();
+  dom.actorLiveRelative.textContent = '';
+
+  if (
+    actorReadingState.mode !== ActorModeModel.MODES.BROWSING
+    || !actorReadingState.localPosition
+    || !liveState
+  ) {
+    return;
+  }
+
+  const distance = NavigationModel.cueDistance(
+    slides,
+    actorReadingState.localPosition,
+    liveState,
+  );
+  if (distance === null) return;
+
+  if (distance === 0) {
+    dom.actorLiveRelative.textContent = 'At live position.';
+  } else {
+    const cueLabel = Math.abs(distance) === 1 ? 'cue' : 'cues';
+    const relation = distance > 0 ? 'ahead' : 'behind';
+    dom.actorLiveRelative.textContent =
+      `Live is ${Math.abs(distance)} ${cueLabel} ${relation}.`;
+  }
+}
+
 function updateActorModeUI() {
   if (!isActor) return;
 
@@ -847,6 +918,7 @@ function updateActorModeUI() {
   }
 
   dom.btnReturnLive.disabled = !isBrowsing || !hasFreshLiveState;
+  updateActorLiveAwareness();
 }
 
 function navigateActor(direction) {

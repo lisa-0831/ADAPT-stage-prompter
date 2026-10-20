@@ -67,6 +67,11 @@ Select **Return to Live** to immediately display the latest Controller position
 and resume automatic updates. During a connection interruption, the status
 shows that the Actor is reconnecting instead of claiming to be live.
 
+While browsing, the Actor panel continues to show the current live scene and
+line, along with how many navigable cues Live is ahead of or behind the Actor's
+local position. Scene title images and empty scenes each count as navigable
+cues.
+
 ---
 
 ## Updating the script
