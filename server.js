@@ -313,5 +313,6 @@ server.listen(PORT, '0.0.0.0', () => {
     console.log(`   Network: http://${n.address}:${PORT}`);
   });
   console.log('\n   Controller: ?role=controller');
-  console.log('   Viewer:     (any other device)\n');
+  console.log('   Actor:     ?role=actor');
+  console.log('   Audience:  ?role=audience (default)\n');
 });

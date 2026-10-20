@@ -7,16 +7,19 @@ A real-time shared script display — all devices stay in sync automatically.
 ## Quick Start
 
 ### 1. Install dependencies (one time)
+
 ```bash
 npm install
 ```
 
 ### 2. Start the server
+
 ```bash
 node server.js
 ```
 
 The terminal will print your local network address, e.g.:
+
 ```
 🎭  Stage Prompter running on port 3000
    Local:   http://localhost:3000
@@ -25,37 +28,45 @@ The terminal will print your local network address, e.g.:
 
 ### 3. Open on devices
 
-| Device | URL |
-|---|---|
+| Role                                    | URL                                         |
+| --------------------------------------- | ------------------------------------------- |
 | **Controller** (person advancing lines) | `http://192.168.1.42:3000/?role=controller` |
-| All other viewers | `http://192.168.1.42:3000/` |
+| **Actor** (live script, no controls)    | `http://192.168.1.42:3000/?role=actor`      |
+| **Audience** (live script, no controls) | `http://192.168.1.42:3000/?role=audience`   |
 
 All devices must be on the same Wi-Fi network.
+
+Opening `/` without a role defaults to Audience. The legacy
+`?role=viewer` URL also opens the Audience view. Unknown role values redirect
+to `?role=viewer`, which uses the same non-interactive Audience view.
 
 ---
 
 ## Navigation (Controller only)
 
-| Action | Keyboard | On-screen |
-|---|---|---|
-| Next line | `→` `↓` `Space` | **Next ▶** button or tap right side of screen |
-| Previous line | `←` `↑` | **◀ Prev** button or tap left side |
-| Jump to next slide | `Page Down` | ⏭ button |
-| Jump to previous slide | `Page Up` | ⏮ button |
-| Jump to any slide | — | Slide dropdown |
+| Action                 | Keyboard        | On-screen                                     |
+| ---------------------- | --------------- | --------------------------------------------- |
+| Next line              | `→` `↓` `Space` | **Next ▶** button or tap right side of screen |
+| Previous line          | `←` `↑`         | **◀ Prev** button or tap left side            |
+| Jump to next slide     | `Page Down`     | ⏭ button                                     |
+| Jump to previous slide | `Page Up`       | ⏮ button                                     |
+| Jump to any slide      | —               | Slide dropdown                                |
 
-Viewers see every change instantly with no controls of their own.
+Actors and Audience members see every change instantly with no controls of
+their own.
 
 ---
 
 ## Updating the script
 
 ### Option A — Paste in browser (easiest)
+
 1. On the controller: click **📄 Replace Script**
 2. Paste your new script text
 3. Click **Upload & Go Live** — all screens update immediately
 
 ### Option B — Edit the file directly
+
 Edit `script.txt` in this folder, then on the controller click  
 **📄 Replace Script → Upload & Go Live** (or send a POST request).
 
@@ -65,17 +76,17 @@ Edit `script.txt` in this folder, then on the controller click
 
 ### Line types
 
-| Syntax | What it does |
-|---|---|
-| `# Title` | Starts a new scene |
-| `---` | Separates scenes (required between every scene) |
-| `@image: images/file.jpg` | Shows an image before the first line (optional) |
-| `[NAME]` on its own line | Character name shown in left sidebar |
-| `[NAME] & [NAME]` | Two characters speaking together |
-| `{stage direction}` | Italic brown text |
-| `## first lyric line` / `last lyric line ##` | Dark green lyrics block |
-| `<first sing-along line` / `last sing-along line>` | Pink sing-along block |
-| Plain text | Amber dialogue |
+| Syntax                                             | What it does                                    |
+| -------------------------------------------------- | ----------------------------------------------- |
+| `# Title`                                          | Starts a new scene                              |
+| `---`                                              | Separates scenes (required between every scene) |
+| `@image: images/file.jpg`                          | Shows an image before the first line (optional) |
+| `[NAME]` on its own line                           | Character name shown in left sidebar            |
+| `[NAME] & [NAME]`                                  | Two characters speaking together                |
+| `{stage direction}`                                | Italic brown text                               |
+| `## first lyric line` / `last lyric line ##`       | Dark green lyrics block                         |
+| `<first sing-along line` / `last sing-along line>` | Pink sing-along block                           |
+| Plain text                                         | Amber dialogue                                  |
 
 ### Example
 
@@ -106,6 +117,7 @@ Where are we?
 - Blank lines between speeches are ignored
 
 ### Notes
+
 - `---` must be on its own line with no spaces before or after
 - No blank lines immediately before or after `---`
 - `##` only needed at the very start and very end of a lyrics block
@@ -119,11 +131,12 @@ Where are we?
 
 - Pressing **Escape** or clicking **Exit** shows a confirmation dialog
 - You must tap **Confirm Exit** a second time to actually leave
-- Viewers have no navigation or exit controls
+- Actors and Audience members have no navigation or exit controls
 
 ---
 
 ## Running on a different port
+
 ```bash
 PORT=8080 node server.js
 ```
