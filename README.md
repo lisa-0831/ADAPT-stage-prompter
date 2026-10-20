@@ -63,9 +63,11 @@ Actors initially follow the Controller's live position. Using **Previous** or
 not move the Controller, Audience, or another Actor. The status changes from
 **FOLLOWING LIVE** to **BROWSING**.
 
-Select **Return to Live** to immediately display the latest Controller position
-and resume automatic updates. During a connection interruption, the status
-shows that the Actor is reconnecting instead of claiming to be live.
+Select **Return to Live** to briefly animate toward the latest Controller
+position and resume automatic updates. Long distances are condensed into a
+short transition. The transition is skipped when reduced motion is enabled.
+During a connection interruption, the status shows that the Actor is
+reconnecting instead of claiming to be live.
 
 While browsing, the Actor panel continues to show the current live scene and
 line, along with how many navigable cues Live is ahead of or behind the Actor's

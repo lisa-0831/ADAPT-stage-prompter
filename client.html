@@ -68,7 +68,8 @@
   #app { width: 100%; height: 100%; display: flex; flex-direction: column; }
 
   /* ── DISPLAY AREA ── */
-  #stage::before {
+  #stage::before,
+  #return-transition-snapshot::before {
     content: '';
     position: absolute;
     inset: 0;
@@ -76,12 +77,14 @@
     z-index: 0;
   }
 
-  #stage > * {
+  #stage > *,
+  #return-transition-snapshot > * {
     position: relative;
     z-index: 1;
   }
 
- #stage {
+ #stage,
+ #return-transition-snapshot {
     flex: 1;
     display: flex;
     flex-direction: column;
@@ -94,6 +97,11 @@
     background-image: url('background.jpg');
     background-size: cover;
     background-position: center;
+  }
+  #return-transition-snapshot {
+    flex: none;
+    cursor: default;
+    pointer-events: none;
   }
 
  #slide-title {
@@ -615,10 +623,14 @@ let slides = [];
 let liveState = null;
 let actorReadingState = ActorModeModel.followLive();
 let scriptRevision = null;
+let returnTransition = null;
 
-// ── DOM refs ──────────────────────────────────────────────────────────
+const RETURN_TRANSITION_DURATION = 400;
+
+// ── DOM refs ─────────────────────────────────────────────────────────
 const dom = {
   stage:          document.getElementById('stage'),
+  stageContent:   document.getElementById('stage-content'),
   connecting:     document.getElementById('connecting'),
   roleLabel:      document.getElementById('role-label'),
   slideTitle:     document.getElementById('slide-title'),
@@ -693,6 +705,10 @@ function connect() {
   };
 
   ws.onclose = () => {
+    cancelReturnTransition();
+    if (isActor && actorReadingState.mode === ActorModeModel.MODES.BROWSING) {
+      render();
+    }
     connectionStatus = 'reconnecting';
     waitingForLiveState = true;
     dom.connDot.classList.remove('connected');
@@ -708,6 +724,7 @@ function connect() {
       slides = msg.slides;
       scriptRevision = msg.revision;
       if (isActor && scriptChanged) {
+        cancelReturnTransition();
         actorReadingState = ActorModeModel.followLive();
         liveState = null;
         waitingForLiveState = true;
@@ -717,8 +734,12 @@ function connect() {
     } else if (msg.type === 'state') {
       liveState = msg.state;
       waitingForLiveState = false;
-      if (!isActor || actorReadingState.mode === ActorModeModel.MODES.FOLLOW_LIVE) {
-        render();
+      if (
+        !isActor
+        || actorReadingState.mode === ActorModeModel.MODES.FOLLOW_LIVE
+        || returnTransition
+      ) {
+        render(returnTransition ? liveState : null);
       }
       updateActorModeUI();
     }
@@ -760,9 +781,9 @@ function effectivePosition() {
     : liveState;
 }
 
-function render() {
+function render(positionOverride = null) {
   if (!slides.length) return;
-  const position = effectivePosition();
+  const position = positionOverride || effectivePosition();
   if (!position) return;
   const slide = slides[position.slideIndex] || { title: '', lines: [] };
   const li    = position.lineIndex;
@@ -899,7 +920,10 @@ function updateActorModeUI() {
     && !waitingForLiveState
     && Boolean(liveState);
 
-  if (isBrowsing) {
+  if (returnTransition) {
+    dom.actorModeStatus.textContent = 'RETURNING TO LIVE';
+    dom.actorModeStatus.dataset.mode = 'BROWSING';
+  } else if (isBrowsing) {
     dom.actorModeStatus.textContent = connectionStatus === 'connected'
       ? 'BROWSING'
       : 'BROWSING · RECONNECTING';
@@ -917,13 +941,15 @@ function updateActorModeUI() {
     dom.actorModeStatus.dataset.mode = 'FOLLOW_LIVE';
   }
 
-  dom.btnReturnLive.disabled = !isBrowsing || !hasFreshLiveState;
+  dom.btnReturnLive.disabled =
+    Boolean(returnTransition) || !isBrowsing || !hasFreshLiveState;
   updateActorLiveAwareness();
 }
 
 function navigateActor(direction) {
   if (!isActor || !slides.length) return;
 
+  cancelReturnTransition();
   const startingPosition = effectivePosition();
   if (!startingPosition) return;
   const nextPosition = NavigationModel.movePosition(slides, startingPosition, direction);
@@ -932,15 +958,105 @@ function navigateActor(direction) {
   render();
 }
 
+function cancelReturnTransition() {
+  if (!returnTransition) return;
+
+  clearTimeout(returnTransition.completionTimer);
+  returnTransition.outgoingAnimation.cancel();
+  returnTransition.incomingAnimation.cancel();
+  returnTransition.snapshot.remove();
+  returnTransition = null;
+}
+
+function finishReturnTransition() {
+  cancelReturnTransition();
+  actorReadingState = ActorModeModel.followLive();
+  render();
+  updateActorModeUI();
+}
+
+function createStageSnapshot() {
+  const bounds = dom.stage.getBoundingClientRect();
+  const snapshot = dom.stage.cloneNode(true);
+  snapshot.id = 'return-transition-snapshot';
+  Object.assign(snapshot.style, {
+    position: 'fixed',
+    top: `${bounds.top}px`,
+    left: `${bounds.left}px`,
+    width: `${bounds.width}px`,
+    height: `${bounds.height}px`,
+    margin: '0',
+    zIndex: '50',
+  });
+  document.body.appendChild(snapshot);
+  return snapshot;
+}
+
+function startReturnTransition(direction) {
+  if (!dom.stage.animate) {
+    finishReturnTransition();
+    return;
+  }
+
+  const snapshot = createStageSnapshot();
+  render(liveState);
+
+  const offset = direction > 0 ? -48 : 48;
+  const animationOptions = {
+    duration: RETURN_TRANSITION_DURATION,
+    easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
+    fill: 'both',
+  };
+  const outgoingAnimation = snapshot.animate([
+    { opacity: 1, transform: 'translateY(0)' },
+    { opacity: 0, transform: `translateY(${offset}px)` },
+  ], animationOptions);
+  const incomingAnimation = dom.stage.animate([
+    { opacity: 0.65, transform: `translateY(${-offset}px)` },
+    { opacity: 1, transform: 'translateY(0)' },
+  ], animationOptions);
+
+  const transition = {
+    completionTimer: null,
+    incomingAnimation,
+    outgoingAnimation,
+    snapshot,
+  };
+  returnTransition = transition;
+  transition.completionTimer = setTimeout(() => {
+    if (returnTransition === transition) finishReturnTransition();
+  }, RETURN_TRANSITION_DURATION + 30);
+  updateActorModeUI();
+
+  Promise.allSettled([
+    outgoingAnimation.finished,
+    incomingAnimation.finished,
+  ]).then(() => {
+    if (returnTransition === transition) finishReturnTransition();
+  });
+}
+
 function returnActorToLive() {
   const hasFreshLiveState = connectionStatus === 'connected'
     && !waitingForLiveState
     && Boolean(liveState);
   if (!isActor || !hasFreshLiveState) return;
 
-  actorReadingState = ActorModeModel.followLive();
-  updateActorModeUI();
-  render();
+  const reducedMotion = window.matchMedia(
+    '(prefers-reduced-motion: reduce)',
+  ).matches;
+  const distance = NavigationModel.cueDistance(
+    slides,
+    actorReadingState.localPosition,
+    liveState,
+  );
+  if (reducedMotion || distance === null || distance === 0) {
+    finishReturnTransition();
+    return;
+  }
+
+  cancelReturnTransition();
+  startReturnTransition(distance);
 }
 
 if (isActor) {
