@@ -280,11 +280,24 @@
     border-top: 1px solid var(--border);
     padding: 12px 16px 16px;
     display: none;
+    align-items: center;
     justify-content: center;
+    flex-wrap: wrap;
     gap: 12px;
     flex-shrink: 0;
   }
   #actor-controls.visible { display: flex; }
+  #actor-mode-status {
+    font-family: var(--font-ui);
+    font-size: 0.85rem;
+    letter-spacing: 0.12em;
+    color: var(--cream-dim);
+    min-width: 170px;
+    text-align: center;
+  }
+  #actor-mode-status[data-mode="FOLLOW_LIVE"] { color: var(--green); }
+  #actor-mode-status[data-mode="BROWSING"] { color: var(--amber); }
+  #actor-mode-status[data-mode="DISCONNECTED"] { color: var(--red); }
 
   .ctrl-row {
     display: flex;
@@ -310,6 +323,12 @@
   }
   .btn:hover { background: #222; color: var(--cream); border-color: #444; }
   .btn:active { background: #2a2a2a; }
+  .btn:disabled { opacity: 0.4; cursor: default; }
+  .btn:disabled:hover {
+    background: var(--bg3);
+    color: var(--cream-dim);
+    border-color: var(--border);
+  }
 
   .btn.primary {
     background: var(--amber);
@@ -537,8 +556,10 @@
   </div>
 
   <div id="actor-controls">
+    <span id="actor-mode-status" data-mode="DISCONNECTED">CONNECTING</span>
     <button class="btn nav-big primary" id="btn-actor-prev">◀ Prev</button>
     <button class="btn nav-big primary" id="btn-actor-next">Next ▶</button>
+    <button class="btn" id="btn-return-live" disabled>Return to Live</button>
   </div>
 </div>
 
@@ -553,6 +574,7 @@
 
 <script src="role-model.js"></script>
 <script src="navigation-model.js"></script>
+<script src="actor-mode-model.js"></script>
 <script>
 // ── Role detection ────────────────────────────────────────────────────
 const params = new URLSearchParams(location.search);
@@ -570,8 +592,8 @@ const isActor = role === RoleModel.ROLES.ACTOR;
 
 // ── State ─────────────────────────────────────────────────────────────
 let slides = [];
-let liveState = { slideIndex: 0, lineIndex: 0, showTitleImage: false };
-let localPosition = null;
+let liveState = null;
+let actorReadingState = ActorModeModel.followLive();
 let scriptRevision = null;
 
 // ── DOM refs ──────────────────────────────────────────────────────────
@@ -588,6 +610,7 @@ const dom = {
   progressFill:   document.getElementById('progress-fill'),
   controller:     document.getElementById('controller'),
   actorControls:  document.getElementById('actor-controls'),
+  actorModeStatus:document.getElementById('actor-mode-status'),
   connDot:        document.getElementById('conn-dot'),
   ctrlStatus:     document.getElementById('ctrl-status'),
   slideSelect:    document.getElementById('slide-select'),
@@ -606,6 +629,7 @@ const dom = {
   btnConfirmExit: document.getElementById('btn-confirm-exit'),
   btnActorPrev:   document.getElementById('btn-actor-prev'),
   btnActorNext:   document.getElementById('btn-actor-next'),
+  btnReturnLive:  document.getElementById('btn-return-live'),
   zonePrev:       document.getElementById('zone-prev'),
   zoneNext:       document.getElementById('zone-next'),
   titleOverlay: document.getElementById('title-image-overlay'),
@@ -631,6 +655,8 @@ if (isController) {
 // ── WebSocket ─────────────────────────────────────────────────────────
 let ws;
 let reconnectTimer;
+let connectionStatus = 'connecting';
+let waitingForLiveState = true;
 
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -638,13 +664,18 @@ function connect() {
 
   ws.onopen = () => {
     clearTimeout(reconnectTimer);
+    connectionStatus = 'connected';
     dom.connDot.classList.add('connected');
     dom.connecting.style.display = 'none';
+    updateActorModeUI();
   };
 
   ws.onclose = () => {
+    connectionStatus = 'reconnecting';
+    waitingForLiveState = true;
     dom.connDot.classList.remove('connected');
     dom.connecting.style.display = 'flex';
+    updateActorModeUI();
     reconnectTimer = setTimeout(connect, 1500);
   };
 
@@ -654,11 +685,20 @@ function connect() {
       const scriptChanged = scriptRevision !== null && msg.revision !== scriptRevision;
       slides = msg.slides;
       scriptRevision = msg.revision;
-      if (isActor && scriptChanged) localPosition = null;
+      if (isActor && scriptChanged) {
+        actorReadingState = ActorModeModel.followLive();
+        liveState = null;
+        waitingForLiveState = true;
+      }
       rebuildSlideSelect();
+      updateActorModeUI();
     } else if (msg.type === 'state') {
       liveState = msg.state;
-      render();
+      waitingForLiveState = false;
+      if (!isActor || actorReadingState.mode === ActorModeModel.MODES.FOLLOW_LIVE) {
+        render();
+      }
+      updateActorModeUI();
     }
   };
 }
@@ -693,12 +733,15 @@ function displayText(text, type) {
 
 // ── Render ────────────────────────────────────────────────────────────
 function effectivePosition() {
-  return isActor && localPosition ? localPosition : liveState;
+  return isActor
+    ? ActorModeModel.effectivePosition(actorReadingState, liveState)
+    : liveState;
 }
 
 function render() {
   if (!slides.length) return;
   const position = effectivePosition();
+  if (!position) return;
   const slide = slides[position.slideIndex] || { title: '', lines: [] };
   const li    = position.lineIndex;
   const lines = slide.lines; // array of { text, speaker }
@@ -777,20 +820,61 @@ function rebuildSlideSelect() {
 }
 
 // ── Actor actions ─────────────────────────────────────────────────────
+function updateActorModeUI() {
+  if (!isActor) return;
+
+  const isBrowsing = actorReadingState.mode === ActorModeModel.MODES.BROWSING;
+  const hasFreshLiveState = connectionStatus === 'connected'
+    && !waitingForLiveState
+    && Boolean(liveState);
+
+  if (isBrowsing) {
+    dom.actorModeStatus.textContent = connectionStatus === 'connected'
+      ? 'BROWSING'
+      : 'BROWSING · RECONNECTING';
+    dom.actorModeStatus.dataset.mode = 'BROWSING';
+  } else if (connectionStatus === 'connecting') {
+    dom.actorModeStatus.textContent = 'CONNECTING';
+    dom.actorModeStatus.dataset.mode = 'DISCONNECTED';
+  } else if (!hasFreshLiveState) {
+    dom.actorModeStatus.textContent = connectionStatus === 'connected'
+      ? 'WAITING FOR LIVE'
+      : 'RECONNECTING';
+    dom.actorModeStatus.dataset.mode = 'DISCONNECTED';
+  } else {
+    dom.actorModeStatus.textContent = 'FOLLOWING LIVE';
+    dom.actorModeStatus.dataset.mode = 'FOLLOW_LIVE';
+  }
+
+  dom.btnReturnLive.disabled = !isBrowsing || !hasFreshLiveState;
+}
+
 function navigateActor(direction) {
   if (!isActor || !slides.length) return;
 
   const startingPosition = effectivePosition();
+  if (!startingPosition) return;
   const nextPosition = NavigationModel.movePosition(slides, startingPosition, direction);
-  if (localPosition || !NavigationModel.positionsEqual(startingPosition, nextPosition)) {
-    localPosition = nextPosition;
-    render();
-  }
+  actorReadingState = ActorModeModel.browse(nextPosition);
+  updateActorModeUI();
+  render();
+}
+
+function returnActorToLive() {
+  const hasFreshLiveState = connectionStatus === 'connected'
+    && !waitingForLiveState
+    && Boolean(liveState);
+  if (!isActor || !hasFreshLiveState) return;
+
+  actorReadingState = ActorModeModel.followLive();
+  updateActorModeUI();
+  render();
 }
 
 if (isActor) {
   dom.btnActorPrev.onclick = () => navigateActor('prev');
   dom.btnActorNext.onclick = () => navigateActor('next');
+  dom.btnReturnLive.onclick = returnActorToLive;
 }
 
 // ── Controller actions ────────────────────────────────────────────────

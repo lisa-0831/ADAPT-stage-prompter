@@ -60,8 +60,12 @@ Audience members see every live change instantly with no controls of their own.
 
 Actors initially follow the Controller's live position. Using **Previous** or
 **Next** switches only that browser to an independent reading position; it does
-not move the Controller, Audience, or another Actor. Reloading the page returns
-the Actor to the current live position.
+not move the Controller, Audience, or another Actor. The status changes from
+**FOLLOWING LIVE** to **BROWSING**.
+
+Select **Return to Live** to immediately display the latest Controller position
+and resume automatic updates. During a connection interruption, the status
+shows that the Actor is reconnecting instead of claiming to be live.
 
 ---
 
@@ -139,7 +143,7 @@ Where are we?
 
 - Pressing **Escape** or clicking **Exit** shows a confirmation dialog
 - You must tap **Confirm Exit** a second time to actually leave
-- Actors have only their independent Previous and Next controls
+- Actors have Previous, Next, and Return to Live controls
 - Audience members have no navigation or exit controls
 
 ---
