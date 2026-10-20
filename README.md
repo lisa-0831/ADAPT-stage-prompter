@@ -31,7 +31,7 @@ The terminal will print your local network address, e.g.:
 | Role                                    | URL                                         |
 | --------------------------------------- | ------------------------------------------- |
 | **Controller** (person advancing lines) | `http://192.168.1.42:3000/?role=controller` |
-| **Actor** (live script, no controls)    | `http://192.168.1.42:3000/?role=actor`      |
+| **Actor** (independent reading controls) | `http://192.168.1.42:3000/?role=actor`      |
 | **Audience** (live script, no controls) | `http://192.168.1.42:3000/?role=audience`   |
 
 All devices must be on the same Wi-Fi network.
@@ -42,7 +42,9 @@ to `?role=viewer`, which uses the same non-interactive Audience view.
 
 ---
 
-## Navigation (Controller only)
+## Navigation
+
+### Controller navigation
 
 | Action                 | Keyboard        | On-screen                                     |
 | ---------------------- | --------------- | --------------------------------------------- |
@@ -52,8 +54,14 @@ to `?role=viewer`, which uses the same non-interactive Audience view.
 | Jump to previous slide | `Page Up`       | ⏮ button                                     |
 | Jump to any slide      | —               | Slide dropdown                                |
 
-Actors and Audience members see every change instantly with no controls of
-their own.
+Audience members see every live change instantly with no controls of their own.
+
+### Actor navigation
+
+Actors initially follow the Controller's live position. Using **Previous** or
+**Next** switches only that browser to an independent reading position; it does
+not move the Controller, Audience, or another Actor. Reloading the page returns
+the Actor to the current live position.
 
 ---
 
@@ -131,7 +139,8 @@ Where are we?
 
 - Pressing **Escape** or clicking **Exit** shows a confirmation dialog
 - You must tap **Confirm Exit** a second time to actually leave
-- Actors and Audience members have no navigation or exit controls
+- Actors have only their independent Previous and Next controls
+- Audience members have no navigation or exit controls
 
 ---
 
