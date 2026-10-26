@@ -74,6 +74,19 @@ line, along with how many navigable cues Live is ahead of or behind the Actor's
 local position. Scene title images and empty scenes each count as navigable
 cues.
 
+Actor input options:
+
+- Use the large **Previous**, **Next**, and **Return to Live** buttons.
+- Tap the left edge of the script display for Previous.
+- Tap the right edge of the script display for Next.
+- Press `←` or `↑` for Previous.
+- Press `→`, `↓`, or `Space` for Next.
+
+Keyboard shortcuts are ignored while a button, link, input, select, or text
+field has focus, preventing one action from navigating twice. During a
+temporary disconnection, loaded script content and Actor-local controls remain
+available while the status reports that the connection is being restored.
+
 ---
 
 ## Updating the script
