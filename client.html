@@ -476,6 +476,17 @@
     text-align: center;
   }
 
+  #btn-case {
+    text-transform: none;
+    letter-spacing: 0;
+    font-family: var(--font-mono);
+    min-width: 3rem;
+  }
+  #btn-case[aria-pressed="true"] {
+    color: var(--cream);
+    border-color: var(--amber-dim);
+  }
+
   #slide-select {
     font-family: var(--font-ui);
     font-size: 1.2rem;
@@ -717,6 +728,7 @@
     </div>
 
     <div class="ctrl-row">
+      <button class="btn" id="btn-case" type="button" aria-pressed="false" title="Switch to sentence case">AA</button>
       <button class="btn" id="btn-upload-toggle">📄 Replace Script</button>
       <button class="btn danger" id="btn-exit">Exit</button>
     </div>
@@ -769,6 +781,7 @@
 <script src="actor-mode-model.js"></script>
 <script src="actor-input-model.js"></script>
 <script src="subtitle-layout.js"></script>
+<script src="caption-case.js"></script>
 <script>
 // ── Role detection ────────────────────────────────────────────────────
 const params = new URLSearchParams(location.search);
@@ -791,6 +804,14 @@ let liveState = null;
 let actorReadingState = ActorModeModel.followLive();
 let scriptRevision = null;
 let returnTransition = null;
+let sentenceCase = false;
+if (isController) {
+  try {
+    sentenceCase = sessionStorage.getItem('prompter-caption-case') === 'sentence';
+  } catch (_) {
+    sentenceCase = false;
+  }
+}
 
 const RETURN_TRANSITION_DURATION = 400;
 
@@ -819,6 +840,7 @@ const dom = {
   btnNext:        document.getElementById('btn-next'),
   btnPrevSlide:   document.getElementById('btn-prev-slide'),
   btnNextSlide:   document.getElementById('btn-next-slide'),
+  btnCase:        document.getElementById('btn-case'),
   btnUploadToggle:document.getElementById('btn-upload-toggle'),
   btnUploadSubmit:document.getElementById('btn-upload-submit'),
   btnUploadCancel:document.getElementById('btn-upload-cancel'),
@@ -947,6 +969,19 @@ function displayText(text, type) {
   return text;
 }
 
+function shownCueText(text, type) {
+  const plain = displayText(text, type);
+  if (!(isController && sentenceCase)) return plain;
+  return CaptionCase.toSentenceCase(plain);
+}
+
+function updateCaseButton() {
+  if (!dom.btnCase) return;
+  dom.btnCase.setAttribute('aria-pressed', sentenceCase ? 'true' : 'false');
+  dom.btnCase.textContent = sentenceCase ? 'Aa' : 'AA';
+  dom.btnCase.title = sentenceCase ? 'Switch to all caps' : 'Switch to sentence case';
+}
+
 // ── Render ────────────────────────────────────────────────────────────
 function effectivePosition() {
   return isActor
@@ -1004,7 +1039,7 @@ function render(positionOverride = null) {
 
     const textEl = document.createElement('div');
     textEl.className = `script-line ${type}`;
-    textEl.textContent = displayText(text, type);
+    textEl.textContent = shownCueText(text, type);
 
     row.appendChild(nameEl);
     row.appendChild(textEl);
@@ -1260,6 +1295,18 @@ if (isActor) {
 
 // ── Controller actions ────────────────────────────────────────────────
 if (isController) {
+  updateCaseButton();
+  dom.btnCase.onclick = () => {
+    sentenceCase = !sentenceCase;
+    try {
+      sessionStorage.setItem('prompter-caption-case', sentenceCase ? 'sentence' : 'caps');
+    } catch (_) {
+      // The toggle still applies for this page load.
+    }
+    updateCaseButton();
+    render();
+  };
+
   dom.btnNext.onclick      = () => send({ type: 'navigate', direction: 'next' });
   dom.btnPrev.onclick      = () => send({ type: 'navigate', direction: 'prev' });
   dom.btnNextSlide.onclick = () => send({ type: 'navigate', direction: 'nextSlide' });
