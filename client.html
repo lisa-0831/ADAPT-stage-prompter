@@ -52,10 +52,29 @@
     --font-mono:  'Netto', 'Courier New', monospace;
     --font-ui:    'Engravers Gothic', 'Helvetica Neue', sans-serif;
     --vh: 1vh;
+    /* Fallback before role-specific sizes apply. Uses both axes so a
+       short or narrow stage cannot force an oversized line. */
+    --caption-size: clamp(1.75rem, calc(0.9rem + min(3.2cqw, 5.2cqh)), 4.5rem);
+    --title-size: clamp(1.25rem, calc(0.6rem + min(1.8cqw, 3.2cqh)), 3rem);
+  }
+
+  html { font-size: 100%; }
+  html[data-role="audience"] {
+    --caption-size: clamp(1.75rem, calc(0.9rem + min(3.2cqw, 5.2cqh)), 4.5rem);
+    --title-size: clamp(1.35rem, calc(0.55rem + min(1.7cqw, 3cqh)), 3.25rem);
+  }
+  html[data-role="actor"] {
+    --caption-size: clamp(1.7rem, calc(0.95rem + min(3.4cqw, 8cqh)), 3.5rem);
+    --title-size: clamp(1.2rem, calc(0.55rem + min(1.6cqw, 3.2cqh)), 2.75rem);
+  }
+  html[data-role="controller"] {
+    --caption-size: clamp(1.55rem, calc(0.85rem + min(2.1cqw, 5cqh)), 2.75rem);
+    --title-size: clamp(1.15rem, calc(0.5rem + min(1.45cqw, 2.8cqh)), 2.4rem);
   }
 
   html, body {
     height: 100%;
+    height: 100dvh;
     background: var(--bg);
     color: var(--cream);
     font-family: var(--font-mono);
@@ -65,7 +84,13 @@
   }
 
   /* ── Layout shells ── */
-  #app { width: 100%; height: 100%; display: flex; flex-direction: column; }
+  #app {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
 
   /* ── DISPLAY AREA ── */
   #stage::before,
@@ -85,14 +110,21 @@
 
  #stage,
  #return-transition-snapshot {
-    flex: 1;
+    container: stage / size;
+    flex: 1 1 auto;
+    min-height: 0;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     justify-content: flex-start;
     align-items: center;
-    padding: 4vw 2vw;
+    padding: clamp(0.65rem, 2.2vh, 2rem) clamp(0.75rem, 2vw, 2.5rem);
     position: relative;
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(245, 200, 66, 0.45) transparent;
     cursor: pointer;
     background-image: url('background.jpg');
     background-size: cover;
@@ -106,16 +138,19 @@
 
  #slide-title {
     font-family: var(--font-ui);
-    font-size: clamp(1.4rem, 2.8vw, 2.2rem);
+    font-size: 1.35rem;
+    font-size: var(--title-size);
     letter-spacing: 0.25em;
     text-transform: uppercase;
     color: var(--amber-dim);
     text-align: center;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    white-space: normal;
+    overflow: visible;
+    overflow-wrap: anywhere;
     width: 100%;
-    padding: 0.5vh 0 0.6vh;
+    max-width: 100%;
+    line-height: 1.25;
+    padding: 0.35rem 4.25rem 0.5rem;
     border-bottom: 1px solid #222;
     margin-bottom: 0;
     flex-shrink: 0;
@@ -124,107 +159,122 @@
   #title-image-overlay {
     display: none;
     width: 100%;
-    flex: 1;
+    flex: 1 1 auto;
+    min-height: 0;
     align-items: center;
     justify-content: center;
-    padding: 2vh 2vw;
+    padding: clamp(0.5rem, 2cqh, 1.5rem) clamp(0.5rem, 2cqw, 1.5rem);
+    overflow: hidden;
   }
   #title-image-overlay.show {
     display: flex;
   }
+  /* The image cue replaces dialogue; stale lines should not remain beside it. */
+  #title-image-overlay.show ~ #stage-content {
+    display: none;
+  }
   #title-image {
-    max-width: 90%;
-    max-height: 80vh;
+    max-width: min(92%, 100%);
+    max-height: min(70cqh, 78vh);
+    width: auto;
+    height: auto;
     object-fit: contain;
     border-radius: 4px;
   }
 
   #stage-content {
-    flex: 1;
+    flex: 1 1 auto;
     display: flex;
     flex-direction: column;
     justify-content: flex-start;
-    align-items: center;
-    width: 100%;
-    overflow: hidden;
-    /* padding-top: 5vh; */
-  }
-  /* #lines-container {
-    width: 100%;
-    max-width: 1100px;
-    display: flex;
-    flex-direction: column;
-    gap: 0.35em;
     align-items: stretch;
-  } */
+    width: 100%;
+    min-width: 0;
+    min-height: min-content;
+    overflow: visible;
+  }
+
+  #lines-past,
+  #lines-current,
+  #lines-future {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    align-self: stretch;
+  }
 
   #lines-past {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  align-items: stretch;
-  width: 100%;
-  max-width: 1300px;
-  gap: 0.35em;
-  padding-bottom: 0.5em;
-  overflow: hidden;
-}
+    flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: stretch;
+    gap: 0.35em;
+    padding-bottom: 0.45em;
+    min-height: 0;
+    overflow: hidden;
+  }
 
-#lines-current {
-  width: 100%;
-  max-width: 1300px;
-  flex-shrink: 0;
-}
+  #lines-current {
+    flex: 0 0 auto;
+    overflow: visible;
+  }
 
-#lines-future {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-start;
-  align-items: stretch;
-  width: 100%;
-  max-width: 1300px;
-  gap: 0.35em;
-  padding-top: 0.5em;
-  overflow: hidden;
-}
+  #lines-future {
+    flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: stretch;
+    gap: 0.35em;
+    padding-top: 0.45em;
+    min-height: 0;
+    overflow: hidden;
+  }
 
   /* ── Row: char name sidebar + line text ── */
   .line-row {
     display: flex;
     align-items: baseline;
-    gap: 2em;
+    gap: 0.7em;
     width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    font-size: 1.7rem;
+    font-size: var(--caption-size);
     transition: opacity 0.18s ease;
-    margin-bottom: 1em;
+    margin-bottom: 0.5em;
   }
   .line-row.past   { opacity: 0.45; }
   .line-row.future { opacity: 0.35; }
 
   .char-name {
     font-family: var(--font-ui);
-    font-size: clamp(1.3rem, 2vw, 1.7rem);
+    font-size: 0.56em;
     font-weight: 700;
-    letter-spacing: 0.14em;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
     color: var(--amber-dim);
-    min-width: 160px;
-    max-width: 160px;
+    flex: 0 0 clamp(4.5rem, 20%, 20rem);
+    width: clamp(4.5rem, 20%, 20rem);
+    max-width: 38%;
+    min-width: 0;
     text-align: right;
-    flex-shrink: 0;
     padding-top: 0.2em;
-    line-height: 1.4;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
   }
   .char-name.empty { visibility: hidden; }
 
   /* ── Line text ── */
   .script-line {
-    flex: 1;
-    line-height: 1.4;
+    flex: 1 1 auto;
+    min-width: 0;
     max-width: 100%;
-    word-break: break-word;
-    font-size: clamp(1.5rem, 3.2vw, 2.4rem);
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+    word-break: normal;
+    font-size: 1em;
     color: var(--amber);
     transition: color 0.18s ease;
   }
@@ -248,11 +298,13 @@
 
   /* Highlight bar under current line */
   #cursor-bar {
-    width: clamp(60px, 12vw, 160px);
+    width: clamp(3.5rem, 12cqw, 12rem);
+    max-width: 40%;
     height: 3px;
     background: var(--amber);
     border-radius: 2px;
-    margin-top: 1.2vh;
+    margin-top: 0.6em;
+    flex-shrink: 0;
     opacity: 0.7;
     transition: opacity 0.2s;
   }
@@ -527,6 +579,31 @@
     flex: 0 0 24%;
   }
 
+  @media (max-height: 700px) {
+    #controller,
+    #actor-controls {
+      max-height: 52vh;
+      overflow-x: hidden;
+      overflow-y: auto;
+    }
+  }
+
+  @media (max-width: 520px) {
+    .line-row {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0.2em;
+    }
+    .char-name {
+      width: auto;
+      max-width: none;
+      flex: none;
+      text-align: left;
+    }
+    .char-name.empty { display: none; }
+    #slide-title { padding: 1.5rem 0.6rem 0.45rem; }
+  }
+
   @media (max-width: 640px) {
     #actor-controls {
       padding: 10px 12px 12px;
@@ -677,6 +754,7 @@
 <script src="navigation-model.js"></script>
 <script src="actor-mode-model.js"></script>
 <script src="actor-input-model.js"></script>
+<script src="subtitle-layout.js"></script>
 <script>
 // ── Role detection ────────────────────────────────────────────────────
 const params = new URLSearchParams(location.search);
@@ -689,6 +767,7 @@ if (requestedRole !== null && !RoleModel.isKnownUrlRole(requestedRole)) {
 }
 
 const role = RoleModel.resolveRole(requestedRole);
+document.documentElement.dataset.role = role;
 const isController = role === RoleModel.ROLES.CONTROLLER;
 const isActor = role === RoleModel.ROLES.ACTOR;
 
@@ -874,6 +953,7 @@ function render(positionOverride = null) {
   if (position.showTitleImage && slide.titleImage) {
     dom.titleImage.src = slide.titleImage;
     dom.titleOverlay.classList.add('show');
+    dom.stage.scrollTop = 0;
     return; // don't render lines while image is showing
   } else {
     dom.titleOverlay.classList.remove('show');
@@ -899,8 +979,8 @@ function render(positionOverride = null) {
     const row = document.createElement('div');
     row.className = `line-row ${position}`;
     if (type === 'direction') {
-      if (i > from) row.style.marginTop = '2.8em';
-      row.style.marginBottom = '2.8em';
+      if (i > from) row.style.marginTop = SubtitleLayout.DIRECTION_BLOCK_GAP;
+      row.style.marginBottom = SubtitleLayout.DIRECTION_BLOCK_GAP;
     }
 
     const nameEl = document.createElement('div');
@@ -929,6 +1009,24 @@ function render(positionOverride = null) {
   }
 
   dom.ctrlStatus.textContent = `Slide ${position.slideIndex + 1}/${slides.length} · Line ${position.lineIndex + 1}/${lines.length}`;
+  revealCurrentCue();
+}
+
+function revealCurrentCue() {
+  const stage = dom.stage;
+  const current = dom.linesCurrent;
+  stage.scrollTop = 0;
+  if (!current || current.childElementCount === 0) return;
+
+  const stageRect = stage.getBoundingClientRect();
+  const currentRect = current.getBoundingClientRect();
+  const offset = SubtitleLayout.cueRevealOffset({
+    stageTop: stageRect.top,
+    stageBottom: stageRect.bottom,
+    cueTop: currentRect.top,
+    cueBottom: currentRect.bottom,
+  });
+  if (offset > 0) stage.scrollTop = offset;
 }
 
 function rebuildSlideSelect() {

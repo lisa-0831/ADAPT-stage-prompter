@@ -36,6 +36,13 @@ The terminal will print your local network address, e.g.:
 
 All devices must be on the same Wi-Fi network.
 
+Captions scale with the space on each screen. Audience text is the largest, so it
+stays readable when projected. Actor and Controller text is slightly smaller so
+the navigation controls stay on screen. Long lines wrap. When a cue is taller
+than the display, including at higher browser zoom, the caption area scrolls and
+opens on that cue. Scene titles wrap instead of being cut off. Stage directions
+keep a gap that scales with the caption.
+
 Opening `/` without a role defaults to Audience. The legacy
 `?role=viewer` URL also opens the Audience view. Unknown role values redirect
 to `?role=viewer`, which uses the same non-interactive Audience view.
