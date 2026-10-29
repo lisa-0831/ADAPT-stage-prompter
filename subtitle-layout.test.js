@@ -107,6 +107,13 @@ test('a tall active cue is scrolled into view only when it is not already readab
   }), 0);
 });
 
+test('lines before and after the current cue use the same paler ink', () => {
+  assert.match(client, /\.line-row\.past,\s*\.line-row\.future\s*\{[^}]*--idle-strength:\s*32%/);
+  assert.match(client, /\.line-row\.past \.script-line,\s*\.line-row\.future \.script-line\s*\{[^}]*color-mix\(in srgb, var\(--ink\) var\(--idle-strength\), var\(--bg\)\)/);
+  assert.doesNotMatch(client, /\.line-row\.past\s*\{\s*opacity:/);
+  assert.doesNotMatch(client, /future-\$\{ahead\}/);
+});
+
 test('layout keeps caption overflow inside the stage and preserves actor controls', () => {
   assert.match(client, /#stage[\s\S]*?min-height:\s*0/);
   assert.match(client, /#stage[\s\S]*?overflow-y:\s*auto/);

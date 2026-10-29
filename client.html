@@ -245,8 +245,11 @@
     transition: opacity 0.18s ease;
     margin-bottom: 0.5em;
   }
-  .line-row.past   { opacity: 0.45; }
-  .line-row.future { opacity: 0.35; }
+  /* Apple Music holds the active line at full brightness and the
+     lines around it near 30% of that brightness. Mix toward the
+     stage background so the hue stays while the luminance drops. */
+  .line-row.past,
+  .line-row.future { --idle-strength: 32%; }
 
   .char-name {
     font-family: var(--font-ui);
@@ -255,6 +258,7 @@
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: var(--amber-dim);
+    transition: color 0.18s ease;
     flex: 0 0 clamp(4.5rem, 20%, 20rem);
     width: clamp(4.5rem, 20%, 20rem);
     max-width: 38%;
@@ -275,7 +279,8 @@
     overflow-wrap: anywhere;
     word-break: normal;
     font-size: 1em;
-    color: var(--amber);
+    --ink: var(--amber);
+    color: var(--ink);
     transition: color 0.18s ease;
   }
 
@@ -283,17 +288,26 @@
   .script-line.direction {
     font-family: 'Netto', 'Courier New', monospace;
     font-style: italic;
-    color: var(--direction) !important;
+    --ink: var(--direction);
   }
 
   /* Song lyrics — ##…## — dark green */
   .script-line.lyric {
-    color: var(--lyric) !important;
+    --ink: var(--lyric);
   }
 
   .script-line.singalong {
-    color: var(--singalong) !important;
+    --ink: var(--singalong);
     font-family: 'TT Rounds Condensed', 'Helvetica Neue', sans-serif;
+  }
+
+  .line-row.past .char-name,
+  .line-row.future .char-name {
+    color: color-mix(in srgb, var(--amber-dim) var(--idle-strength), var(--bg));
+  }
+  .line-row.past .script-line,
+  .line-row.future .script-line {
+    color: color-mix(in srgb, var(--ink) var(--idle-strength), var(--bg));
   }
 
   /* Highlight bar under current line */
@@ -971,7 +985,8 @@ function render(positionOverride = null) {
   for (let i = from; i <= to; i++) {
     const { text, speaker } = lines[i];
     const type     = lineType(text);
-    const position = i < li ? 'past' : i === li ? 'current' : 'future';
+    const ahead = i - li;
+    const position = ahead < 0 ? 'past' : ahead === 0 ? 'current' : 'future';
 
     const prevSpeaker = i > from ? (lines[i - 1].speaker || '') : '';
     const showName = speaker && speaker !== prevSpeaker;
