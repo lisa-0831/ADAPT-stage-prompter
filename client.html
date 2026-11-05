@@ -686,6 +686,251 @@
     color: var(--amber-dim);
     opacity: 0.5;
   }
+
+  /* Script editor workspace. Separate from the live stage. */
+  #script-editor {
+    width: min(48rem, calc(100vw - 2rem));
+    max-width: calc(100vw - 2rem);
+    max-height: calc(100dvh - 1rem);
+    margin: auto;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg2);
+    color: var(--cream);
+    box-sizing: border-box;
+  }
+  #script-editor[open] {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #editor-workspace {
+    overflow: auto;
+    overflow-x: hidden;
+    min-height: 0;
+    flex: 1 1 auto;
+    padding: 1rem;
+  }
+  #script-editor::backdrop { background: rgba(0, 0, 0, 0.72); }
+  #script-editor [hidden] { display: none !important; }
+  #script-editor,
+  #script-editor input,
+  #script-editor textarea,
+  #script-editor select {
+    user-select: text;
+  }
+  #script-editor :focus-visible {
+    outline: 3px solid #fff;
+    outline-offset: 2px;
+  }
+  #script-editor h2,
+  #script-editor h3,
+  #script-editor legend,
+  #editor-scene-row label {
+    font-family: var(--font-ui);
+    color: var(--amber);
+    letter-spacing: 0.04em;
+  }
+  .editor-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .editor-help,
+  .editor-note,
+  #editor-status,
+  #editor-dirty,
+  .editor-banner,
+  #editor-validation {
+    font-family: var(--font-mono);
+    font-size: 0.95rem;
+    line-height: 1.45;
+    color: var(--cream-dim);
+    overflow-wrap: anywhere;
+  }
+  .editor-banner {
+    border: 1px solid var(--amber-dim);
+    border-radius: 4px;
+    padding: 0.6rem 0.75rem;
+    margin: 0.75rem 0;
+  }
+  #editor-scene-row,
+  .editor-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin: 0.75rem 0;
+    min-width: 0;
+  }
+  #script-editor fieldset.editor-field {
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.75rem;
+  }
+  #script-editor textarea,
+  #script-editor input,
+  #script-editor select {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    background: var(--bg);
+    color: var(--cream);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.5rem;
+    font-family: var(--font-mono);
+    font-size: 1rem;
+    line-height: 1.4;
+  }
+  #script-editor textarea { resize: vertical; }
+  #script-editor textarea[readonly] {
+    border-style: dashed;
+    opacity: 1;
+  }
+  #editor-raw { min-height: 12rem; }
+  .editor-field-error {
+    font-family: var(--font-mono);
+    color: #ffb4a8;
+    min-height: 1.2em;
+  }
+  .editor-error { color: #ffb4a8; }
+  .editor-warning { color: var(--amber); }
+  #editor-validation ul,
+  #editor-confirm ul {
+    margin: 0.4rem 0 0.6rem 1.1rem;
+  }
+  #editor-preview {
+    border-top: 1px solid var(--border);
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+  }
+  .editor-preview-title,
+  .editor-preview-name {
+    font-family: var(--font-ui);
+    color: var(--amber);
+    margin-top: 0.75rem;
+  }
+  .editor-preview-name { color: var(--amber-dim); }
+  .editor-preview-line {
+    font-family: var(--font-mono);
+    font-size: 1rem;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+    color: var(--amber);
+  }
+  .editor-preview-line.lyric { color: var(--lyric); }
+  .editor-preview-line.direction { color: var(--direction); font-style: italic; }
+  .editor-preview-line.singalong { color: var(--singalong); }
+  .editor-preview-image {
+    display: block;
+    max-width: 100%;
+    max-height: 10rem;
+    height: auto;
+    object-fit: contain;
+    margin: 0.4rem 0 0.8rem;
+  }
+  #editor-actions,
+  .editor-confirm-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  #editor-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    background: var(--bg2);
+    padding: 0.75rem 0 0.25rem;
+  }
+  #script-editor .btn { white-space: normal; }
+  #editor-confirm {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    padding: 0.75rem;
+    background: rgba(0, 0, 0, 0.72);
+    overflow: auto;
+  }
+  .editor-confirm-panel {
+    width: min(34rem, 100%);
+    max-height: 100%;
+    overflow: auto;
+    box-sizing: border-box;
+    margin: auto;
+    padding: 1.1rem 1.15rem;
+    border: 1px solid var(--amber);
+    border-radius: 8px;
+    background: var(--bg2);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  }
+  #editor-confirm-title {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    margin: 0 0 0.75rem;
+  }
+  .editor-confirm-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 1.7rem;
+    height: 1.7rem;
+    border-radius: 50%;
+    background: var(--amber);
+    color: #000;
+    font-family: var(--font-ui);
+    font-weight: 700;
+    line-height: 1;
+  }
+  .editor-confirm-message,
+  .editor-confirm-panel p,
+  .editor-confirm-panel li,
+  #editor-confirm-status {
+    font-family: var(--font-mono);
+    font-size: 0.95rem;
+    line-height: 1.45;
+    color: var(--cream);
+    overflow-wrap: anywhere;
+  }
+  .editor-confirm-panel h4 {
+    margin: 0.85rem 0 0.35rem;
+    font-family: var(--font-ui);
+    font-size: 0.85rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--amber);
+  }
+  .editor-confirm-notes,
+  .editor-confirm-warnings ul {
+    margin: 0.2rem 0 0.4rem 1.1rem;
+  }
+  .editor-confirm-warnings {
+    margin-top: 0.85rem;
+    padding: 0.65rem 0.75rem;
+    border: 1px solid var(--amber);
+    border-radius: 4px;
+    background: rgba(245, 200, 66, 0.1);
+  }
+  .editor-confirm-warnings h4 { margin-top: 0; }
+  #editor-confirm-status:empty { display: none; }
+  #editor-confirm-status { margin: 0.75rem 0 0; }
+  .editor-confirm-actions { margin-top: 1rem; }
+  #controller-notice {
+    margin: 0.35rem 0 0;
+    font-family: var(--font-mono);
+    font-size: 0.95rem;
+    line-height: 1.4;
+    color: var(--amber);
+    overflow-wrap: anywhere;
+  }
 </style>
 </head>
 <body>
@@ -729,9 +974,11 @@
 
     <div class="ctrl-row">
       <button class="btn" id="btn-case" type="button" aria-pressed="false" title="Switch to sentence case">AA</button>
-      <button class="btn" id="btn-upload-toggle">📄 Replace Script</button>
+      <button class="btn" id="btn-edit-script" type="button" aria-haspopup="dialog" aria-controls="script-editor" title="Edit the current script one scene at a time. The show does not change until you publish.">Edit Script</button>
+      <button class="btn" id="btn-upload-toggle" type="button" title="Paste a whole script and send it live immediately.">📄 Replace Script</button>
       <button class="btn danger" id="btn-exit">Exit</button>
     </div>
+    <p id="controller-notice" role="status" aria-live="polite" hidden></p>
 
     <div id="upload-area">
       <p class="upload-hint">
@@ -767,6 +1014,60 @@
   </div>
 </div>
 
+<dialog id="script-editor" aria-labelledby="script-editor-title">
+  <div id="editor-workspace">
+  <div class="editor-top">
+    <h2 id="script-editor-title">Edit Script</h2>
+    <button type="button" class="btn" id="editor-close-top">Close</button>
+  </div>
+  <p id="script-editor-help" class="editor-help">
+    Choose a scene and edit the lines. Save a draft to keep the work in this browser.
+    The live show does not change until you publish.
+    Replace Script is different: it pastes a whole script and goes live immediately.
+  </p>
+  <p id="editor-status" role="status" aria-live="polite"></p>
+  <p id="editor-dirty" role="status" aria-live="polite"></p>
+  <p id="editor-conflict" class="editor-banner" hidden></p>
+  <div id="editor-stale" class="editor-banner" hidden>
+    <p id="editor-stale-text"></p>
+    <button type="button" class="btn" id="editor-discard-stale">Delete old drafts</button>
+  </div>
+  <div id="editor-scene-row">
+    <label for="editor-scene">Scene</label>
+    <select id="editor-scene"></select>
+  </div>
+  <div id="editor-lines"></div>
+  <div id="editor-raw-wrap" hidden>
+    <p id="editor-fallback" class="editor-note"></p>
+    <label for="editor-raw">Full script text</label>
+    <textarea id="editor-raw" spellcheck="true" autocapitalize="off" autocomplete="off"></textarea>
+  </div>
+  <div id="editor-validation" tabindex="-1" role="status" aria-live="polite"></div>
+  <div id="editor-preview" tabindex="-1" hidden></div>
+  <div id="editor-actions">
+    <button type="button" class="btn" id="editor-save">Save Draft</button>
+    <button type="button" class="btn" id="editor-preview-btn" aria-expanded="false" aria-controls="editor-preview">Preview</button>
+    <button type="button" class="btn primary" id="editor-publish">Publish Script</button>
+    <button type="button" class="btn" id="editor-restore" hidden>Restore Previous Script</button>
+    <button type="button" class="btn" id="editor-close">Close</button>
+  </div>
+  </div>
+  <div id="editor-confirm" hidden role="dialog" aria-modal="true" aria-labelledby="editor-confirm-heading">
+    <div class="editor-confirm-panel">
+      <h3 id="editor-confirm-title">
+        <span class="editor-confirm-mark" aria-hidden="true">!</span>
+        <span id="editor-confirm-heading"></span>
+      </h3>
+      <div id="editor-confirm-body"></div>
+      <p id="editor-confirm-status" role="status" aria-live="assertive" tabindex="-1"></p>
+      <div class="editor-confirm-actions">
+        <button type="button" class="btn primary" id="editor-confirm-yes">Publish Now</button>
+        <button type="button" class="btn" id="editor-confirm-no">Cancel</button>
+      </div>
+    </div>
+  </div>
+</dialog>
+
 <div id="exit-guard">
   <h2>Exit Prompter?</h2>
   <p>Tap <strong>Confirm Exit</strong> to leave, or <strong>Stay</strong> to keep the show running.</p>
@@ -782,6 +1083,8 @@
 <script src="actor-input-model.js"></script>
 <script src="subtitle-layout.js"></script>
 <script src="caption-case.js"></script>
+<script src="script-format.js"></script>
+<script src="script-editor-model.js"></script>
 <script>
 // ── Role detection ────────────────────────────────────────────────────
 const params = new URLSearchParams(location.search);
@@ -803,6 +1106,18 @@ let slides = [];
 let liveState = null;
 let actorReadingState = ActorModeModel.followLive();
 let scriptRevision = null;
+let editorModel = null;
+let editorSceneIndex = 0;
+let editorBaseRevision = null;
+let editorBaselineText = '';
+let editorOpenToken = 0;
+let editorPreviewOn = false;
+let editorConfirmMode = null;
+let editorConfirmYesLabel = 'Publish Now';
+let editorPreviousText = '';
+let editorAwaitingRevision = false;
+let controllerNoticeTimer = 0;
+const editorPublishGuard = ScriptEditor.createPublishGuard();
 let returnTransition = null;
 let sentenceCase = false;
 if (isController) {
@@ -925,7 +1240,9 @@ function connect() {
         waitingForLiveState = true;
       }
       rebuildSlideSelect();
+      if (!isActor || !scriptChanged) render();
       updateActorModeUI();
+      noteEditorScriptRevision();
     } else if (msg.type === 'state') {
       liveState = msg.state;
       waitingForLiveState = false;
@@ -1293,8 +1610,845 @@ if (isActor) {
   dom.btnReturnLive.onclick = returnActorToLive;
 }
 
+// ── Script editor ─────────────────────────────────────────────────────
+const editorDom = {
+  dialog: document.getElementById('script-editor'),
+  workspace: document.getElementById('editor-workspace'),
+  notice: document.getElementById('controller-notice'),
+  status: document.getElementById('editor-status'),
+  dirty: document.getElementById('editor-dirty'),
+  conflict: document.getElementById('editor-conflict'),
+  stale: document.getElementById('editor-stale'),
+  staleText: document.getElementById('editor-stale-text'),
+  discardStale: document.getElementById('editor-discard-stale'),
+  sceneRow: document.getElementById('editor-scene-row'),
+  scene: document.getElementById('editor-scene'),
+  lines: document.getElementById('editor-lines'),
+  rawWrap: document.getElementById('editor-raw-wrap'),
+  fallback: document.getElementById('editor-fallback'),
+  raw: document.getElementById('editor-raw'),
+  validation: document.getElementById('editor-validation'),
+  preview: document.getElementById('editor-preview'),
+  previewBtn: document.getElementById('editor-preview-btn'),
+  confirm: document.getElementById('editor-confirm'),
+  confirmHeading: document.getElementById('editor-confirm-heading'),
+  confirmBody: document.getElementById('editor-confirm-body'),
+  confirmStatus: document.getElementById('editor-confirm-status'),
+  confirmYes: document.getElementById('editor-confirm-yes'),
+  confirmNo: document.getElementById('editor-confirm-no'),
+  save: document.getElementById('editor-save'),
+  publish: document.getElementById('editor-publish'),
+  restore: document.getElementById('editor-restore'),
+  closeTop: document.getElementById('editor-close-top'),
+  close: document.getElementById('editor-close'),
+};
+
+function isEditorOpen() {
+  return Boolean(editorDom.dialog && editorDom.dialog.open);
+}
+
+function noteEditorScriptRevision() {
+  if (!isEditorOpen()) return;
+  syncEditorConflict();
+}
+
+function draftStorage() {
+  try {
+    const probe = '__prompter_draft_probe__';
+    localStorage.setItem(probe, '1');
+    localStorage.removeItem(probe);
+    return localStorage;
+  } catch (err) {
+    return null;
+  }
+}
+
+async function scriptHash(text) {
+  if (!crypto.subtle) return null;
+  const bytes = new TextEncoder().encode(text);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest))
+    .map((value) => value.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+function editorIsDirty() {
+  if (!editorModel) return false;
+  return ScriptEditor.serialize(editorModel) !== editorBaselineText;
+}
+
+function sceneOptionLabel(scene, index) {
+  const title = ScriptEditor.sceneTitle(scene).replace(/\s+/g, ' ').trim();
+  const short = title.length > 80 ? `${title.slice(0, 77)}...` : title;
+  return `${index + 1}. ${short}`;
+}
+
+function syncEditorConflict() {
+  const changed = isEditorOpen()
+    && editorBaseRevision
+    && scriptRevision
+    && editorBaseRevision !== scriptRevision
+    && !editorAwaitingRevision;
+  editorDom.conflict.hidden = !changed;
+  if (changed) {
+    editorDom.conflict.textContent = 'The live script changed while this editor was open. Your edits are still based on the earlier script. Publishing will replace whatever is live now.';
+  }
+}
+
+function showIssues(result, announce) {
+  const box = editorDom.validation;
+  box.replaceChildren();
+  if (!result.errors.length && !result.warnings.length) {
+    box.setAttribute('role', 'status');
+    return;
+  }
+  const list = document.createElement('ul');
+  result.errors.forEach((error) => {
+    const item = document.createElement('li');
+    item.className = 'editor-error';
+    item.textContent = `Error: ${error.message}`;
+    list.append(item);
+  });
+  result.warnings.forEach((warning) => {
+    const item = document.createElement('li');
+    item.className = 'editor-warning';
+    item.textContent = `Note: ${warning.message}`;
+    list.append(item);
+  });
+  box.append(list);
+  box.setAttribute('role', announce ? 'alert' : 'status');
+  if (announce) box.focus();
+}
+
+function updateDirty(result) {
+  if (!editorModel) {
+    editorDom.dirty.textContent = '';
+    return;
+  }
+  const parts = [];
+  if (editorIsDirty()) {
+    parts.push('Unsaved changes. The live show is not using these edits.');
+  } else {
+    const storage = draftStorage();
+    const draft = storage && editorBaseRevision
+      ? ScriptEditor.loadDraft(storage, editorBaseRevision)
+      : null;
+    parts.push(draft && draft.scriptText === editorBaselineText
+      ? 'No unsaved changes. A draft is saved in this browser.'
+      : 'No unsaved changes.');
+  }
+  if (result.errors.length) {
+    const noun = result.errors.length === 1 ? 'error' : 'errors';
+    parts.push(`${result.errors.length} ${noun}. Publishing stays off until they are fixed.`);
+  } else if (result.warnings.length) {
+    const noun = result.warnings.length === 1 ? 'note' : 'notes';
+    parts.push(`${result.warnings.length} ${noun}. You can still publish.`);
+  }
+  editorDom.dirty.textContent = parts.join(' ');
+}
+
+function refreshEditorChrome() {
+  if (!editorModel) return;
+  const result = ScriptEditor.validate(ScriptEditor.serialize(editorModel));
+  showIssues(result, false);
+  updateDirty(result);
+  editorDom.publish.disabled = !(editorBaseRevision && result.ok && !editorAwaitingRevision);
+  editorDom.save.disabled = !editorBaseRevision || editorAwaitingRevision;
+  syncEditorConflict();
+}
+
+function fillSceneSelect() {
+  editorDom.scene.replaceChildren();
+  editorModel.scenes.forEach((scene, index) => {
+    const option = document.createElement('option');
+    option.value = String(index);
+    option.textContent = sceneOptionLabel(scene, index);
+    editorDom.scene.append(option);
+  });
+  const maxIndex = Math.max(0, editorModel.scenes.length - 1);
+  editorSceneIndex = Math.min(editorSceneIndex, maxIndex);
+  editorDom.scene.value = String(editorSceneIndex);
+}
+
+function updateSceneOption(sceneIndex) {
+  const option = editorDom.scene.options[sceneIndex];
+  if (!option || !editorModel) return;
+  option.textContent = sceneOptionLabel(editorModel.scenes[sceneIndex], sceneIndex);
+}
+
+function bindEditorControl(control, sceneIndex, lineIndex, entry, nameIndex) {
+  control.addEventListener('input', () => {
+    const fieldError = control.nextElementSibling;
+    if (entry.kind === 'speaker') {
+      const ok = ScriptEditor.setSpeakerName(
+        editorModel,
+        sceneIndex,
+        lineIndex,
+        nameIndex,
+        control.value,
+      );
+      if (fieldError) {
+        fieldError.textContent = ok ? '' : 'Character names cannot include [ or ].';
+      }
+      if (!ok) {
+        control.value = editorModel.scenes[sceneIndex].lines[lineIndex].names[nameIndex];
+      }
+    } else {
+      ScriptEditor.setLineText(editorModel, sceneIndex, lineIndex, control.value);
+      if (entry.kind === 'title') updateSceneOption(sceneIndex);
+    }
+    if (editorPreviewOn) renderEditorPreview();
+    refreshEditorChrome();
+  });
+}
+
+function renderEditorLine(entry, sceneIndex, lineIndex, visible) {
+  const labelText = `Line ${visible}: ${entry.label}`;
+  if (entry.kind === 'speaker' && entry.names.length > 1) {
+    const fieldset = document.createElement('fieldset');
+    fieldset.className = 'editor-field';
+    const legend = document.createElement('legend');
+    legend.textContent = labelText;
+    fieldset.append(legend);
+    entry.names.forEach((name, nameIndex) => {
+      const label = document.createElement('label');
+      const id = `editor-line-${sceneIndex}-${lineIndex}-name-${nameIndex}`;
+      label.htmlFor = id;
+      label.textContent = nameIndex === 0 ? 'First character' : 'Second character';
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.id = id;
+      input.value = name;
+      input.autocomplete = 'off';
+      input.autocapitalize = 'off';
+      input.spellcheck = false;
+      const error = document.createElement('p');
+      error.className = 'editor-field-error';
+      error.setAttribute('role', 'status');
+      fieldset.append(label, input, error);
+      bindEditorControl(input, sceneIndex, lineIndex, entry, nameIndex);
+    });
+    const note = document.createElement('p');
+    note.className = 'editor-note';
+    note.textContent = entry.note;
+    fieldset.append(note);
+    return fieldset;
+  }
+
+  const wrap = document.createElement('div');
+  wrap.className = 'editor-field';
+  const id = `editor-line-${sceneIndex}-${lineIndex}`;
+  const noteId = `${id}-note`;
+  const label = document.createElement('label');
+  label.htmlFor = id;
+  label.textContent = labelText;
+  const multiline = entry.kind !== 'title' && entry.kind !== 'image' && entry.kind !== 'speaker';
+  const control = document.createElement(multiline ? 'textarea' : 'input');
+  if (!multiline) control.type = 'text';
+  control.id = id;
+  control.value = entry.kind === 'speaker' ? entry.names[0] : entry.value;
+  control.autocomplete = 'off';
+  control.autocapitalize = 'off';
+  control.spellcheck = entry.kind !== 'image' && entry.kind !== 'speaker';
+  control.setAttribute('aria-describedby', noteId);
+  if (multiline) {
+    control.rows = entry.value.length > 180 ? 4 : 2;
+  }
+  if (entry.readOnly) control.readOnly = true;
+  const error = document.createElement('p');
+  error.className = 'editor-field-error';
+  error.setAttribute('role', 'status');
+  const note = document.createElement('p');
+  note.className = 'editor-note';
+  note.id = noteId;
+  note.textContent = entry.note;
+  wrap.append(label, control, error, note);
+  if (!entry.readOnly) bindEditorControl(control, sceneIndex, lineIndex, entry, 0);
+  return wrap;
+}
+
+function renderEditorLines() {
+  editorDom.lines.replaceChildren();
+  const scene = editorModel && editorModel.scenes[editorSceneIndex];
+  if (!scene) return;
+  let visible = 0;
+  scene.lines.forEach((entry, lineIndex) => {
+    if (entry.kind === 'blank') return;
+    visible += 1;
+    editorDom.lines.append(renderEditorLine(entry, editorSceneIndex, lineIndex, visible));
+  });
+}
+
+function renderEditor() {
+  if (!editorModel) return;
+  const raw = editorModel.mode === 'raw';
+  editorDom.sceneRow.hidden = raw;
+  editorDom.lines.hidden = raw;
+  editorDom.rawWrap.hidden = !raw;
+  editorDom.fallback.hidden = !(raw && editorModel.fallbackReason);
+  editorDom.fallback.textContent = raw ? editorModel.fallbackReason : '';
+  if (raw) editorDom.raw.value = editorModel.rawText;
+  else {
+    fillSceneSelect();
+    renderEditorLines();
+  }
+  refreshEditorChrome();
+}
+
+function appendSlidePreview(parent, slide) {
+  const title = document.createElement('p');
+  title.className = 'editor-preview-title';
+  title.textContent = slide.title || '(Untitled scene)';
+  parent.append(title);
+  if (slide.titleImage) {
+    const pathText = document.createElement('p');
+    pathText.className = 'editor-note';
+    pathText.textContent = `Scene image: ${slide.titleImage}`;
+    const image = document.createElement('img');
+    image.className = 'editor-preview-image';
+    image.src = slide.titleImage;
+    image.alt = '';
+    parent.append(pathText, image);
+  }
+  if (!slide.lines.length) {
+    const empty = document.createElement('p');
+    empty.className = 'editor-note';
+    empty.textContent = 'This scene has no spoken lines.';
+    parent.append(empty);
+    return;
+  }
+  slide.lines.forEach((entry, index) => {
+    const row = document.createElement('div');
+    row.className = 'editor-preview-row';
+    const type = lineType(entry.text);
+    const previous = index > 0 ? (slide.lines[index - 1].speaker || '') : '';
+    if (entry.speaker && entry.speaker !== previous) {
+      const name = document.createElement('div');
+      name.className = 'editor-preview-name';
+      name.textContent = entry.speaker;
+      row.append(name);
+    }
+    const text = document.createElement('div');
+    text.className = `editor-preview-line ${type}`;
+    text.textContent = displayText(entry.text, type);
+    row.append(text);
+    parent.append(row);
+  });
+}
+
+function renderEditorPreview() {
+  editorDom.preview.replaceChildren();
+  const heading = document.createElement('h3');
+  heading.textContent = 'Structured preview';
+  const note = document.createElement('p');
+  note.className = 'editor-note';
+  note.textContent = 'This uses the same reading rules as the stage. It does not move the live cue, and it does not update Actor or Audience screens. It shows the saved words, not the AA/Aa display setting.';
+  editorDom.preview.append(heading, note);
+  if (!editorModel) return;
+  const text = editorModel.mode === 'raw'
+    ? ScriptEditor.serialize(editorModel)
+    : ScriptEditor.serializeScene(editorModel, editorSceneIndex);
+  const slides = ScriptFormat.parseScript(text);
+  if (!slides.length) {
+    const empty = document.createElement('p');
+    empty.textContent = 'Nothing in this scene can be previewed yet.';
+    editorDom.preview.append(empty);
+    return;
+  }
+  slides.forEach((slide) => appendSlidePreview(editorDom.preview, slide));
+}
+
+function showStaleDrafts() {
+  const storage = draftStorage();
+  if (!storage || !editorBaseRevision) {
+    editorDom.stale.hidden = true;
+    return;
+  }
+  const stale = ScriptEditor.listStaleDrafts(storage, editorBaseRevision);
+  if (!stale.length) {
+    editorDom.stale.hidden = true;
+    return;
+  }
+  const noun = stale.length === 1 ? 'draft' : 'drafts';
+  const verb = stale.length === 1 ? 'It was' : 'They were';
+  const pronoun = stale.length === 1 ? 'it' : 'they';
+  editorDom.stale.hidden = false;
+  editorDom.staleText.textContent = `This browser has ${stale.length} saved ${noun} for an older script. ${verb} not opened, so ${pronoun} cannot replace the current script.`;
+}
+
+async function refreshRestoreButton() {
+  try {
+    const res = await fetch('/script/previous');
+    if (!res.ok) {
+      editorPreviousText = '';
+      editorDom.restore.hidden = true;
+      return;
+    }
+    editorPreviousText = await res.text();
+    editorDom.restore.hidden = false;
+  } catch (err) {
+    editorDom.restore.hidden = true;
+  }
+}
+
+function focusEditorStart() {
+  if (!editorModel || editorModel.mode === 'raw') {
+    if (editorModel) editorDom.raw.focus();
+    else editorDom.close.focus();
+    return;
+  }
+  editorDom.scene.focus();
+}
+
+function appendParagraphs(parent, sentences) {
+  sentences.forEach((sentence) => {
+    const paragraph = document.createElement('p');
+    paragraph.textContent = sentence;
+    parent.append(paragraph);
+  });
+}
+
+function discardMessage() {
+  const storage = draftStorage();
+  const draft = storage && editorBaseRevision
+    ? ScriptEditor.loadDraft(storage, editorBaseRevision)
+    : null;
+  if (draft) {
+    return 'These edits are not saved. If you close, the draft you last saved in this browser stays, and the newer edits are lost. The live show is unchanged.';
+  }
+  return 'These edits are not saved. If you close, they will be lost. The live show is unchanged.';
+}
+
+function showControllerNotice(message) {
+  window.clearTimeout(controllerNoticeTimer);
+  editorDom.notice.hidden = false;
+  editorDom.notice.textContent = message;
+  controllerNoticeTimer = window.setTimeout(() => {
+    editorDom.notice.hidden = true;
+    editorDom.notice.textContent = '';
+  }, 12000);
+}
+
+function showEditorConfirm(mode, warnings) {
+  editorConfirmMode = mode;
+  editorDom.confirmBody.replaceChildren();
+  editorDom.confirmStatus.textContent = '';
+  editorDom.confirmStatus.classList.remove('editor-error');
+  editorDom.confirmStatus.tabIndex = -1;
+  editorDom.confirmYes.classList.remove('primary', 'danger');
+  editorDom.confirmYes.disabled = false;
+  editorDom.confirmNo.disabled = false;
+  editorDom.confirm.setAttribute('aria-busy', 'false');
+  if (mode === 'publish') {
+    const content = ScriptEditor.publishConfirmContent(warnings, {
+      liveChanged: Boolean(
+        editorBaseRevision && scriptRevision && editorBaseRevision !== scriptRevision,
+      ),
+    });
+    editorDom.confirmHeading.textContent = content.title;
+    editorConfirmYesLabel = ScriptEditor.publishRequestState(false).label;
+    editorDom.confirmYes.classList.add('primary');
+    const message = document.createElement('p');
+    message.className = 'editor-confirm-message';
+    message.textContent = content.message;
+    const notesTitle = document.createElement('h4');
+    notesTitle.textContent = 'Important';
+    const notes = document.createElement('ul');
+    notes.className = 'editor-confirm-notes';
+    content.notes.forEach((note) => {
+      const item = document.createElement('li');
+      item.textContent = note;
+      notes.append(item);
+    });
+    editorDom.confirmBody.append(message, notesTitle, notes);
+    if (content.warnings.length) {
+      const box = document.createElement('div');
+      box.className = 'editor-confirm-warnings';
+      const title = document.createElement('h4');
+      title.textContent = 'Warnings';
+      const list = document.createElement('ul');
+      content.warnings.forEach((warning) => {
+        const item = document.createElement('li');
+        item.textContent = warning;
+        list.append(item);
+      });
+      box.append(title, list);
+      editorDom.confirmBody.append(box);
+    }
+  } else if (mode === 'restore') {
+    editorDom.confirmHeading.textContent = 'Restore the previous script?';
+    editorConfirmYesLabel = 'Restore now';
+    editorDom.confirmYes.classList.add('danger');
+    appendParagraphs(editorDom.confirmBody, [
+      'This puts the last published script back on every connected screen. The script that is live now is saved, so you can switch back.',
+      'The Controller keeps the same scene and line numbers when they still exist. Actors return to the live cue.',
+    ]);
+    const restoreNotes = ScriptEditor.publishConfirmContent(warnings).warnings;
+    if (restoreNotes.length) {
+      const box = document.createElement('div');
+      box.className = 'editor-confirm-warnings';
+      const title = document.createElement('h4');
+      title.textContent = 'Warnings';
+      const list = document.createElement('ul');
+      restoreNotes.forEach((warning) => {
+        const item = document.createElement('li');
+        item.textContent = warning;
+        list.append(item);
+      });
+      box.append(title, list);
+      editorDom.confirmBody.append(box);
+    }
+  } else {
+    editorDom.confirmHeading.textContent = 'Discard unsaved edits?';
+    editorConfirmYesLabel = 'Discard unsaved edits';
+    editorDom.confirmYes.classList.add('danger');
+    appendParagraphs(editorDom.confirmBody, [discardMessage()]);
+  }
+  editorDom.confirmYes.textContent = editorConfirmYesLabel;
+  editorDom.workspace.inert = true;
+  editorDom.confirm.hidden = false;
+  editorDom.confirmYes.focus();
+}
+
+function hideEditorConfirm() {
+  editorConfirmMode = null;
+  editorDom.confirm.hidden = true;
+  editorDom.confirm.setAttribute('aria-busy', 'false');
+  editorDom.confirmStatus.textContent = '';
+  editorDom.confirmStatus.classList.remove('editor-error');
+  editorDom.confirmYes.disabled = false;
+  editorDom.confirmNo.disabled = false;
+  editorDom.workspace.inert = false;
+}
+
+function cancelEditorConfirm() {
+  if (editorAwaitingRevision) return;
+  const mode = editorConfirmMode;
+  hideEditorConfirm();
+  const target = document.getElementById(ScriptEditor.confirmCancelFocusId(mode));
+  if (target) target.focus();
+}
+
+function setConfirmBusy(busy) {
+  const state = ScriptEditor.publishRequestState(busy && editorConfirmMode === 'publish');
+  editorAwaitingRevision = busy;
+  editorDom.confirm.setAttribute('aria-busy', busy ? 'true' : 'false');
+  editorDom.confirmYes.disabled = busy;
+  editorDom.confirmNo.disabled = busy;
+  editorDom.publish.disabled = busy || editorDom.publish.disabled;
+  editorDom.restore.disabled = busy || editorDom.restore.disabled;
+  if (!busy) return;
+  editorDom.confirmYes.textContent = editorConfirmMode === 'publish' ? state.label : 'Restoring...';
+  editorDom.confirmStatus.classList.remove('editor-error');
+  editorDom.confirmStatus.textContent = editorDom.confirmYes.textContent;
+  editorDom.confirmStatus.tabIndex = 0;
+  editorDom.confirmStatus.focus();
+}
+
+function showConfirmFailure(message) {
+  editorDom.confirmStatus.classList.add('editor-error');
+  editorDom.confirmStatus.tabIndex = -1;
+  editorDom.confirmStatus.textContent = message;
+  editorDom.confirmYes.disabled = false;
+  editorDom.confirmNo.disabled = false;
+  editorDom.confirmYes.textContent = editorConfirmYesLabel;
+  editorDom.confirmYes.focus();
+}
+
+function onConfirmKeydown(event) {
+  if (!editorConfirmMode) return;
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!editorAwaitingRevision) cancelEditorConfirm();
+    return;
+  }
+  if (event.key !== 'Tab') return;
+  const items = [...editorDom.confirm.querySelectorAll('button:not([disabled]), #editor-confirm-status[tabindex="0"]')];
+  if (!items.length) {
+    event.preventDefault();
+    return;
+  }
+  const first = items[0];
+  const last = items[items.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+function forceCloseEditor() {
+  editorOpenToken += 1;
+  hideEditorConfirm();
+  editorPreviewOn = false;
+  editorDom.preview.hidden = true;
+  editorDom.previewBtn.setAttribute('aria-expanded', 'false');
+  editorDom.previewBtn.textContent = 'Preview';
+  if (editorDom.dialog.open) editorDom.dialog.close();
+}
+
+function requestCloseEditor() {
+  if (editorAwaitingRevision) return;
+  if (editorConfirmMode) {
+    cancelEditorConfirm();
+    return;
+  }
+  if (editorIsDirty()) {
+    showEditorConfirm('discard');
+    return;
+  }
+  forceCloseEditor();
+}
+
+async function openEditor() {
+  if (editorDom.dialog.open) return;
+  const token = ++editorOpenToken;
+  editorConfirmMode = null;
+  editorPreviewOn = false;
+  editorDom.preview.hidden = true;
+  editorDom.confirm.hidden = true;
+  editorDom.workspace.inert = false;
+  editorDom.lines.replaceChildren();
+  editorDom.validation.replaceChildren();
+  editorDom.status.textContent = 'Loading the current script…';
+  editorDom.dirty.textContent = '';
+  editorDom.dialog.showModal();
+  try {
+    const res = await fetch('/script');
+    if (!res.ok) throw new Error('Could not load the script');
+    const published = await res.text();
+    if (token !== editorOpenToken || !editorDom.dialog.open) return;
+    const hash = await scriptHash(published);
+    if (token !== editorOpenToken || !editorDom.dialog.open) return;
+    editorBaseRevision = hash || scriptRevision;
+    const storage = draftStorage();
+    const draft = storage && editorBaseRevision
+      ? ScriptEditor.loadDraft(storage, editorBaseRevision)
+      : null;
+    const source = draft ? draft.scriptText : published;
+    editorBaselineText = source;
+    editorModel = ScriptEditor.load(source);
+    editorSceneIndex = 0;
+    renderEditor();
+    showStaleDrafts();
+    await refreshRestoreButton();
+    if (token !== editorOpenToken || !editorDom.dialog.open) return;
+    if (!editorBaseRevision) {
+      editorDom.status.textContent = 'The script is still connecting. Close this and open Edit Script again before saving or publishing.';
+    } else if (draft) {
+      editorDom.status.textContent = 'Opened your saved draft for this script. Drafts stay in this browser only. The live show has not changed.';
+    } else {
+      editorDom.status.textContent = 'You are editing a copy of the live script. The show does not change until you publish. Drafts stay in this browser only.';
+    }
+    syncEditorConflict();
+    focusEditorStart();
+  } catch (err) {
+    if (token !== editorOpenToken || !editorDom.dialog.open) return;
+    editorModel = null;
+    editorDom.publish.disabled = true;
+    editorDom.save.disabled = true;
+    editorDom.status.textContent = 'The script could not be loaded. The live show was not changed.';
+  }
+}
+
+function saveEditorDraft() {
+  if (!editorModel || !editorBaseRevision) {
+    editorDom.status.textContent = 'The script is still connecting, so a draft cannot be saved yet.';
+    return;
+  }
+  const storage = draftStorage();
+  if (!storage) {
+    editorDom.status.textContent = 'This browser could not save the draft. Your edits stay on this screen until you publish.';
+    return;
+  }
+  const text = ScriptEditor.serialize(editorModel);
+  const saved = ScriptEditor.saveDraft(storage, {
+    baseRevision: editorBaseRevision,
+    scriptText: text,
+    savedAt: new Date().toISOString(),
+  });
+  if (!saved.ok) {
+    editorDom.status.textContent = saved.error;
+    return;
+  }
+  editorBaselineText = text;
+  editorDom.status.textContent = 'Draft saved in this browser. The live show was not changed.';
+  refreshEditorChrome();
+}
+
+function beginPublish() {
+  if (!editorModel) return;
+  const text = ScriptEditor.serialize(editorModel);
+  const result = ScriptEditor.validate(text);
+  if (!result.ok) {
+    showIssues(result, true);
+    return;
+  }
+  showEditorConfirm('publish', result.warnings);
+}
+
+async function beginRestore() {
+  try {
+    const res = await fetch('/script/previous');
+    if (!res.ok) {
+      editorDom.restore.hidden = true;
+      editorDom.status.textContent = 'There is no previous script to restore. The live show was not changed.';
+      return;
+    }
+    editorPreviousText = await res.text();
+    const result = ScriptEditor.validate(editorPreviousText);
+    if (!result.ok) {
+      showIssues(result, true);
+      editorDom.status.textContent = 'The previous script cannot be restored because it is not valid. The live show was not changed.';
+      return;
+    }
+    showEditorConfirm('restore', result.warnings);
+  } catch (err) {
+    editorDom.status.textContent = 'The previous script could not be loaded. The live show was not changed.';
+  }
+}
+
+async function runPublish(text) {
+  if (!editorPublishGuard.tryStart()) return;
+  const mode = editorConfirmMode;
+  editorAwaitingRevision = true;
+  editorDom.confirmYes.disabled = true;
+  editorDom.confirmNo.disabled = true;
+  try {
+    const result = ScriptEditor.validate(text);
+    if (!result.ok) {
+      const message = result.errors.map((error) => error.message).join(' ')
+        || 'The script was not published. The live show is unchanged.';
+      showConfirmFailure(message);
+      return;
+    }
+    setConfirmBusy(true);
+    const res = await fetch('/script', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: text,
+    });
+    let body = null;
+    try { body = await res.json(); } catch (err) { body = null; }
+    const status = ScriptEditor.publicationStatus(res.ok, body);
+    if (mode === 'publish') {
+      const outcome = ScriptEditor.publishOutcome(status);
+      if (!outcome.ok) {
+        showConfirmFailure(outcome.message);
+        return;
+      }
+      const storage = draftStorage();
+      if (outcome.clearDraft && storage && editorBaseRevision) {
+        ScriptEditor.deleteDraft(storage, editorBaseRevision);
+      }
+      if (outcome.revision) editorBaseRevision = outcome.revision;
+      editorBaselineText = text;
+      forceCloseEditor();
+      const liveSlide = liveState && slides[liveState.slideIndex];
+      showControllerNotice(ScriptEditor.publishLiveNotice(
+        outcome.message,
+        liveSlide && liveSlide.title,
+      ));
+      document.getElementById('btn-edit-script').focus();
+      return;
+    }
+    if (!status.success) {
+      showConfirmFailure(status.message);
+      return;
+    }
+    const storage = draftStorage();
+    const previousBase = editorBaseRevision;
+    if (storage && previousBase) ScriptEditor.deleteDraft(storage, previousBase);
+    editorBaseRevision = status.revision;
+    editorBaselineText = text;
+    if (!editorModel || ScriptEditor.serialize(editorModel) !== text) {
+      editorModel = ScriptEditor.load(text);
+      editorSceneIndex = 0;
+      renderEditor();
+    }
+    hideEditorConfirm();
+    editorDom.status.textContent = status.message;
+    await refreshRestoreButton();
+  } catch (err) {
+    showConfirmFailure('The script was not published. The live show is unchanged.');
+  } finally {
+    editorAwaitingRevision = false;
+    editorPublishGuard.finish();
+    editorDom.confirm.setAttribute('aria-busy', 'false');
+    if (editorConfirmMode) {
+      editorDom.confirmYes.disabled = false;
+      editorDom.confirmNo.disabled = false;
+      editorDom.confirmYes.textContent = editorConfirmYesLabel;
+    }
+    editorDom.restore.disabled = false;
+    refreshEditorChrome();
+  }
+}
+
+function initScriptEditor() {
+  document.getElementById('btn-edit-script').addEventListener('click', openEditor);
+  editorDom.closeTop.addEventListener('click', requestCloseEditor);
+  editorDom.close.addEventListener('click', requestCloseEditor);
+  editorDom.save.addEventListener('click', saveEditorDraft);
+  editorDom.publish.addEventListener('click', beginPublish);
+  editorDom.restore.addEventListener('click', beginRestore);
+  editorDom.confirmNo.addEventListener('click', cancelEditorConfirm);
+  editorDom.confirm.addEventListener('click', (event) => {
+    if (event.target !== editorDom.confirm || editorAwaitingRevision) return;
+    cancelEditorConfirm();
+  });
+  editorDom.confirm.addEventListener('keydown', onConfirmKeydown);
+  editorDom.confirmYes.addEventListener('click', () => {
+    if (editorAwaitingRevision || !editorPublishGuard) return;
+    const mode = editorConfirmMode;
+    if (mode === 'discard') {
+      forceCloseEditor();
+      return;
+    }
+    if (mode === 'publish') runPublish(ScriptEditor.serialize(editorModel));
+    if (mode === 'restore') runPublish(editorPreviousText);
+  });
+  editorDom.previewBtn.addEventListener('click', () => {
+    editorPreviewOn = !editorPreviewOn;
+    editorDom.preview.hidden = !editorPreviewOn;
+    editorDom.previewBtn.setAttribute('aria-expanded', editorPreviewOn ? 'true' : 'false');
+    editorDom.previewBtn.textContent = editorPreviewOn ? 'Hide preview' : 'Preview';
+    if (editorPreviewOn) {
+      renderEditorPreview();
+      editorDom.preview.focus();
+    }
+  });
+  editorDom.scene.addEventListener('change', () => {
+    editorSceneIndex = Number(editorDom.scene.value);
+    renderEditorLines();
+    if (editorPreviewOn) renderEditorPreview();
+    refreshEditorChrome();
+  });
+  editorDom.raw.addEventListener('input', () => {
+    if (!editorModel) return;
+    ScriptEditor.setRawText(editorModel, editorDom.raw.value);
+    if (editorPreviewOn) renderEditorPreview();
+    refreshEditorChrome();
+  });
+  editorDom.discardStale.addEventListener('click', () => {
+    const storage = draftStorage();
+    if (storage && editorBaseRevision) ScriptEditor.deleteStaleDrafts(storage, editorBaseRevision);
+    editorDom.stale.hidden = true;
+    editorDom.status.textContent = 'Old drafts were deleted. The current script was not changed.';
+  });
+  editorDom.dialog.addEventListener('cancel', (event) => {
+    event.preventDefault();
+    if (editorAwaitingRevision) return;
+    requestCloseEditor();
+  });
+}
+
 // ── Controller actions ────────────────────────────────────────────────
 if (isController) {
+  initScriptEditor();
   updateCaseButton();
   dom.btnCase.onclick = () => {
     sentenceCase = !sentenceCase;
@@ -1357,7 +2511,7 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
-  if (!isController) return;
+  if (!isController || isEditorOpen()) return;
   if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') {
     e.preventDefault();
     send({ type: 'navigate', direction: 'next' });
@@ -1381,6 +2535,7 @@ if (isController) {
 
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
+      if (isEditorOpen()) return;
       e.preventDefault();
       if (dom.exitGuard.classList.contains('show')) {
         dom.exitGuard.classList.remove('show');
@@ -1398,7 +2553,7 @@ document.addEventListener('touchstart', e => {
   touchStartY = e.touches[0].clientY;
 }, { passive: true });
 document.addEventListener('touchend', e => {
-  if (!isController) return;
+  if (!isController || isEditorOpen()) return;
   const dx = e.changedTouches[0].clientX - touchStartX;
   const dy = e.changedTouches[0].clientY - touchStartY;
   if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50) {
