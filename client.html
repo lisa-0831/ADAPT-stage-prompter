@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Stage Prompter</title>
 <style>
   /* ── Reset & base ── */
@@ -322,12 +322,44 @@
   }
   #actor-live-relative { color: var(--amber); }
   #actor-live-relative:empty { display: none; }
+  #actor-nav-buttons {
+    display: flex;
+    align-items: stretch;
+    gap: 12px;
+    flex: 0 1 384px;
+    width: 100%;
+    max-width: 384px;
+  }
+  #actor-nav-buttons .actor-action {
+    flex: 1 1 0;
+    width: 0;
+    height: 64px;
+    min-height: 64px;
+    padding: 14px 16px;
+    font-size: 1.25rem;
+  }
+  #btn-return-live {
+    min-height: 56px;
+    padding: 12px 22px;
+    font-size: 1.05rem;
+  }
 
   .ctrl-row {
     display: flex;
     gap: 8px;
     align-items: center;
     flex-wrap: wrap;
+  }
+  #ctrl-nav-buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: stretch;
+    gap: 8px;
+  }
+  #ctrl-nav-buttons .btn {
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
   }
 
   .btn {
@@ -344,9 +376,14 @@
     cursor: pointer;
     transition: background 0.12s, color 0.12s, border-color 0.12s;
     white-space: nowrap;
+    touch-action: manipulation;
   }
   .btn:hover { background: #222; color: var(--cream); border-color: #444; }
   .btn:active { background: #2a2a2a; }
+  .btn:focus-visible {
+    outline: 3px solid #fff;
+    outline-offset: 3px;
+  }
   .btn:disabled { opacity: 0.4; cursor: default; }
   .btn:disabled:hover {
     background: var(--bg3);
@@ -479,9 +516,38 @@
     flex: 1;
     pointer-events: auto;
     cursor: pointer;
+    touch-action: manipulation;
   }
   #zone-prev { flex: 0 0 28%; }
   #zone-next { flex: 1; }
+  #stage-click-zones.actor-zones {
+    justify-content: space-between;
+  }
+  #stage-click-zones.actor-zones .zone {
+    flex: 0 0 24%;
+  }
+
+  @media (max-width: 640px) {
+    #actor-controls {
+      padding: 10px 12px 12px;
+      gap: 10px;
+    }
+    #actor-nav-buttons {
+      flex: 1 1 100%;
+      max-width: none;
+      gap: 10px;
+    }
+    #actor-nav-buttons .actor-action {
+      height: 60px;
+      min-height: 60px;
+      padding: 12px;
+      font-size: 1.2rem;
+    }
+    #btn-return-live {
+      flex: 1 1 100%;
+      min-height: 52px;
+    }
+  }
 
   /* ── Connecting overlay ── */
   #connecting {
@@ -539,8 +605,8 @@
     </div>
 
     <div id="stage-click-zones">
-      <div class="zone" id="zone-prev"></div>
-      <div class="zone" id="zone-next"></div>
+      <div class="zone" id="zone-prev" aria-hidden="true"></div>
+      <div class="zone" id="zone-next" aria-hidden="true"></div>
     </div>
   </div>
 
@@ -550,8 +616,10 @@
     <div class="ctrl-row">
       <span><span id="conn-dot"></span></span>
       <button class="btn nav-big" id="btn-prev-slide" title="Previous slide">⏮</button>
-      <button class="btn nav-big primary" id="btn-prev">◀ Prev</button>
-      <button class="btn nav-big primary" id="btn-next">Next ▶</button>
+      <div id="ctrl-nav-buttons">
+        <button class="btn nav-big primary" id="btn-prev">◀ Prev</button>
+        <button class="btn nav-big primary" id="btn-next">Next ▶</button>
+      </div>
       <button class="btn nav-big" id="btn-next-slide" title="Next slide">⏭</button>
       <select id="slide-select"></select>
       <span id="ctrl-status">—</span>
@@ -580,14 +648,19 @@
   </div>
 
   <div id="actor-controls">
-    <div id="actor-status">
+    <div id="actor-status" role="status" aria-live="polite" aria-atomic="true">
       <span id="actor-mode-status" data-mode="DISCONNECTED">CONNECTING</span>
       <span id="actor-live-position">Live position unavailable</span>
       <span id="actor-live-relative"></span>
     </div>
-    <button class="btn nav-big primary" id="btn-actor-prev">◀ Prev</button>
-    <button class="btn nav-big primary" id="btn-actor-next">Next ▶</button>
-    <button class="btn" id="btn-return-live" disabled>Return to Live</button>
+    <div id="actor-nav-buttons">
+      <button type="button" class="btn nav-big primary actor-action"
+        id="btn-actor-prev" aria-label="Previous script cue">◀ Previous</button>
+      <button type="button" class="btn nav-big primary actor-action"
+        id="btn-actor-next" aria-label="Next script cue">Next ▶</button>
+    </div>
+    <button type="button" class="btn" id="btn-return-live"
+      aria-label="Return to the live Controller position" disabled>Return to Live</button>
   </div>
 </div>
 
@@ -603,6 +676,7 @@
 <script src="role-model.js"></script>
 <script src="navigation-model.js"></script>
 <script src="actor-mode-model.js"></script>
+<script src="actor-input-model.js"></script>
 <script>
 // ── Role detection ────────────────────────────────────────────────────
 const params = new URLSearchParams(location.search);
@@ -681,9 +755,15 @@ if (isController) {
   const roleLabel = role === RoleModel.ROLES.ACTOR ? 'ACTOR' : 'AUDIENCE';
   dom.roleLabel.textContent = roleLabel;
   document.title = `🎭 Prompter — ${roleLabel[0]}${roleLabel.slice(1).toLowerCase()}`;
-  dom.zonePrev.parentElement.style.display = 'none';
   dom.stage.style.cursor = 'default';
-  if (isActor) dom.actorControls.classList.add('visible');
+  if (isActor) {
+    dom.actorControls.classList.add('visible');
+    dom.zonePrev.parentElement.classList.add('actor-zones');
+    dom.zonePrev.onclick = () => navigateActor('prev');
+    dom.zoneNext.onclick = () => navigateActor('next');
+  } else {
+    dom.zonePrev.parentElement.style.display = 'none';
+  }
 }
 
 // ── WebSocket ─────────────────────────────────────────────────────────
@@ -712,7 +792,7 @@ function connect() {
     connectionStatus = 'reconnecting';
     waitingForLiveState = true;
     dom.connDot.classList.remove('connected');
-    dom.connecting.style.display = 'flex';
+    dom.connecting.style.display = isActor && slides.length ? 'none' : 'flex';
     updateActorModeUI();
     reconnectTimer = setTimeout(connect, 1500);
   };
@@ -1100,10 +1180,24 @@ if (isController) {
 }
 
 // ── Keyboard navigation ───────────────────────────────────────────────
-document.addEventListener('keydown', (e) => {
-  if (!isController) return;
-  if (document.activeElement.tagName === 'TEXTAREA' || document.activeElement.tagName === 'SELECT') return;
+function isInteractiveTarget(target) {
+  return target instanceof Element && Boolean(target.closest(
+    'button, input, textarea, select, a[href], [contenteditable="true"], [role="button"]',
+  ));
+}
 
+document.addEventListener('keydown', (e) => {
+  if (isInteractiveTarget(e.target)) return;
+
+  if (isActor) {
+    const direction = ActorInputModel.directionForKey(e.key);
+    if (!direction || e.repeat) return;
+    e.preventDefault();
+    navigateActor(direction);
+    return;
+  }
+
+  if (!isController) return;
   if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') {
     e.preventDefault();
     send({ type: 'navigate', direction: 'next' });
