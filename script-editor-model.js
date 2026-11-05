@@ -521,8 +521,15 @@
     return { ok: errors.length === 0, errors, warnings };
   }
 
-  function draftKey(revision) {
-    return DRAFT_PREFIX + String(revision || '');
+  function isDraftScriptId(scriptId) {
+    return typeof scriptId === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(scriptId);
+  }
+
+  // A script id keeps one production's drafts away from another's.
+  // Calls without a script id keep the original live-script key.
+  function draftKey(revision, scriptId) {
+    const suffix = scriptId ? `${scriptId}:${revision || ''}` : String(revision || '');
+    return DRAFT_PREFIX + suffix;
   }
 
   function saveDraft(storage, draft) {
@@ -530,24 +537,29 @@
       || typeof draft.scriptText !== 'string') {
       return { ok: false, error: 'Draft is missing a script id or text.' };
     }
+    if (draft.scriptId != null && !isDraftScriptId(draft.scriptId)) {
+      return { ok: false, error: 'Draft is missing a script id or text.' };
+    }
     const record = {
       baseRevision: draft.baseRevision,
       scriptText: draft.scriptText,
       savedAt: draft.savedAt || new Date().toISOString(),
     };
+    if (draft.scriptId) record.scriptId = draft.scriptId;
     try {
-      storage.setItem(draftKey(record.baseRevision), JSON.stringify(record));
-      return { ok: true, key: draftKey(record.baseRevision) };
+      storage.setItem(draftKey(record.baseRevision, draft.scriptId || null), JSON.stringify(record));
+      return { ok: true, key: draftKey(record.baseRevision, draft.scriptId || null) };
     } catch (err) {
       return { ok: false, error: 'This browser could not save the draft.' };
     }
   }
 
-  function loadDraft(storage, revision) {
+  function loadDraft(storage, revision, scriptId) {
     if (!revision) return null;
+    if (scriptId != null && !isDraftScriptId(scriptId)) return null;
     let raw;
     try {
-      raw = storage.getItem(draftKey(revision));
+      raw = storage.getItem(draftKey(revision, scriptId || null));
     } catch (err) {
       return null;
     }
@@ -557,20 +569,23 @@
       if (!parsed || parsed.baseRevision !== revision || typeof parsed.scriptText !== 'string') {
         return null;
       }
+      if (scriptId && parsed.scriptId && parsed.scriptId !== scriptId) return null;
       return parsed;
     } catch (err) {
       return null;
     }
   }
 
-  function listStaleDrafts(storage, revision) {
+  function listStaleDrafts(storage, revision, scriptId) {
     const stale = [];
+    if (scriptId != null && !isDraftScriptId(scriptId)) return stale;
     let length = 0;
     try {
       length = storage.length;
     } catch (err) {
       return stale;
     }
+    const namespacedPrefix = scriptId ? `${DRAFT_PREFIX}${scriptId}:` : '';
     for (let index = 0; index < length; index += 1) {
       let key = null;
       try {
@@ -579,7 +594,15 @@
         continue;
       }
       if (!key || key.indexOf(DRAFT_PREFIX) !== 0) continue;
-      const storageRevision = key.slice(DRAFT_PREFIX.length);
+      let storageRevision;
+      if (scriptId) {
+        if (key.indexOf(namespacedPrefix) !== 0) continue;
+        storageRevision = key.slice(namespacedPrefix.length);
+      } else {
+        storageRevision = key.slice(DRAFT_PREFIX.length);
+        // Namespaced drafts belong to a specific saved script.
+        if (storageRevision.indexOf(':') !== -1) continue;
+      }
       if (storageRevision === revision) continue;
       let raw = null;
       try {
@@ -593,6 +616,7 @@
         if (!parsed || typeof parsed.scriptText !== 'string') continue;
         stale.push({
           storageRevision,
+          scriptId: scriptId || '',
           baseRevision: typeof parsed.baseRevision === 'string' ? parsed.baseRevision : storageRevision,
           scriptText: parsed.scriptText,
           savedAt: parsed.savedAt || '',
@@ -604,18 +628,18 @@
     return stale;
   }
 
-  function deleteDraft(storage, revision) {
+  function deleteDraft(storage, revision, scriptId) {
     try {
-      storage.removeItem(draftKey(revision));
+      storage.removeItem(draftKey(revision, scriptId || null));
       return true;
     } catch (err) {
       return false;
     }
   }
 
-  function deleteStaleDrafts(storage, revision) {
-    const stale = listStaleDrafts(storage, revision);
-    stale.forEach((draft) => deleteDraft(storage, draft.storageRevision));
+  function deleteStaleDrafts(storage, revision, scriptId) {
+    const stale = listStaleDrafts(storage, revision, scriptId);
+    stale.forEach((draft) => deleteDraft(storage, draft.storageRevision, scriptId || null));
     return stale.length;
   }
 
@@ -668,6 +692,9 @@
     ];
     if (options && options.liveChanged) {
       notes.push('The live script changed after you opened the editor. Publishing replaces that newer script with this one.');
+    }
+    if (options && options.librarySync) {
+      notes.push('The saved library copy of this live script is updated only if that copy has not changed since you opened the editor.');
     }
     return {
       title: 'Publish this script?',

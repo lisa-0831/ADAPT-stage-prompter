@@ -241,6 +241,43 @@ test('a draft stays separate from the published script and stale drafts do not l
   assert.ok(ScriptEditor.loadDraft(storage, 'rev-b'));
 });
 
+test('drafts for different saved scripts do not replace each other', () => {
+  const storage = memoryStorage();
+  ScriptEditor.saveDraft(storage, {
+    scriptId: '11111111-1111-4111-8111-111111111111',
+    baseRevision: 'rev-1',
+    scriptText: '# One\nAlpha\n',
+    savedAt: '2026-11-05T00:00:00.000Z',
+  });
+  ScriptEditor.saveDraft(storage, {
+    scriptId: '22222222-2222-4222-8222-222222222222',
+    baseRevision: 'rev-1',
+    scriptText: '# Two\nBeta\n',
+    savedAt: '2026-11-05T00:00:00.000Z',
+  });
+  ScriptEditor.saveDraft(storage, {
+    scriptId: '11111111-1111-4111-8111-111111111111',
+    baseRevision: 'rev-2',
+    scriptText: '# One\nEdited\n',
+    savedAt: '2026-11-05T00:00:00.000Z',
+  });
+
+  assert.equal(
+    ScriptEditor.loadDraft(storage, 'rev-1', '11111111-1111-4111-8111-111111111111').scriptText,
+    '# One\nAlpha\n',
+  );
+  assert.equal(
+    ScriptEditor.loadDraft(storage, 'rev-1', '22222222-2222-4222-8222-222222222222').scriptText,
+    '# Two\nBeta\n',
+  );
+  assert.equal(ScriptEditor.loadDraft(storage, 'rev-1', '22222222-2222-4222-8222-222222222222').scriptText.includes('Alpha'), false);
+  assert.equal(ScriptEditor.listStaleDrafts(storage, 'rev-2', '11111111-1111-4111-8111-111111111111').length, 1);
+  assert.equal(ScriptEditor.deleteStaleDrafts(storage, 'rev-2', '11111111-1111-4111-8111-111111111111'), 1);
+  assert.equal(ScriptEditor.loadDraft(storage, 'rev-1', '11111111-1111-4111-8111-111111111111'), null);
+  assert.ok(ScriptEditor.loadDraft(storage, 'rev-1', '22222222-2222-4222-8222-222222222222'));
+  assert.ok(ScriptEditor.loadDraft(storage, 'rev-2', '11111111-1111-4111-8111-111111111111'));
+});
+
 test('publication waits for server confirmation and ignores a repeated publish', () => {
   assert.equal(ScriptEditor.publicationStatus(false, { ok: true, revision: 'abc' }).success, false);
   const acknowledged = ScriptEditor.publicationStatus(true, { ok: true, slides: 10 });

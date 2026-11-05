@@ -931,6 +931,121 @@
     color: var(--amber);
     overflow-wrap: anywhere;
   }
+
+  #script-library {
+    width: min(48rem, calc(100vw - 2rem));
+    max-width: calc(100vw - 2rem);
+    max-height: calc(100dvh - 1rem);
+    margin: auto;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg2);
+    color: var(--cream);
+  }
+  #script-library[open] {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #script-library::backdrop { background: rgba(0, 0, 0, 0.72); }
+  #script-library [hidden] { display: none !important; }
+  #library-workspace {
+    overflow: auto;
+    min-height: 0;
+    flex: 1 1 auto;
+    padding: 1rem;
+  }
+  #script-library :focus-visible {
+    outline: 3px solid #fff;
+    outline-offset: 2px;
+  }
+  #script-library h2,
+  #script-library h3,
+  #script-library label {
+    font-family: var(--font-ui);
+    color: var(--amber);
+    letter-spacing: 0.04em;
+  }
+  #script-library input,
+  #script-library select {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    background: var(--bg);
+    color: var(--cream);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.55rem;
+    font-family: var(--font-mono);
+    font-size: 1rem;
+  }
+  #library-status:empty { display: none; }
+  #library-status {
+    font-family: var(--font-mono);
+    font-size: 0.95rem;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+  }
+  #library-status[data-tone="alert"] { color: #ffb4a8; }
+  #library-status[data-tone="status"] { color: var(--cream); }
+  #library-add,
+  .library-item,
+  #library-access {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.75rem;
+    margin: 0.75rem 0;
+  }
+  .library-item-head,
+  .library-actions,
+  #library-add .ctrl-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+  }
+  .library-item-head { justify-content: space-between; align-items: baseline; }
+  .library-title {
+    font-family: var(--font-ui);
+    color: var(--cream);
+    font-size: 1.05rem;
+    overflow-wrap: anywhere;
+  }
+  .library-live {
+    font-family: var(--font-ui);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--amber);
+  }
+  .library-meta,
+  #library-empty,
+  .library-note {
+    font-family: var(--font-mono);
+    color: var(--cream-dim);
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+  }
+  .library-actions .btn,
+  #library-add .btn,
+  #library-access .btn,
+  #library-preview-back {
+    min-height: 44px;
+  }
+  #library-file { max-width: 100%; }
+  #library-confirm {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    padding: 0.75rem;
+    background: rgba(0, 0, 0, 0.72);
+    overflow: auto;
+  }
+  #library-preview { margin-top: 0.5rem; }
 </style>
 </head>
 <body>
@@ -975,6 +1090,7 @@
     <div class="ctrl-row">
       <button class="btn" id="btn-case" type="button" aria-pressed="false" title="Switch to sentence case">AA</button>
       <button class="btn" id="btn-edit-script" type="button" aria-haspopup="dialog" aria-controls="script-editor" title="Edit the current script one scene at a time. The show does not change until you publish.">Edit Script</button>
+      <button class="btn" id="btn-script-library" type="button" aria-haspopup="dialog" aria-controls="script-library" title="Save, preview, and choose from more than one script. The live show changes only when you set a script live.">Script Library</button>
       <button class="btn" id="btn-upload-toggle" type="button" title="Paste a whole script and send it live immediately.">📄 Replace Script</button>
       <button class="btn danger" id="btn-exit">Exit</button>
     </div>
@@ -1046,6 +1162,8 @@
   <div id="editor-preview" tabindex="-1" hidden></div>
   <div id="editor-actions">
     <button type="button" class="btn" id="editor-save">Save Draft</button>
+    <button type="button" class="btn" id="editor-save-library" hidden>Save to Library</button>
+    <button type="button" class="btn" id="editor-set-live" hidden>Set as Live</button>
     <button type="button" class="btn" id="editor-preview-btn" aria-expanded="false" aria-controls="editor-preview">Preview</button>
     <button type="button" class="btn primary" id="editor-publish">Publish Script</button>
     <button type="button" class="btn" id="editor-restore" hidden>Restore Previous Script</button>
@@ -1068,6 +1186,56 @@
   </div>
 </dialog>
 
+<dialog id="script-library" aria-labelledby="library-title">
+  <div id="library-workspace">
+    <div class="editor-top">
+      <h2 id="library-title">Script Library</h2>
+      <button type="button" class="btn" id="library-close">Close</button>
+    </div>
+    <p class="editor-help">
+      Save more than one production here. Preview and editing stay on this screen.
+      Actor and Audience screens change only when you choose Set as Live.
+    </p>
+    <p id="library-status" role="status" aria-live="polite" data-tone="status"></p>
+    <div id="library-access" hidden>
+      <label for="library-token">Staff access code</label>
+      <input id="library-token" type="password" autocomplete="current-password" autocapitalize="off" spellcheck="false">
+      <p class="library-note">This code stays in this browser tab. It is not the name of a script.</p>
+      <button type="button" class="btn primary" id="library-token-continue">Continue</button>
+    </div>
+    <form id="library-add">
+      <label for="library-new-title">Title</label>
+      <input id="library-new-title" name="title" maxlength="120" autocomplete="off" autocapitalize="off" required>
+      <p class="library-note">Adding a script creates a new saved copy. It does not replace a script already in the list.</p>
+      <div class="ctrl-row">
+        <button type="submit" class="btn primary" id="library-save-live">Save current live script</button>
+      </div>
+      <label for="library-file">Import a plain-text script</label>
+      <input id="library-file" type="file" accept=".txt,text/plain">
+    </form>
+    <p id="library-empty" hidden>No saved scripts yet. Save the current live script, or import a plain-text file.</p>
+    <div id="library-list" aria-live="polite"></div>
+    <div id="library-preview" hidden>
+      <button type="button" class="btn" id="library-preview-back">Back to library</button>
+      <div id="library-preview-body" tabindex="-1"></div>
+    </div>
+  </div>
+  <div id="library-confirm" hidden role="dialog" aria-modal="true" aria-labelledby="library-confirm-heading">
+    <div class="editor-confirm-panel">
+      <h3 id="library-confirm-title">
+        <span class="editor-confirm-mark" aria-hidden="true">!</span>
+        <span id="library-confirm-heading"></span>
+      </h3>
+      <div id="library-confirm-body"></div>
+      <p id="library-confirm-status" role="status" aria-live="assertive"></p>
+      <div class="editor-confirm-actions">
+        <button type="button" class="btn primary" id="library-confirm-yes">Set as Live</button>
+        <button type="button" class="btn" id="library-confirm-no">Cancel</button>
+      </div>
+    </div>
+  </div>
+</dialog>
+
 <div id="exit-guard">
   <h2>Exit Prompter?</h2>
   <p>Tap <strong>Confirm Exit</strong> to leave, or <strong>Stay</strong> to keep the show running.</p>
@@ -1085,6 +1253,7 @@
 <script src="caption-case.js"></script>
 <script src="script-format.js"></script>
 <script src="script-editor-model.js"></script>
+<script src="script-library-model.js"></script>
 <script>
 // ── Role detection ────────────────────────────────────────────────────
 const params = new URLSearchParams(location.search);
@@ -1106,6 +1275,13 @@ let slides = [];
 let liveState = null;
 let actorReadingState = ActorModeModel.followLive();
 let scriptRevision = null;
+let liveScriptId = null;
+let editorMode = 'live';
+let editorLibraryId = null;
+let editorLibraryRevision = null;
+let editorLibraryTitle = '';
+let returnToLibrary = false;
+let libraryNoticeAfterClose = '';
 let editorModel = null;
 let editorSceneIndex = 0;
 let editorBaseRevision = null;
@@ -1233,6 +1409,9 @@ function connect() {
       const scriptChanged = scriptRevision !== null && msg.revision !== scriptRevision;
       slides = msg.slides;
       scriptRevision = msg.revision;
+      if (typeof msg.liveScriptId === 'string' || msg.liveScriptId === null) {
+        liveScriptId = msg.liveScriptId || null;
+      }
       if (isActor && scriptChanged) {
         cancelReturnTransition();
         actorReadingState = ActorModeModel.followLive();
@@ -1637,6 +1816,8 @@ const editorDom = {
   confirmYes: document.getElementById('editor-confirm-yes'),
   confirmNo: document.getElementById('editor-confirm-no'),
   save: document.getElementById('editor-save'),
+  saveLibrary: document.getElementById('editor-save-library'),
+  setLive: document.getElementById('editor-set-live'),
   publish: document.getElementById('editor-publish'),
   restore: document.getElementById('editor-restore'),
   closeTop: document.getElementById('editor-close-top'),
@@ -1645,6 +1826,16 @@ const editorDom = {
 
 function isEditorOpen() {
   return Boolean(editorDom.dialog && editorDom.dialog.open);
+}
+
+function isLibraryOpen() {
+  const dialog = document.getElementById('script-library');
+  return Boolean(dialog && dialog.open);
+}
+
+function editorDraftScriptId() {
+  if (editorLibraryId) return editorLibraryId;
+  return 'live';
 }
 
 function noteEditorScriptRevision() {
@@ -1684,7 +1875,8 @@ function sceneOptionLabel(scene, index) {
 }
 
 function syncEditorConflict() {
-  const changed = isEditorOpen()
+  const changed = editorMode !== 'library'
+    && isEditorOpen()
     && editorBaseRevision
     && scriptRevision
     && editorBaseRevision !== scriptRevision
@@ -1752,8 +1944,15 @@ function refreshEditorChrome() {
   const result = ScriptEditor.validate(ScriptEditor.serialize(editorModel));
   showIssues(result, false);
   updateDirty(result);
-  editorDom.publish.disabled = !(editorBaseRevision && result.ok && !editorAwaitingRevision);
+  const libraryEditing = editorMode === 'library';
+  editorDom.saveLibrary.hidden = !libraryEditing;
+  editorDom.setLive.hidden = !libraryEditing;
+  editorDom.publish.hidden = libraryEditing;
+  if (libraryEditing) editorDom.restore.hidden = true;
+  editorDom.publish.disabled = libraryEditing || !(editorBaseRevision && result.ok && !editorAwaitingRevision);
   editorDom.save.disabled = !editorBaseRevision || editorAwaitingRevision;
+  editorDom.saveLibrary.disabled = !libraryEditing || !editorLibraryId || editorAwaitingRevision;
+  editorDom.setLive.disabled = !libraryEditing || !editorLibraryId || editorIsDirty() || editorAwaitingRevision;
   syncEditorConflict();
 }
 
@@ -1958,13 +2157,19 @@ function renderEditorPreview() {
   slides.forEach((slide) => appendSlidePreview(editorDom.preview, slide));
 }
 
+function relevantStaleDrafts(storage) {
+  const named = ScriptEditor.listStaleDrafts(storage, editorBaseRevision, editorDraftScriptId());
+  if (editorMode === 'library') return named;
+  return named.concat(ScriptEditor.listStaleDrafts(storage, editorBaseRevision));
+}
+
 function showStaleDrafts() {
   const storage = draftStorage();
   if (!storage || !editorBaseRevision) {
     editorDom.stale.hidden = true;
     return;
   }
-  const stale = ScriptEditor.listStaleDrafts(storage, editorBaseRevision);
+  const stale = relevantStaleDrafts(storage);
   if (!stale.length) {
     editorDom.stale.hidden = true;
     return;
@@ -2044,6 +2249,7 @@ function showEditorConfirm(mode, warnings) {
       liveChanged: Boolean(
         editorBaseRevision && scriptRevision && editorBaseRevision !== scriptRevision,
       ),
+      librarySync: Boolean(editorLibraryId),
     });
     editorDom.confirmHeading.textContent = content.title;
     editorConfirmYesLabel = ScriptEditor.publishRequestState(false).label;
@@ -2098,6 +2304,28 @@ function showEditorConfirm(mode, warnings) {
       box.append(title, list);
       editorDom.confirmBody.append(box);
     }
+  } else if (mode === 'set-live') {
+    const content = ScriptLibrary.liveSwitchConfirmContent(
+      libraryCurrentTitle(),
+      editorLibraryTitle,
+    );
+    editorDom.confirmHeading.textContent = content.title;
+    editorConfirmYesLabel = ScriptLibrary.setLiveRequestState(false).label;
+    editorDom.confirmYes.classList.add('primary');
+    const message = document.createElement('p');
+    message.className = 'editor-confirm-message';
+    message.textContent = content.message;
+    const notes = document.createElement('ul');
+    notes.className = 'editor-confirm-notes';
+    content.notes.forEach((note) => {
+      const item = document.createElement('li');
+      item.textContent = note;
+      notes.append(item);
+    });
+    editorDom.confirmBody.append(message, notes);
+    appendParagraphs(editorDom.confirmBody, [
+      'This uses the copy saved in the library. Save to Library first if this screen still has newer edits.',
+    ]);
   } else {
     editorDom.confirmHeading.textContent = 'Discard unsaved edits?';
     editorConfirmYesLabel = 'Discard unsaved edits';
@@ -2130,15 +2358,23 @@ function cancelEditorConfirm() {
 }
 
 function setConfirmBusy(busy) {
-  const state = ScriptEditor.publishRequestState(busy && editorConfirmMode === 'publish');
+  const publishing = busy && editorConfirmMode === 'publish';
+  const settingLive = busy && editorConfirmMode === 'set-live';
+  const state = publishing
+    ? ScriptEditor.publishRequestState(true)
+    : ScriptLibrary.setLiveRequestState(settingLive);
   editorAwaitingRevision = busy;
   editorDom.confirm.setAttribute('aria-busy', busy ? 'true' : 'false');
   editorDom.confirmYes.disabled = busy;
   editorDom.confirmNo.disabled = busy;
   editorDom.publish.disabled = busy || editorDom.publish.disabled;
   editorDom.restore.disabled = busy || editorDom.restore.disabled;
+  editorDom.saveLibrary.disabled = busy || editorDom.saveLibrary.disabled;
+  editorDom.setLive.disabled = busy || editorDom.setLive.disabled;
   if (!busy) return;
-  editorDom.confirmYes.textContent = editorConfirmMode === 'publish' ? state.label : 'Restoring...';
+  if (publishing) editorDom.confirmYes.textContent = state.label;
+  else if (settingLive) editorDom.confirmYes.textContent = state.label;
+  else editorDom.confirmYes.textContent = 'Restoring...';
   editorDom.confirmStatus.classList.remove('editor-error');
   editorDom.confirmStatus.textContent = editorDom.confirmYes.textContent;
   editorDom.confirmStatus.tabIndex = 0;
@@ -2181,13 +2417,24 @@ function onConfirmKeydown(event) {
 }
 
 function forceCloseEditor() {
+  const reopenLibrary = returnToLibrary;
+  const libraryStatus = libraryNoticeAfterClose;
+  returnToLibrary = false;
+  libraryNoticeAfterClose = '';
   editorOpenToken += 1;
+  editorMode = 'live';
   hideEditorConfirm();
   editorPreviewOn = false;
   editorDom.preview.hidden = true;
   editorDom.previewBtn.setAttribute('aria-expanded', 'false');
   editorDom.previewBtn.textContent = 'Preview';
+  editorDom.saveLibrary.hidden = true;
+  editorDom.setLive.hidden = true;
+  editorDom.publish.hidden = false;
+  const title = document.getElementById('script-editor-title');
+  if (title) title.textContent = 'Edit Script';
   if (editorDom.dialog.open) editorDom.dialog.close();
+  if (reopenLibrary) openLibrary({ status: libraryStatus });
 }
 
 function requestCloseEditor() {
@@ -2203,9 +2450,15 @@ function requestCloseEditor() {
   forceCloseEditor();
 }
 
-async function openEditor() {
+async function openEditor(libraryScript) {
   if (editorDom.dialog.open) return;
+  const fromLibrary = Boolean(libraryScript && typeof libraryScript.id === 'string');
+  if (!fromLibrary) returnToLibrary = false;
   const token = ++editorOpenToken;
+  editorMode = fromLibrary ? 'library' : 'live';
+  editorLibraryId = fromLibrary ? libraryScript.id : null;
+  editorLibraryRevision = fromLibrary ? libraryScript.revision : null;
+  editorLibraryTitle = fromLibrary ? libraryScript.title || '' : '';
   editorConfirmMode = null;
   editorPreviewOn = false;
   editorDom.preview.hidden = true;
@@ -2213,33 +2466,82 @@ async function openEditor() {
   editorDom.workspace.inert = false;
   editorDom.lines.replaceChildren();
   editorDom.validation.replaceChildren();
-  editorDom.status.textContent = 'Loading the current script…';
+  document.getElementById('script-editor-title').textContent = fromLibrary
+    ? 'Edit saved script'
+    : 'Edit Script';
+  document.getElementById('script-editor-help').textContent = fromLibrary
+    ? 'You are editing a saved library script. Save to Library keeps it in the library and does not change the live show. Set as Live is a separate step and uses the saved copy.'
+    : 'Choose a scene and edit the lines. Save a draft to keep the work in this browser. The live show does not change until you publish. Replace Script is different: it pastes a whole script and goes live immediately.';
+  editorDom.status.textContent = fromLibrary
+    ? 'Loading the saved script…'
+    : 'Loading the current script…';
   editorDom.dirty.textContent = '';
   editorDom.dialog.showModal();
   try {
-    const res = await fetch('/script');
-    if (!res.ok) throw new Error('Could not load the script');
-    const published = await res.text();
+    let published = '';
+    if (fromLibrary) {
+      const res = await libraryFetch(`/api/library/${libraryScript.id}`);
+      const body = await res.json().catch(() => null);
+      if (!res.ok || !body || !body.script || typeof body.script.text !== 'string') {
+        throw new Error('Could not load the saved script');
+      }
+      published = body.script.text;
+      editorLibraryTitle = body.script.title || editorLibraryTitle;
+      editorLibraryRevision = body.script.revision || editorLibraryRevision;
+    } else {
+      const res = await fetch('/script');
+      if (!res.ok) throw new Error('Could not load the script');
+      published = await res.text();
+      try {
+        const listed = await libraryFetch('/api/library');
+        if (listed.ok) {
+          const body = await listed.json();
+          if (body && Array.isArray(body.scripts)) {
+            rememberLibraryEntries(body.scripts, body.liveId);
+            if (body.liveId) liveScriptId = body.liveId;
+          }
+        }
+      } catch (err) {
+        editorLibraryId = null;
+      }
+    }
     if (token !== editorOpenToken || !editorDom.dialog.open) return;
     const hash = await scriptHash(published);
     if (token !== editorOpenToken || !editorDom.dialog.open) return;
-    editorBaseRevision = hash || scriptRevision;
+    editorBaseRevision = hash || (fromLibrary ? editorLibraryRevision : scriptRevision);
+    if (!fromLibrary) {
+      const linked = libraryEntries.find((item) => item.id === liveScriptId);
+      editorLibraryId = null;
+      editorLibraryRevision = null;
+      if (linked && hash && linked.revision === hash) {
+        editorLibraryId = linked.id;
+        editorLibraryRevision = linked.revision;
+        editorLibraryTitle = linked.title || '';
+      }
+    }
     const storage = draftStorage();
-    const draft = storage && editorBaseRevision
-      ? ScriptEditor.loadDraft(storage, editorBaseRevision)
-      : null;
+    let draft = null;
+    if (storage && editorBaseRevision) {
+      draft = ScriptEditor.loadDraft(storage, editorBaseRevision, editorDraftScriptId());
+      if (!draft && !fromLibrary) draft = ScriptEditor.loadDraft(storage, editorBaseRevision);
+    }
     const source = draft ? draft.scriptText : published;
     editorBaselineText = source;
     editorModel = ScriptEditor.load(source);
     editorSceneIndex = 0;
     renderEditor();
     showStaleDrafts();
-    await refreshRestoreButton();
+    if (fromLibrary) editorDom.restore.hidden = true;
+    else await refreshRestoreButton();
     if (token !== editorOpenToken || !editorDom.dialog.open) return;
     if (!editorBaseRevision) {
-      editorDom.status.textContent = 'The script is still connecting. Close this and open Edit Script again before saving or publishing.';
+      editorDom.status.textContent = 'The script is still connecting. Close this and open it again before saving.';
     } else if (draft) {
-      editorDom.status.textContent = 'Opened your saved draft for this script. Drafts stay in this browser only. The live show has not changed.';
+      editorDom.status.textContent = fromLibrary
+        ? 'Opened your saved draft for this library script. The live show has not changed.'
+        : 'Opened your saved draft for this script. Drafts stay in this browser only. The live show has not changed.';
+    } else if (fromLibrary) {
+      editorDom.status.textContent = 'You are editing the saved script. The live show does not change until you set a script live.';
     } else {
       editorDom.status.textContent = 'You are editing a copy of the live script. The show does not change until you publish. Drafts stay in this browser only.';
     }
@@ -2250,7 +2552,11 @@ async function openEditor() {
     editorModel = null;
     editorDom.publish.disabled = true;
     editorDom.save.disabled = true;
-    editorDom.status.textContent = 'The script could not be loaded. The live show was not changed.';
+    editorDom.saveLibrary.disabled = true;
+    editorDom.setLive.disabled = true;
+    editorDom.status.textContent = fromLibrary
+      ? 'The saved script could not be loaded. The live show was not changed.'
+      : 'The script could not be loaded. The live show was not changed.';
   }
 }
 
@@ -2267,6 +2573,7 @@ function saveEditorDraft() {
   const text = ScriptEditor.serialize(editorModel);
   const saved = ScriptEditor.saveDraft(storage, {
     baseRevision: editorBaseRevision,
+    scriptId: editorDraftScriptId(),
     scriptText: text,
     savedAt: new Date().toISOString(),
   });
@@ -2326,9 +2633,14 @@ async function runPublish(text) {
       return;
     }
     setConfirmBusy(true);
+    const headers = { 'Content-Type': 'text/plain' };
+    if (editorMode !== 'library' && editorLibraryId && editorLibraryRevision) {
+      headers['X-Library-Id'] = editorLibraryId;
+      headers['X-Library-Revision'] = editorLibraryRevision;
+    }
     const res = await fetch('/script', {
       method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
+      headers,
       body: text,
     });
     let body = null;
@@ -2342,16 +2654,21 @@ async function runPublish(text) {
       }
       const storage = draftStorage();
       if (outcome.clearDraft && storage && editorBaseRevision) {
+        ScriptEditor.deleteDraft(storage, editorBaseRevision, editorDraftScriptId());
         ScriptEditor.deleteDraft(storage, editorBaseRevision);
       }
       if (outcome.revision) editorBaseRevision = outcome.revision;
       editorBaselineText = text;
       forceCloseEditor();
       const liveSlide = liveState && slides[liveState.slideIndex];
-      showControllerNotice(ScriptEditor.publishLiveNotice(
+      let notice = ScriptEditor.publishLiveNotice(
         outcome.message,
         liveSlide && liveSlide.title,
-      ));
+      );
+      if (body && body.libraryConflict) {
+        notice += ' The saved library copy was not changed, because it was updated after you opened the editor.';
+      }
+      showControllerNotice(notice);
       document.getElementById('btn-edit-script').focus();
       return;
     }
@@ -2361,7 +2678,10 @@ async function runPublish(text) {
     }
     const storage = draftStorage();
     const previousBase = editorBaseRevision;
-    if (storage && previousBase) ScriptEditor.deleteDraft(storage, previousBase);
+    if (storage && previousBase) {
+      ScriptEditor.deleteDraft(storage, previousBase, editorDraftScriptId());
+      ScriptEditor.deleteDraft(storage, previousBase);
+    }
     editorBaseRevision = status.revision;
     editorBaselineText = text;
     if (!editorModel || ScriptEditor.serialize(editorModel) !== text) {
@@ -2388,11 +2708,101 @@ async function runPublish(text) {
   }
 }
 
+async function saveLibraryScript() {
+  if (editorMode !== 'library' || !editorModel || !editorLibraryId || !editorLibraryRevision) {
+    editorDom.status.textContent = 'This saved script cannot be updated yet. The live show was not changed.';
+    return;
+  }
+  if (!editorPublishGuard.tryStart()) return;
+  const text = ScriptEditor.serialize(editorModel);
+  const result = ScriptEditor.validate(text);
+  if (!result.ok) {
+    showIssues(result, true);
+    editorPublishGuard.finish();
+    return;
+  }
+  editorDom.saveLibrary.disabled = true;
+  try {
+    const res = await libraryFetch(`/api/library/${editorLibraryId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, expectedRevision: editorLibraryRevision }),
+    });
+    const body = await res.json().catch(() => null);
+    if (res.status === 409 || (body && body.code === 'conflict')) {
+      editorDom.status.textContent = body && body.error
+        ? body.error
+        : 'This saved script was changed after you opened it. Your edits were not saved over that newer copy.';
+      return;
+    }
+    if (!res.ok || !body || !body.script) {
+      editorDom.status.textContent = 'The saved script was not updated. The live show was not changed.';
+      return;
+    }
+    const storage = draftStorage();
+    if (storage) ScriptEditor.deleteDraft(storage, editorBaseRevision, editorLibraryId);
+    editorLibraryRevision = body.script.revision;
+    editorBaseRevision = body.script.revision;
+    editorBaselineText = text;
+    editorLibraryTitle = body.script.title || editorLibraryTitle;
+    editorDom.status.textContent = 'Saved to the library. The live show was not changed.';
+    refreshEditorChrome();
+  } catch (err) {
+    editorDom.status.textContent = 'The saved script was not updated. The live show was not changed.';
+  } finally {
+    editorPublishGuard.finish();
+    refreshEditorChrome();
+  }
+}
+
+function beginSetLiveFromEditor() {
+  if (editorMode !== 'library' || !editorLibraryId) return;
+  if (editorIsDirty()) {
+    editorDom.status.textContent = 'Save to the library before setting this script live. The live show was not changed.';
+    return;
+  }
+  showEditorConfirm('set-live');
+}
+
+async function runEditorSetLive() {
+  if (!editorLibraryId || !editorPublishGuard.tryStart()) return;
+  editorAwaitingRevision = true;
+  editorDom.confirmYes.disabled = true;
+  editorDom.confirmNo.disabled = true;
+  try {
+    setConfirmBusy(true);
+    const res = await libraryFetch(`/api/library/${editorLibraryId}/live`, { method: 'POST' });
+    const body = await res.json().catch(() => null);
+    const outcome = ScriptLibrary.setLiveOutcome(res.ok, body);
+    if (!outcome.ok) {
+      showConfirmFailure(outcome.message);
+      return;
+    }
+    libraryNoticeAfterClose = outcome.message;
+    forceCloseEditor();
+    showControllerNotice(outcome.message);
+  } catch (err) {
+    showConfirmFailure('The live script was not changed.');
+  } finally {
+    editorAwaitingRevision = false;
+    editorPublishGuard.finish();
+    editorDom.confirm.setAttribute('aria-busy', 'false');
+    if (editorConfirmMode) {
+      editorDom.confirmYes.disabled = false;
+      editorDom.confirmNo.disabled = false;
+      editorDom.confirmYes.textContent = editorConfirmYesLabel;
+    }
+    refreshEditorChrome();
+  }
+}
+
 function initScriptEditor() {
-  document.getElementById('btn-edit-script').addEventListener('click', openEditor);
+  document.getElementById('btn-edit-script').addEventListener('click', () => openEditor());
   editorDom.closeTop.addEventListener('click', requestCloseEditor);
   editorDom.close.addEventListener('click', requestCloseEditor);
   editorDom.save.addEventListener('click', saveEditorDraft);
+  editorDom.saveLibrary.addEventListener('click', saveLibraryScript);
+  editorDom.setLive.addEventListener('click', beginSetLiveFromEditor);
   editorDom.publish.addEventListener('click', beginPublish);
   editorDom.restore.addEventListener('click', beginRestore);
   editorDom.confirmNo.addEventListener('click', cancelEditorConfirm);
@@ -2410,6 +2820,7 @@ function initScriptEditor() {
     }
     if (mode === 'publish') runPublish(ScriptEditor.serialize(editorModel));
     if (mode === 'restore') runPublish(editorPreviousText);
+    if (mode === 'set-live') runEditorSetLive();
   });
   editorDom.previewBtn.addEventListener('click', () => {
     editorPreviewOn = !editorPreviewOn;
@@ -2435,7 +2846,10 @@ function initScriptEditor() {
   });
   editorDom.discardStale.addEventListener('click', () => {
     const storage = draftStorage();
-    if (storage && editorBaseRevision) ScriptEditor.deleteStaleDrafts(storage, editorBaseRevision);
+    if (storage && editorBaseRevision) {
+      ScriptEditor.deleteStaleDrafts(storage, editorBaseRevision, editorDraftScriptId());
+      if (editorMode !== 'library') ScriptEditor.deleteStaleDrafts(storage, editorBaseRevision);
+    }
     editorDom.stale.hidden = true;
     editorDom.status.textContent = 'Old drafts were deleted. The current script was not changed.';
   });
@@ -2446,9 +2860,536 @@ function initScriptEditor() {
   });
 }
 
+// ── Script library ────────────────────────────────────────────────────
+const STAFF_TOKEN_KEY = 'prompter-staff-token';
+let libraryEntries = [];
+let libraryLiveIdCached = null;
+let libraryBusy = false;
+let libraryPendingId = null;
+const libraryGuard = ScriptEditor.createPublishGuard();
+
+function rememberLibraryEntries(scripts, liveId) {
+  libraryEntries = Array.isArray(scripts) ? scripts.slice() : [];
+  libraryLiveIdCached = liveId || null;
+}
+
+function libraryCurrentTitle() {
+  const id = liveScriptId || libraryLiveIdCached;
+  const entry = libraryEntries.find((item) => item.id === id);
+  if (entry && entry.title) return entry.title;
+  return '';
+}
+
+function staffToken() {
+  try { return sessionStorage.getItem(STAFF_TOKEN_KEY) || ''; }
+  catch (err) { return ''; }
+}
+
+function setStaffToken(value) {
+  try {
+    if (value) sessionStorage.setItem(STAFF_TOKEN_KEY, value);
+    else sessionStorage.removeItem(STAFF_TOKEN_KEY);
+  } catch (err) {
+    // The code can still be sent for this attempt.
+  }
+}
+
+function libraryFetch(url, options) {
+  const headers = new Headers(options && options.headers ? options.headers : undefined);
+  const token = staffToken();
+  if (token && !headers.has('X-Staff-Token')) headers.set('X-Staff-Token', token);
+  return fetch(url, Object.assign({}, options || {}, { headers }));
+}
+
+function libraryDom() {
+  return {
+    dialog: document.getElementById('script-library'),
+    workspace: document.getElementById('library-workspace'),
+    status: document.getElementById('library-status'),
+    access: document.getElementById('library-access'),
+    token: document.getElementById('library-token'),
+    add: document.getElementById('library-add'),
+    title: document.getElementById('library-new-title'),
+    file: document.getElementById('library-file'),
+    empty: document.getElementById('library-empty'),
+    list: document.getElementById('library-list'),
+    preview: document.getElementById('library-preview'),
+    previewBody: document.getElementById('library-preview-body'),
+    confirm: document.getElementById('library-confirm'),
+    confirmHeading: document.getElementById('library-confirm-heading'),
+    confirmBody: document.getElementById('library-confirm-body'),
+    confirmStatus: document.getElementById('library-confirm-status'),
+    confirmYes: document.getElementById('library-confirm-yes'),
+    confirmNo: document.getElementById('library-confirm-no'),
+  };
+}
+
+function setLibraryStatus(message, tone) {
+  const status = libraryDom().status;
+  status.dataset.tone = tone || 'status';
+  status.textContent = message || '';
+  status.setAttribute('role', tone === 'alert' ? 'alert' : 'status');
+}
+
+function formatModified(iso) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return 'Unknown date';
+  return date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function libraryErrorMessage(response, body, fallback) {
+  if (response && response.status === 401) return 'The staff access code was not accepted.';
+  if (body && typeof body.error === 'string' && body.error) return body.error;
+  return fallback;
+}
+
+async function readLibraryJson(response) {
+  try { return await response.json(); }
+  catch (err) { return null; }
+}
+
+function hideLibraryPreview() {
+  const ui = libraryDom();
+  ui.preview.hidden = true;
+  ui.previewBody.replaceChildren();
+  ui.add.hidden = false;
+  ui.list.hidden = false;
+  ui.empty.hidden = libraryEntries.length > 0;
+}
+
+function renderLibraryPreview(script) {
+  const ui = libraryDom();
+  ui.add.hidden = true;
+  ui.list.hidden = true;
+  ui.empty.hidden = true;
+  ui.preview.hidden = false;
+  ui.previewBody.replaceChildren();
+  const heading = document.createElement('h3');
+  heading.textContent = `Preview: ${script.title || 'Untitled script'}`;
+  const note = document.createElement('p');
+  note.className = 'library-note';
+  note.textContent = 'This preview uses the same reading rules as the stage. It does not move the live cue, and it does not update Actor or Audience screens.';
+  ui.previewBody.append(heading, note);
+  const slidesForPreview = ScriptFormat.parseScript(script.text || '');
+  if (!slidesForPreview.length) {
+    const empty = document.createElement('p');
+    empty.textContent = 'Nothing in this script can be previewed yet.';
+    ui.previewBody.append(empty);
+  } else {
+    slidesForPreview.forEach((slide) => appendSlidePreview(ui.previewBody, slide));
+  }
+  ui.previewBody.focus();
+}
+
+function renderLibraryList() {
+  const ui = libraryDom();
+  ui.list.replaceChildren();
+  ui.empty.hidden = libraryEntries.length > 0;
+  libraryEntries.forEach((entry) => {
+    const item = document.createElement('article');
+    item.className = 'library-item';
+    const head = document.createElement('div');
+    head.className = 'library-item-head';
+    const title = document.createElement('h3');
+    title.className = 'library-title';
+    title.textContent = entry.title || 'Untitled script';
+    head.append(title);
+    const isLive = entry.live || entry.id === liveScriptId;
+    if (isLive) {
+      const badge = document.createElement('p');
+      badge.className = 'library-live';
+      badge.textContent = 'Live';
+      head.append(badge);
+    }
+    const meta = document.createElement('p');
+    meta.className = 'library-meta';
+    const time = document.createElement('time');
+    time.dateTime = entry.updatedAt || '';
+    time.textContent = formatModified(entry.updatedAt);
+    meta.append('Last modified ', time);
+    const actions = document.createElement('div');
+    actions.className = 'library-actions';
+
+    function action(label, name) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'btn';
+      button.textContent = label;
+      button.setAttribute('aria-label', `${label} ${entry.title || 'saved script'}`);
+      button.disabled = libraryBusy;
+      button.addEventListener('click', () => name());
+      actions.append(button);
+      return button;
+    }
+
+    action('Preview', () => previewLibraryScript(entry.id));
+    action('Edit', () => editLibraryScript(entry));
+    action('Rename', () => showLibraryRename(item, entry));
+    const liveButton = action('Set as Live', () => beginLibrarySetLive(entry));
+    if (isLive) {
+      liveButton.disabled = true;
+      liveButton.textContent = 'Already live';
+      liveButton.setAttribute('aria-label', `Already live: ${entry.title || 'saved script'}`);
+    }
+
+    const rename = document.createElement('form');
+    rename.hidden = true;
+    const renameLabel = document.createElement('label');
+    renameLabel.textContent = 'New title';
+    const renameInput = document.createElement('input');
+    renameInput.type = 'text';
+    renameInput.value = entry.title || '';
+    renameInput.maxLength = 120;
+    renameInput.autocomplete = 'off';
+    renameLabel.append(document.createElement('br'), renameInput);
+    const renameSave = document.createElement('button');
+    renameSave.type = 'submit';
+    renameSave.className = 'btn primary';
+    renameSave.textContent = 'Save title';
+    const renameCancel = document.createElement('button');
+    renameCancel.type = 'button';
+    renameCancel.className = 'btn';
+    renameCancel.textContent = 'Cancel';
+    renameCancel.addEventListener('click', () => { rename.hidden = true; });
+    rename.append(renameLabel, renameSave, renameCancel);
+    rename.addEventListener('submit', (event) => {
+      event.preventDefault();
+      renameLibraryScript(entry, renameInput.value);
+    });
+
+    item.append(head, meta, actions, rename);
+    item._renameForm = rename;
+    ui.list.append(item);
+  });
+}
+
+function showLibraryRename(item, entry) {
+  const form = item._renameForm;
+  if (!form) return;
+  form.hidden = false;
+  const input = form.querySelector('input');
+  if (input) {
+    input.value = entry.title || '';
+    input.focus();
+  }
+}
+
+async function openLibrary(options) {
+  if (!isController || isEditorOpen()) return;
+  const ui = libraryDom();
+  if (!ui.dialog.open) ui.dialog.showModal();
+  hideLibraryPreview();
+  ui.empty.hidden = true;
+  ui.confirm.hidden = true;
+  ui.workspace.inert = false;
+  const kept = options && options.status ? options.status : '';
+  setLibraryStatus(kept || 'Loading saved scripts…', 'status');
+  const access = await fetch('/api/library/access').then((response) => response.json()).catch(() => null);
+  if (access && access.required && !staffToken()) {
+    ui.access.hidden = false;
+    ui.add.hidden = true;
+    ui.list.hidden = true;
+    ui.empty.hidden = true;
+    setLibraryStatus('Enter the staff access code to open the script library.', 'status');
+    ui.token.focus();
+    return;
+  }
+  ui.access.hidden = true;
+  ui.add.hidden = false;
+  await refreshLibrary(kept);
+  if (!kept) document.getElementById('library-close').focus();
+}
+
+async function refreshLibrary(keptStatus) {
+  const ui = libraryDom();
+  ui.dialog.setAttribute('aria-busy', 'true');
+  try {
+    const response = await libraryFetch('/api/library');
+    const body = await readLibraryJson(response);
+    if (response.status === 401) {
+      setStaffToken('');
+      ui.access.hidden = false;
+      ui.add.hidden = true;
+      setLibraryStatus('The staff access code was not accepted.', 'alert');
+      ui.token.focus();
+      return;
+    }
+    if (!response.ok || !body || !Array.isArray(body.scripts)) {
+      libraryEntries = [];
+      renderLibraryList();
+      setLibraryStatus('The script library could not be loaded. The live show was not changed.', 'alert');
+      return;
+    }
+    rememberLibraryEntries(body.scripts, body.liveId);
+    if (body.liveId) liveScriptId = body.liveId;
+    else if (body.liveId === null) liveScriptId = null;
+    renderLibraryList();
+    if (keptStatus) setLibraryStatus(keptStatus, 'status');
+    else if (!libraryEntries.length) setLibraryStatus('No saved scripts yet.', 'status');
+    else setLibraryStatus('', 'status');
+  } catch (err) {
+    setLibraryStatus('The script library could not be loaded. The live show was not changed.', 'alert');
+  } finally {
+    ui.dialog.setAttribute('aria-busy', 'false');
+  }
+}
+
+async function continueLibraryAccess() {
+  const ui = libraryDom();
+  setStaffToken(ui.token.value);
+  ui.token.value = '';
+  await refreshLibrary();
+}
+
+async function createLibraryScript(title, text, trackIfCurrent) {
+  const checked = ScriptEditor.validate(text);
+  if (!checked.ok) {
+    setLibraryStatus(checked.errors.map((error) => error.message).join(' '), 'alert');
+    return null;
+  }
+  if (!libraryGuard.tryStart()) return null;
+  libraryBusy = true;
+  setLibraryStatus('Saving the script…', 'status');
+  try {
+    const response = await libraryFetch('/api/library', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, text, trackIfCurrent: Boolean(trackIfCurrent) }),
+    });
+    const body = await readLibraryJson(response);
+    if (!response.ok || !body || !body.script) {
+      setLibraryStatus(libraryErrorMessage(response, body, 'The script was not added. Nothing already saved was replaced.'), 'alert');
+      return null;
+    }
+    await refreshLibrary(`Saved “${body.script.title}” as a new library script. Scripts already in the library were not replaced.`);
+    return body.script;
+  } catch (err) {
+    setLibraryStatus('The script was not added. Nothing already saved was replaced.', 'alert');
+    return null;
+  } finally {
+    libraryBusy = false;
+    libraryGuard.finish();
+    renderLibraryList();
+  }
+}
+
+async function saveCurrentLiveScript(event) {
+  event.preventDefault();
+  const ui = libraryDom();
+  const title = ui.title.value;
+  if (!title.trim()) {
+    setLibraryStatus('Enter a title for this script.', 'alert');
+    ui.title.focus();
+    return;
+  }
+  try {
+    const response = await fetch('/script');
+    if (!response.ok) throw new Error('load failed');
+    const text = await response.text();
+    const created = await createLibraryScript(title, text, true);
+    if (created) ui.title.value = '';
+  } catch (err) {
+    setLibraryStatus('The current live script could not be saved. The live show was not changed.', 'alert');
+  }
+}
+
+async function importLibraryFile() {
+  const ui = libraryDom();
+  const file = ui.file.files && ui.file.files[0];
+  ui.file.value = '';
+  if (!file) return;
+  if (!ui.title.value.trim()) {
+    setLibraryStatus('Enter a title, then choose the text file again.', 'alert');
+    ui.title.focus();
+    return;
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    setLibraryStatus('That file is too large. The library accepts a plain-text script up to 5 MB.', 'alert');
+    return;
+  }
+  let text = '';
+  try {
+    text = await file.text();
+  } catch (err) {
+    setLibraryStatus('That file could not be read. The live show was not changed.', 'alert');
+    return;
+  }
+  const created = await createLibraryScript(ui.title.value, text, false);
+  if (created) ui.title.value = '';
+}
+
+async function previewLibraryScript(id) {
+  if (!libraryGuard.tryStart()) return;
+  setLibraryStatus('Loading preview…', 'status');
+  try {
+    const response = await libraryFetch(`/api/library/${id}`);
+    const body = await readLibraryJson(response);
+    if (!response.ok || !body || !body.script) {
+      setLibraryStatus(libraryErrorMessage(response, body, 'The preview could not be opened. The live show was not changed.'), 'alert');
+      return;
+    }
+    renderLibraryPreview(body.script);
+    setLibraryStatus('Preview only. The live show was not changed.', 'status');
+  } catch (err) {
+    setLibraryStatus('The preview could not be opened. The live show was not changed.', 'alert');
+  } finally {
+    libraryGuard.finish();
+  }
+}
+
+function editLibraryScript(entry) {
+  returnToLibrary = true;
+  const ui = libraryDom();
+  if (ui.dialog.open) ui.dialog.close();
+  openEditor({
+    id: entry.id,
+    title: entry.title,
+    revision: entry.revision,
+  });
+}
+
+async function renameLibraryScript(entry, title) {
+  if (!libraryGuard.tryStart()) return;
+  try {
+    const response = await libraryFetch(`/api/library/${entry.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, expectedRevision: entry.revision }),
+    });
+    const body = await readLibraryJson(response);
+    if (!response.ok || !body || !body.script) {
+      setLibraryStatus(libraryErrorMessage(response, body, 'The title was not changed.'), 'alert');
+      return;
+    }
+    await refreshLibrary(`Renamed the saved script to “${body.script.title}”. The live show was not changed.`);
+  } catch (err) {
+    setLibraryStatus('The title was not changed. The live show was not changed.', 'alert');
+  } finally {
+    libraryGuard.finish();
+  }
+}
+
+function beginLibrarySetLive(entry) {
+  if (entry.live || entry.id === liveScriptId) return;
+  if (!libraryGuard.tryStart()) return;
+  libraryGuard.finish();
+  libraryPendingId = entry.id;
+  const ui = libraryDom();
+  const content = ScriptLibrary.liveSwitchConfirmContent(libraryCurrentTitle(), entry.title);
+  ui.confirmBody.replaceChildren();
+  ui.confirmStatus.textContent = '';
+  ui.confirmStatus.classList.remove('editor-error');
+  ui.confirmHeading.textContent = content.title;
+  const message = document.createElement('p');
+  message.className = 'editor-confirm-message';
+  message.textContent = content.message;
+  const notes = document.createElement('ul');
+  notes.className = 'editor-confirm-notes';
+  content.notes.forEach((note) => {
+    const item = document.createElement('li');
+    item.textContent = note;
+    notes.append(item);
+  });
+  ui.confirmBody.append(message, notes);
+  ui.confirmYes.textContent = ScriptLibrary.setLiveRequestState(false).label;
+  ui.confirmYes.disabled = false;
+  ui.confirmNo.disabled = false;
+  ui.workspace.inert = true;
+  ui.confirm.hidden = false;
+  ui.confirmYes.focus();
+}
+
+function hideLibraryConfirm() {
+  const ui = libraryDom();
+  libraryPendingId = null;
+  ui.confirm.hidden = true;
+  ui.confirmStatus.textContent = '';
+  ui.workspace.inert = false;
+}
+
+async function runLibrarySetLive() {
+  if (!libraryPendingId || !libraryGuard.tryStart()) return;
+  const ui = libraryDom();
+  const id = libraryPendingId;
+  ui.confirmYes.disabled = true;
+  ui.confirmNo.disabled = true;
+  ui.confirm.setAttribute('aria-busy', 'true');
+  ui.confirmYes.textContent = ScriptLibrary.setLiveRequestState(true).label;
+  ui.confirmStatus.textContent = ui.confirmYes.textContent;
+  try {
+    const response = await libraryFetch(`/api/library/${id}/live`, { method: 'POST' });
+    const body = await readLibraryJson(response);
+    const outcome = ScriptLibrary.setLiveOutcome(response.ok, body);
+    if (!outcome.ok) {
+      ui.confirmStatus.classList.add('editor-error');
+      ui.confirmStatus.textContent = outcome.message;
+      ui.confirmYes.disabled = false;
+      ui.confirmNo.disabled = false;
+      ui.confirmYes.textContent = ScriptLibrary.setLiveRequestState(false).label;
+      ui.confirmYes.focus();
+      return;
+    }
+    hideLibraryConfirm();
+    showControllerNotice(outcome.message);
+    await refreshLibrary(outcome.message);
+  } catch (err) {
+    ui.confirmStatus.classList.add('editor-error');
+    ui.confirmStatus.textContent = 'The live script was not changed.';
+    ui.confirmYes.disabled = false;
+    ui.confirmNo.disabled = false;
+    ui.confirmYes.textContent = ScriptLibrary.setLiveRequestState(false).label;
+  } finally {
+    libraryGuard.finish();
+    ui.confirm.setAttribute('aria-busy', 'false');
+  }
+}
+
+function closeLibrary() {
+  const ui = libraryDom();
+  if (!ui.confirm.hidden) {
+    if (ui.confirm.getAttribute('aria-busy') === 'true') return;
+    hideLibraryConfirm();
+    return;
+  }
+  hideLibraryPreview();
+  if (ui.dialog.open) ui.dialog.close();
+  document.getElementById('btn-script-library').focus();
+}
+
+function initScriptLibrary() {
+  const ui = libraryDom();
+  document.getElementById('btn-script-library').addEventListener('click', () => openLibrary());
+  document.getElementById('library-close').addEventListener('click', closeLibrary);
+  document.getElementById('library-token-continue').addEventListener('click', continueLibraryAccess);
+  ui.add.addEventListener('submit', saveCurrentLiveScript);
+  ui.file.addEventListener('change', importLibraryFile);
+  document.getElementById('library-preview-back').addEventListener('click', () => {
+    hideLibraryPreview();
+    setLibraryStatus('', 'status');
+    document.getElementById('library-close').focus();
+  });
+  ui.confirmNo.addEventListener('click', () => {
+    if (ui.confirm.getAttribute('aria-busy') === 'true') return;
+    hideLibraryConfirm();
+  });
+  ui.confirmYes.addEventListener('click', runLibrarySetLive);
+  ui.confirm.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      if (ui.confirm.getAttribute('aria-busy') !== 'true') hideLibraryConfirm();
+    }
+  });
+  ui.dialog.addEventListener('cancel', (event) => {
+    event.preventDefault();
+    closeLibrary();
+  });
+}
+
 // ── Controller actions ────────────────────────────────────────────────
 if (isController) {
   initScriptEditor();
+  initScriptLibrary();
   updateCaseButton();
   dom.btnCase.onclick = () => {
     sentenceCase = !sentenceCase;
@@ -2511,7 +3452,7 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
-  if (!isController || isEditorOpen()) return;
+  if (!isController || isEditorOpen() || isLibraryOpen()) return;
   if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') {
     e.preventDefault();
     send({ type: 'navigate', direction: 'next' });
@@ -2535,7 +3476,7 @@ if (isController) {
 
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
-      if (isEditorOpen()) return;
+      if (isEditorOpen() || isLibraryOpen()) return;
       e.preventDefault();
       if (dom.exitGuard.classList.contains('show')) {
         dom.exitGuard.classList.remove('show');
@@ -2553,7 +3494,7 @@ document.addEventListener('touchstart', e => {
   touchStartY = e.touches[0].clientY;
 }, { passive: true });
 document.addEventListener('touchend', e => {
-  if (!isController || isEditorOpen()) return;
+  if (!isController || isEditorOpen() || isLibraryOpen()) return;
   const dx = e.changedTouches[0].clientX - touchStartX;
   const dy = e.changedTouches[0].clientY - touchStartY;
   if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50) {
