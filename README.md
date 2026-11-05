@@ -60,8 +60,19 @@ Audience members see every live change instantly with no controls of their own.
 
 Actors initially follow the Controller's live position. Using **Previous** or
 **Next** switches only that browser to an independent reading position; it does
-not move the Controller, Audience, or another Actor. Reloading the page returns
-the Actor to the current live position.
+not move the Controller, Audience, or another Actor. The status changes from
+**FOLLOWING LIVE** to **BROWSING**.
+
+Select **Return to Live** to briefly animate toward the latest Controller
+position and resume automatic updates. Long distances are condensed into a
+short transition. The transition is skipped when reduced motion is enabled.
+During a connection interruption, the status shows that the Actor is
+reconnecting instead of claiming to be live.
+
+While browsing, the Actor panel continues to show the current live scene and
+line, along with how many navigable cues Live is ahead of or behind the Actor's
+local position. Scene title images and empty scenes each count as navigable
+cues.
 
 ---
 
@@ -139,7 +150,7 @@ Where are we?
 
 - Pressing **Escape** or clicking **Exit** shows a confirmation dialog
 - You must tap **Confirm Exit** a second time to actually leave
-- Actors have only their independent Previous and Next controls
+- Actors have Previous, Next, and Return to Live controls
 - Audience members have no navigation or exit controls
 
 ---
