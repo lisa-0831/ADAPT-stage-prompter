@@ -451,8 +451,8 @@
     50%      { opacity: 1;   }
   }
 
-  /* ── Viewer label ── */
-  #viewer-label {
+  /* ── Role label ── */
+  #role-label {
     position: absolute;
     top: 14px;
     right: 18px;
@@ -470,7 +470,7 @@
 <div id="app">
   <div id="stage">
     <div id="connecting"><p>Connecting…</p></div>
-    <div id="viewer-label"></div>
+    <div id="role-label"></div>
     <div id="slide-title"></div>
     <div id="title-image-overlay">
       <img id="title-image" src="" alt="">
@@ -534,11 +534,20 @@
   </div>
 </div>
 
+<script src="role-model.js"></script>
 <script>
 // ── Role detection ────────────────────────────────────────────────────
 const params = new URLSearchParams(location.search);
-const role = params.get('role') || 'viewer';
-const isController = role === 'controller';
+const requestedRole = params.get('role');
+
+if (requestedRole !== null && !RoleModel.isKnownUrlRole(requestedRole)) {
+  const viewerUrl = new URL(location.href);
+  viewerUrl.searchParams.set('role', 'viewer');
+  location.replace(viewerUrl.toString());
+}
+
+const role = RoleModel.resolveRole(requestedRole);
+const isController = role === RoleModel.ROLES.CONTROLLER;
 
 // ── State ─────────────────────────────────────────────────────────────
 let slides = [];
@@ -546,8 +555,9 @@ let state = { slideIndex: 0, lineIndex: 0 };
 
 // ── DOM refs ──────────────────────────────────────────────────────────
 const dom = {
+  stage:          document.getElementById('stage'),
   connecting:     document.getElementById('connecting'),
-  viewerLabel:    document.getElementById('viewer-label'),
+  roleLabel:      document.getElementById('role-label'),
   slideTitle:     document.getElementById('slide-title'),
   // linesContainer: document.getElementById('lines-container'),
   linesPast:    document.getElementById('lines-past'),
@@ -581,15 +591,16 @@ const dom = {
 // ── Role setup ────────────────────────────────────────────────────────
 if (isController) {
   dom.controller.classList.add('visible');
-  dom.viewerLabel.textContent = 'CONTROLLER';
+  dom.roleLabel.textContent = 'CONTROLLER';
   document.title = '🎭 Prompter — Controller';
   dom.zonePrev.onclick = () => send({ type: 'navigate', direction: 'prev' });
   dom.zoneNext.onclick = () => send({ type: 'navigate', direction: 'next' });
 } else {
-  dom.viewerLabel.textContent = 'VIEWER';
-  document.title = '🎭 Stage Prompter';
-  dom.zonePrev.style.display = 'none';
-  dom.zoneNext.style.display = 'none';
+  const roleLabel = role === RoleModel.ROLES.ACTOR ? 'ACTOR' : 'AUDIENCE';
+  dom.roleLabel.textContent = roleLabel;
+  document.title = `🎭 Prompter — ${roleLabel[0]}${roleLabel.slice(1).toLowerCase()}`;
+  dom.zonePrev.parentElement.style.display = 'none';
+  dom.stage.style.cursor = 'default';
 }
 
 // ── WebSocket ─────────────────────────────────────────────────────────
@@ -787,20 +798,22 @@ document.addEventListener('keydown', (e) => {
 });
 
 // ── Exit guard ────────────────────────────────────────────────────────
-dom.btnExit.onclick = () => dom.exitGuard.classList.add('show');
-dom.btnStay.onclick = () => dom.exitGuard.classList.remove('show');
-dom.btnConfirmExit.onclick = () => { location.href = 'about:blank'; };
+if (isController) {
+  dom.btnExit.onclick = () => dom.exitGuard.classList.add('show');
+  dom.btnStay.onclick = () => dom.exitGuard.classList.remove('show');
+  dom.btnConfirmExit.onclick = () => { location.href = 'about:blank'; };
 
-window.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') {
-    e.preventDefault();
-    if (dom.exitGuard.classList.contains('show')) {
-      dom.exitGuard.classList.remove('show');
-    } else {
-      dom.exitGuard.classList.add('show');
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      if (dom.exitGuard.classList.contains('show')) {
+        dom.exitGuard.classList.remove('show');
+      } else {
+        dom.exitGuard.classList.add('show');
+      }
     }
-  }
-});
+  });
+}
 
 // ── Touch swipe ───────────────────────────────────────────────────────
 let touchStartX = 0, touchStartY = 0;
