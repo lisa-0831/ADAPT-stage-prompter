@@ -3,6 +3,7 @@ const http = require('http');
 const WebSocket = require('ws');
 const fs = require('fs');
 const path = require('path');
+const { createHash } = require('crypto');
 
 const app = express();
 const server = http.createServer(app);
@@ -13,6 +14,7 @@ const SCRIPT_FILE = path.join(__dirname, 'script.txt');
 
 // ── State ──────────────────────────────────────────────────────────────
 let slides = [];       // array of { title, lines[] }
+let scriptRevision = '';
 let state = {
   slideIndex: 0,
   lineIndex: 0,
@@ -42,6 +44,7 @@ function loadScript(preservePosition = false) {
   }
   const raw = fs.readFileSync(SCRIPT_FILE, 'utf8');
   slides = parseScript(raw);
+  scriptRevision = createHash('sha256').update(raw).digest('hex');
 
   if (preservePosition) {
     // Clamp to new script bounds in case it got shorter
@@ -53,7 +56,7 @@ function loadScript(preservePosition = false) {
   }
 
   console.log(`[server] Loaded ${slides.length} slide(s)`);
-  broadcast({ type: 'script', slides });
+  broadcast({ type: 'script', slides, revision: scriptRevision });
   broadcast({ type: 'state', state });
 }
 
@@ -158,7 +161,7 @@ wss.on('connection', (ws) => {
   console.log('[ws] Client connected');
 
   // Send full state to new joiner
-  ws.send(JSON.stringify({ type: 'script', slides }));
+  ws.send(JSON.stringify({ type: 'script', slides, revision: scriptRevision }));
   ws.send(JSON.stringify({ type: 'state', state }));
 
   ws.on('message', (raw) => {
