@@ -98,13 +98,21 @@ available while the status reports that the connection is being restored.
 
 ## Updating the script
 
-### Option A — Paste in browser (easiest)
+### Option A — Edit Script (best for small changes)
+
+On the Controller, click **Edit Script**. Pick a scene, change the lines, and
+preview them. The live show does not change until you click **Publish Script**
+and confirm. Full instructions are in [Editing the script](#editing-the-script).
+
+### Option B — Paste a whole script
 
 1. On the controller: click **📄 Replace Script**
 2. Paste your new script text
 3. Click **Upload & Go Live** — all screens update immediately
 
-### Option B — Edit the file directly
+Replace Script sends the pasted text live right away. It does not save a draft.
+
+### Option C — Edit the file directly
 
 Edit `script.txt` in this folder, then on the controller click  
 **📄 Replace Script → Upload & Go Live** (or send a POST request).
@@ -152,8 +160,8 @@ Where are we?
 
 - Separate slides with `---` on its own line
 - Start each slide with `# Title` (shown as the amber header)
-- Lines starting with `[` or `(` render in amber italic as stage directions
-- Blank lines between speeches are ignored
+- `{stage direction}` is italic brown text. A line that is only `[NAME]` is a character name, not a stage direction
+- Blank lines between speeches are ignored on stage. The editor keeps them so the file is not rewritten
 
 ### Notes
 
@@ -163,6 +171,40 @@ Where are we?
 - `<` and `>` only needed at the very start and very end of a sing-along block
 - Blank lines elsewhere in the script are ignored
 - Image files go in the `prompter/images/` folder
+
+---
+
+## Editing the script
+
+Use this when theatre staff need to change lines without pasting a whole new script.
+
+1. Open the Controller: `http://localhost:3000/?role=controller`
+2. Click **Edit Script**. This opens a copy of the script that is live now. Actor and Audience screens stay as they are.
+3. Choose a scene. Scenes stay in their original order. Switching scenes does not publish anything.
+4. Edit the text in the labeled fields. Character names, lyric marks (`##`), sing-along marks (`<` and `>`), scene titles, and image lines stay attached to the same places.
+5. A line the editor cannot safely rewrite is shown read-only, with a short explanation. It is not deleted. Use **Replace Script** if that line itself must change.
+6. Click **Preview** to read the scene with the same character names, dialogue, stage directions, and lyrics the stage uses. Preview does not move the live cue and does not update other screens.
+7. Click **Save Draft** to keep the work in this browser only. You can close the editor and open it again to continue that draft.
+8. Click **Publish Script**. A confirmation window opens over the editor. Read it, then click **Publish Now**. The window shows “Publishing...” until the server accepts the script. Both windows then close, and the Controller shows “Script published successfully.” Connected screens receive the new script. **Cancel** leaves your edits in the editor.
+
+### Drafts
+
+Drafts are stored in this Controller browser, not on the server. Each draft belongs to the script that was live when you started. If a newer script is published, an older draft is not opened and cannot replace that script. The editor tells you when an old draft is sitting unused, and you can delete it there.
+
+The editor says **Unsaved changes** when the latest typing is not in the saved draft. Closing then asks you to confirm. A draft you already saved remains if you discard only the newer typing.
+
+### What publishing does to the live cue
+
+Publishing uses the same update as Replace Script.
+
+- Controller, Actor, and Audience screens that are connected receive the new script.
+- The Controller stays on the same scene number and line number when that spot still exists. If the scene got shorter, the cue moves to the last line of that scene. The words at that number may be different. Check the live cue after you publish.
+- Actors who were browsing ahead or behind are brought back to the live cue.
+- The script that was live before the publish is kept as `script.previous.txt`. In Edit Script, **Restore Previous Script** puts that copy back on every screen after you confirm. The script you replace becomes the previous copy, so you can switch back.
+
+### Security limitation
+
+The Controller page is not a login. **Edit Script**, **Replace Script**, and **Restore Previous Script** all use the existing `POST /script` upload, which has no password. Anyone who can reach the server on the network can replace the script. This is the same exposure the app already had. Keep it on trusted Wi-Fi, and do not put it on the public internet. This feature does not add a new write address.
 
 ---
 
