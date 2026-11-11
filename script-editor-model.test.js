@@ -111,6 +111,20 @@ test('editing dialogue leaves the other scene, lyrics, image, and speaker intact
   assert.equal(parsed[0].titleImage, 'images/a.jpg');
 });
 
+test('choosing a scene image keeps the rest of the scene and can clear it', () => {
+  const original = '# ONE\n@image: images/a.jpg\n[DOROTHY]\nHello\n';
+  const model = ScriptEditor.load(original);
+  assert.equal(ScriptEditor.sceneImageValue(model, 0), 'images/a.jpg');
+  assert.equal(ScriptEditor.setSceneImage(model, 0, 'library:11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222'), true);
+  const saved = ScriptEditor.serialize(model);
+  assert.match(saved, /@image: library:11111111-1111-4111-8111-111111111111\/22222222-2222-4222-8222-222222222222/);
+  assert.match(saved, /\[DOROTHY\]/);
+  assert.match(saved, /Hello/);
+  assert.equal(ScriptEditor.setSceneImage(model, 0, ''), true);
+  assert.equal(ScriptEditor.serialize(model).includes('@image:'), false);
+  assert.match(ScriptEditor.serialize(model), /Hello/);
+});
+
 test('editing a stage direction keeps the braces and nearby capitalization', () => {
   const original = '# S\n{A DOG BARKS}\nGo Away.\n';
   const model = ScriptEditor.load(original);
@@ -239,6 +253,43 @@ test('a draft stays separate from the published script and stale drafts do not l
   assert.equal(ScriptEditor.deleteStaleDrafts(storage, 'rev-b') > 0, true);
   assert.equal(ScriptEditor.loadDraft(storage, 'rev-a'), null);
   assert.ok(ScriptEditor.loadDraft(storage, 'rev-b'));
+});
+
+test('drafts for different saved scripts do not replace each other', () => {
+  const storage = memoryStorage();
+  ScriptEditor.saveDraft(storage, {
+    scriptId: '11111111-1111-4111-8111-111111111111',
+    baseRevision: 'rev-1',
+    scriptText: '# One\nAlpha\n',
+    savedAt: '2026-11-05T00:00:00.000Z',
+  });
+  ScriptEditor.saveDraft(storage, {
+    scriptId: '22222222-2222-4222-8222-222222222222',
+    baseRevision: 'rev-1',
+    scriptText: '# Two\nBeta\n',
+    savedAt: '2026-11-05T00:00:00.000Z',
+  });
+  ScriptEditor.saveDraft(storage, {
+    scriptId: '11111111-1111-4111-8111-111111111111',
+    baseRevision: 'rev-2',
+    scriptText: '# One\nEdited\n',
+    savedAt: '2026-11-05T00:00:00.000Z',
+  });
+
+  assert.equal(
+    ScriptEditor.loadDraft(storage, 'rev-1', '11111111-1111-4111-8111-111111111111').scriptText,
+    '# One\nAlpha\n',
+  );
+  assert.equal(
+    ScriptEditor.loadDraft(storage, 'rev-1', '22222222-2222-4222-8222-222222222222').scriptText,
+    '# Two\nBeta\n',
+  );
+  assert.equal(ScriptEditor.loadDraft(storage, 'rev-1', '22222222-2222-4222-8222-222222222222').scriptText.includes('Alpha'), false);
+  assert.equal(ScriptEditor.listStaleDrafts(storage, 'rev-2', '11111111-1111-4111-8111-111111111111').length, 1);
+  assert.equal(ScriptEditor.deleteStaleDrafts(storage, 'rev-2', '11111111-1111-4111-8111-111111111111'), 1);
+  assert.equal(ScriptEditor.loadDraft(storage, 'rev-1', '11111111-1111-4111-8111-111111111111'), null);
+  assert.ok(ScriptEditor.loadDraft(storage, 'rev-1', '22222222-2222-4222-8222-222222222222'));
+  assert.ok(ScriptEditor.loadDraft(storage, 'rev-2', '11111111-1111-4111-8111-111111111111'));
 });
 
 test('publication waits for server confirmation and ignores a repeated publish', () => {
