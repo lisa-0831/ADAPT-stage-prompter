@@ -181,6 +181,13 @@
     object-fit: contain;
     border-radius: 4px;
   }
+  #title-image-missing {
+    margin: 0;
+    padding: 1rem;
+    text-align: center;
+    font-family: var(--font-ui);
+    color: var(--cream);
+  }
 
   #stage-content {
     flex: 1 1 auto;
@@ -987,7 +994,8 @@
     line-height: 1.45;
     overflow-wrap: anywhere;
   }
-  #library-status[data-tone="alert"] { color: #ffb4a8; }
+  #library-status[data-tone="alert"],
+  #library-images-status[data-tone="alert"] { color: #ffb4a8; }
   #library-status[data-tone="status"] { color: var(--cream); }
   #library-add,
   .library-item,
@@ -1029,10 +1037,28 @@
   .library-actions .btn,
   #library-add .btn,
   #library-access .btn,
+  #library-images .btn,
   #library-preview-back {
     min-height: 44px;
   }
-  #library-file { max-width: 100%; }
+  #library-file,
+  #library-image-file { max-width: 100%; }
+  .library-image-card {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    align-items: center;
+    border-top: 1px solid var(--border);
+    padding: 0.75rem 0;
+  }
+  .library-image-card img,
+  #editor-scene-image-preview img {
+    width: 7rem;
+    height: 5rem;
+    object-fit: contain;
+    background: #111;
+    border-radius: 4px;
+  }
   #library-confirm {
     position: absolute;
     inset: 0;
@@ -1057,6 +1083,7 @@
     <div id="slide-title"></div>
     <div id="title-image-overlay">
       <img id="title-image" src="" alt="">
+      <p id="title-image-missing" hidden>This scene image could not be loaded.</p>
     </div>
     <div id="stage-content">
       <!-- <div id="lines-container"></div> -->
@@ -1219,6 +1246,16 @@
       <button type="button" class="btn" id="library-preview-back">Back to library</button>
       <div id="library-preview-body" tabindex="-1"></div>
     </div>
+    <div id="library-images" hidden>
+      <button type="button" class="btn" id="library-images-back">Back to library</button>
+      <h3 id="library-images-title">Images</h3>
+      <p class="library-note">These pictures belong to this production only. Upload one here, then choose it for a scene in Edit. The live show does not change until you set this script live.</p>
+      <label for="library-image-file">Upload a JPEG, PNG, or WebP image</label>
+      <input id="library-image-file" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp">
+      <p id="library-images-status" role="status" aria-live="polite"></p>
+      <p id="library-images-empty" hidden>No images for this production yet.</p>
+      <div id="library-images-list"></div>
+    </div>
   </div>
   <div id="library-confirm" hidden role="dialog" aria-modal="true" aria-labelledby="library-confirm-heading">
     <div class="editor-confirm-panel">
@@ -1278,6 +1315,7 @@ let scriptRevision = null;
 let liveScriptId = null;
 let editorMode = 'live';
 let editorLibraryId = null;
+let editorAssetCatalog = [];
 let editorLibraryRevision = null;
 let editorLibraryTitle = '';
 let returnToLibrary = false;
@@ -1348,6 +1386,7 @@ const dom = {
   zoneNext:       document.getElementById('zone-next'),
   titleOverlay: document.getElementById('title-image-overlay'),
   titleImage:   document.getElementById('title-image'),
+  titleMissing: document.getElementById('title-image-missing'),
 };
 
 // ── Role setup ────────────────────────────────────────────────────────
@@ -1496,13 +1535,27 @@ function render(positionOverride = null) {
   dom.slideTitle.textContent = slide.title;
 
   if (position.showTitleImage && slide.titleImage) {
-    dom.titleImage.src = slide.titleImage;
+    const src = stageImageUrl(slide.titleImage);
     dom.titleOverlay.classList.add('show');
     dom.stage.scrollTop = 0;
+    if (!src) {
+      dom.titleImage.hidden = true;
+      dom.titleImage.dataset.resolved = '';
+      dom.titleImage.removeAttribute('src');
+      dom.titleMissing.hidden = false;
+    } else if (dom.titleImage.dataset.resolved !== src || dom.titleImage.hidden) {
+      dom.titleMissing.hidden = true;
+      dom.titleImage.hidden = false;
+      dom.titleImage.dataset.resolved = src;
+      dom.titleImage.src = src;
+    }
     return; // don't render lines while image is showing
   } else {
     dom.titleOverlay.classList.remove('show');
-    dom.titleImage.src = '';
+    dom.titleImage.dataset.resolved = '';
+    dom.titleImage.removeAttribute('src');
+    dom.titleImage.hidden = false;
+    dom.titleMissing.hidden = true;
   }
 
   const from = Math.max(0, li - 3);
@@ -2070,12 +2123,128 @@ function renderEditorLines() {
   editorDom.lines.replaceChildren();
   const scene = editorModel && editorModel.scenes[editorSceneIndex];
   if (!scene) return;
+  if (editorLibraryId) renderSceneImageControl();
   let visible = 0;
   scene.lines.forEach((entry, lineIndex) => {
     if (entry.kind === 'blank') return;
+    if (editorLibraryId && entry.kind === 'image') return;
     visible += 1;
     editorDom.lines.append(renderEditorLine(entry, editorSceneIndex, lineIndex, visible));
   });
+}
+
+function renderSceneImageControl() {
+  const reference = ScriptEditor.sceneImageValue(editorModel, editorSceneIndex);
+  const wrap = document.createElement('div');
+  wrap.className = 'editor-field';
+  const label = document.createElement('p');
+  label.id = 'editor-scene-image-label';
+  label.textContent = reference
+    ? `Scene image: ${ScriptLibrary.imageLabel(reference, editorAssetCatalog)}`
+    : 'Scene image: none';
+  const row = document.createElement('div');
+  row.className = 'library-actions';
+  const choose = document.createElement('button');
+  choose.type = 'button';
+  choose.className = 'btn';
+  choose.textContent = 'Choose image';
+  choose.addEventListener('click', () => openSceneImageChooser(wrap));
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.className = 'btn';
+  remove.textContent = 'Remove image';
+  remove.disabled = !reference;
+  remove.addEventListener('click', () => applySceneImage(''));
+  row.append(choose, remove);
+  const note = document.createElement('p');
+  note.className = 'editor-note';
+  note.textContent = 'Choose a picture uploaded for this production. Saving to the library does not change the live show.';
+  const preview = document.createElement('div');
+  preview.id = 'editor-scene-image-preview';
+  wrap.append(label, row, note, preview);
+  editorDom.lines.append(wrap);
+  if (reference) showResolvedImage(preview, reference);
+  rememberSceneImageNames(label, reference);
+}
+
+function rememberSceneImageNames(label, reference) {
+  if (!editorLibraryId || !reference) return;
+  if (editorAssetCatalog.some((asset) => asset.scriptId === editorLibraryId)) return;
+  const scriptId = editorLibraryId;
+  libraryFetch(`/api/library/${scriptId}/assets`).then(async (response) => {
+    const body = await readLibraryJson(response);
+    if (!response.ok || !body || !Array.isArray(body.assets)) return;
+    if (editorLibraryId !== scriptId || !label.isConnected) return;
+    editorAssetCatalog = body.assets.map((asset) => ({
+      id: asset.id,
+      scriptId,
+      name: asset.name,
+    }));
+    label.textContent = `Scene image: ${ScriptLibrary.imageLabel(reference, editorAssetCatalog)}`;
+  }).catch(() => {});
+}
+
+function applySceneImage(reference) {
+  ScriptEditor.setSceneImage(editorModel, editorSceneIndex, reference);
+  if (editorPreviewOn) renderEditorPreview();
+  renderEditor();
+  refreshEditorChrome();
+}
+
+async function openSceneImageChooser(wrap) {
+  let chooser = wrap.querySelector('.editor-image-chooser');
+  if (chooser) {
+    chooser.remove();
+    return;
+  }
+  chooser = document.createElement('div');
+  chooser.className = 'editor-image-chooser';
+  chooser.setAttribute('role', 'group');
+  chooser.setAttribute('aria-label', 'Images for this production');
+  const status = document.createElement('p');
+  status.className = 'editor-note';
+  status.textContent = 'Loading images…';
+  chooser.append(status);
+  wrap.append(chooser);
+  try {
+    const response = await libraryFetch(`/api/library/${editorLibraryId}/assets`);
+    const body = await readLibraryJson(response);
+    if (!chooser.isConnected) return;
+    chooser.replaceChildren();
+    if (!response.ok || !body || !Array.isArray(body.assets)) {
+      status.textContent = libraryErrorMessage(response, body, 'The images for this production could not be loaded.');
+      chooser.append(status);
+      return;
+    }
+    editorAssetCatalog = body.assets.map((asset) => ({
+      id: asset.id,
+      scriptId: editorLibraryId,
+      name: asset.name,
+    }));
+    const currentLabel = document.getElementById('editor-scene-image-label');
+    const currentReference = ScriptEditor.sceneImageValue(editorModel, editorSceneIndex);
+    if (currentLabel && currentReference) {
+      currentLabel.textContent = `Scene image: ${ScriptLibrary.imageLabel(currentReference, editorAssetCatalog)}`;
+    }
+    if (!body.assets.length) {
+      status.textContent = 'No images yet. Use Manage Images in the Script Library to upload one.';
+      chooser.append(status);
+      return;
+    }
+    body.assets.forEach((asset) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'btn';
+      button.textContent = asset.name || 'Saved image';
+      button.addEventListener('click', () => {
+        applySceneImage(ScriptLibrary.imageReference(editorLibraryId, asset.id));
+      });
+      chooser.append(button);
+    });
+  } catch (err) {
+    if (!chooser.isConnected) return;
+    status.textContent = 'The images for this production could not be loaded.';
+  }
 }
 
 function renderEditor() {
@@ -2094,7 +2263,72 @@ function renderEditor() {
   refreshEditorChrome();
 }
 
-function appendSlidePreview(parent, slide) {
+function stageImageUrl(reference) {
+  const parsed = ScriptLibrary.parseImageReference(reference);
+  if (parsed.kind === 'legacy') return parsed.path;
+  if (parsed.kind === 'library') return ScriptLibrary.liveAssetUrl(parsed.scriptId, parsed.assetId);
+  return '';
+}
+
+dom.titleImage.addEventListener('error', () => {
+  if (!dom.titleImage.dataset.resolved) return;
+  dom.titleImage.hidden = true;
+  dom.titleMissing.hidden = false;
+});
+
+const previewObjectUrls = [];
+
+function revokePreviewUrls() {
+  while (previewObjectUrls.length) {
+    const url = previewObjectUrls.pop();
+    if (url) URL.revokeObjectURL(url);
+  }
+}
+
+async function previewImageUrl(reference) {
+  const parsed = ScriptLibrary.parseImageReference(reference);
+  if (parsed.kind === 'legacy') return parsed.path;
+  if (parsed.kind !== 'library') return '';
+  try {
+    const response = await libraryFetch(`/api/library/${parsed.scriptId}/assets/${parsed.assetId}`);
+    if (!response.ok) return '';
+    const blob = await response.blob();
+    if (!blob.size) return '';
+    const url = URL.createObjectURL(blob);
+    previewObjectUrls.push(url);
+    return url;
+  } catch (err) {
+    return '';
+  }
+}
+
+async function showResolvedImage(parent, reference) {
+  const image = document.createElement('img');
+  image.className = 'editor-preview-image';
+  image.alt = '';
+  const missing = document.createElement('p');
+  missing.className = 'editor-note';
+  missing.textContent = 'This scene image could not be loaded.';
+  missing.hidden = true;
+  parent.append(image, missing);
+  const src = await previewImageUrl(reference);
+  if (!parent.isConnected) {
+    if (src && src.startsWith('blob:')) URL.revokeObjectURL(src);
+    return;
+  }
+  if (!src) {
+    image.hidden = true;
+    missing.hidden = false;
+    return;
+  }
+  image.addEventListener('error', () => {
+    image.hidden = true;
+    missing.hidden = false;
+  });
+  image.src = src;
+}
+
+async function appendSlidePreview(parent, slide) {
   const title = document.createElement('p');
   title.className = 'editor-preview-title';
   title.textContent = slide.title || '(Untitled scene)';
@@ -2102,12 +2336,11 @@ function appendSlidePreview(parent, slide) {
   if (slide.titleImage) {
     const pathText = document.createElement('p');
     pathText.className = 'editor-note';
-    pathText.textContent = `Scene image: ${slide.titleImage}`;
-    const image = document.createElement('img');
-    image.className = 'editor-preview-image';
-    image.src = slide.titleImage;
-    image.alt = '';
-    parent.append(pathText, image);
+    const label = ScriptLibrary.imageLabel(slide.titleImage);
+    pathText.textContent = label ? `Scene image: ${label}` : 'Scene image';
+    const frame = document.createElement('div');
+    parent.append(pathText, frame);
+    await showResolvedImage(frame, slide.titleImage);
   }
   if (!slide.lines.length) {
     const empty = document.createElement('p');
@@ -2135,7 +2368,8 @@ function appendSlidePreview(parent, slide) {
   });
 }
 
-function renderEditorPreview() {
+async function renderEditorPreview() {
+  revokePreviewUrls();
   editorDom.preview.replaceChildren();
   const heading = document.createElement('h3');
   heading.textContent = 'Structured preview';
@@ -2154,7 +2388,9 @@ function renderEditorPreview() {
     editorDom.preview.append(empty);
     return;
   }
-  slides.forEach((slide) => appendSlidePreview(editorDom.preview, slide));
+  const pending = [];
+  slides.forEach((slide) => { pending.push(appendSlidePreview(editorDom.preview, slide)); });
+  await Promise.all(pending);
 }
 
 function relevantStaleDrafts(storage) {
@@ -2866,6 +3102,8 @@ let libraryEntries = [];
 let libraryLiveIdCached = null;
 let libraryBusy = false;
 let libraryPendingId = null;
+let libraryPendingAsset = null;
+let libraryImagesScriptId = null;
 const libraryGuard = ScriptEditor.createPublishGuard();
 
 function rememberLibraryEntries(scripts, liveId) {
@@ -2915,6 +3153,12 @@ function libraryDom() {
     list: document.getElementById('library-list'),
     preview: document.getElementById('library-preview'),
     previewBody: document.getElementById('library-preview-body'),
+    images: document.getElementById('library-images'),
+    imagesTitle: document.getElementById('library-images-title'),
+    imagesList: document.getElementById('library-images-list'),
+    imagesEmpty: document.getElementById('library-images-empty'),
+    imagesStatus: document.getElementById('library-images-status'),
+    imageFile: document.getElementById('library-image-file'),
     confirm: document.getElementById('library-confirm'),
     confirmHeading: document.getElementById('library-confirm-heading'),
     confirmBody: document.getElementById('library-confirm-body'),
@@ -2955,13 +3199,27 @@ function hideLibraryPreview() {
   ui.add.hidden = false;
   ui.list.hidden = false;
   ui.empty.hidden = libraryEntries.length > 0;
+  revokePreviewUrls();
+}
+
+function hideLibraryImages() {
+  const ui = libraryDom();
+  ui.images.hidden = true;
+  ui.imagesList.replaceChildren();
+  libraryImagesScriptId = null;
+  ui.add.hidden = false;
+  ui.list.hidden = false;
+  ui.empty.hidden = libraryEntries.length > 0;
+  revokePreviewUrls();
 }
 
 function renderLibraryPreview(script) {
+  revokePreviewUrls();
   const ui = libraryDom();
   ui.add.hidden = true;
   ui.list.hidden = true;
   ui.empty.hidden = true;
+  ui.images.hidden = true;
   ui.preview.hidden = false;
   ui.previewBody.replaceChildren();
   const heading = document.createElement('h3');
@@ -2976,7 +3234,7 @@ function renderLibraryPreview(script) {
     empty.textContent = 'Nothing in this script can be previewed yet.';
     ui.previewBody.append(empty);
   } else {
-    slidesForPreview.forEach((slide) => appendSlidePreview(ui.previewBody, slide));
+    slidesForPreview.forEach((slide) => { appendSlidePreview(ui.previewBody, slide); });
   }
   ui.previewBody.focus();
 }
@@ -3024,6 +3282,7 @@ function renderLibraryList() {
 
     action('Preview', () => previewLibraryScript(entry.id));
     action('Edit', () => editLibraryScript(entry));
+    action('Manage Images', () => openLibraryImages(entry));
     action('Rename', () => showLibraryRename(item, entry));
     const liveButton = action('Set as Live', () => beginLibrarySetLive(entry));
     if (isLive) {
@@ -3079,6 +3338,7 @@ async function openLibrary(options) {
   const ui = libraryDom();
   if (!ui.dialog.open) ui.dialog.showModal();
   hideLibraryPreview();
+  ui.images.hidden = true;
   ui.empty.hidden = true;
   ui.confirm.hidden = true;
   ui.workspace.inert = false;
@@ -3302,9 +3562,161 @@ function beginLibrarySetLive(entry) {
 function hideLibraryConfirm() {
   const ui = libraryDom();
   libraryPendingId = null;
+  libraryPendingAsset = null;
   ui.confirm.hidden = true;
   ui.confirmStatus.textContent = '';
+  ui.confirmStatus.classList.remove('editor-error');
   ui.workspace.inert = false;
+}
+
+function beginRemoveLibraryImage(asset) {
+  if (!libraryGuard.tryStart()) return;
+  libraryGuard.finish();
+  libraryPendingAsset = asset;
+  libraryPendingId = null;
+  const ui = libraryDom();
+  ui.confirmBody.replaceChildren();
+  ui.confirmStatus.textContent = '';
+  ui.confirmStatus.classList.remove('editor-error');
+  ui.confirmHeading.textContent = 'Remove this image?';
+  const message = document.createElement('p');
+  message.className = 'editor-confirm-message';
+  message.textContent = `Remove “${asset.name || 'this image'}” from this production. The live show does not change.`;
+  ui.confirmBody.append(message);
+  ui.confirmYes.textContent = 'Remove image';
+  ui.confirmYes.disabled = false;
+  ui.confirmNo.disabled = false;
+  ui.workspace.inert = true;
+  ui.confirm.hidden = false;
+  ui.confirmYes.focus();
+}
+
+async function runRemoveLibraryImage() {
+  if (!libraryPendingAsset || !libraryImagesScriptId || !libraryGuard.tryStart()) return;
+  const asset = libraryPendingAsset;
+  const ui = libraryDom();
+  ui.confirmYes.disabled = true;
+  ui.confirmNo.disabled = true;
+  ui.confirm.setAttribute('aria-busy', 'true');
+  ui.confirmYes.textContent = 'Removing…';
+  try {
+    const response = await libraryFetch(`/api/library/${libraryImagesScriptId}/assets/${asset.id}`, {
+      method: 'DELETE',
+    });
+    const body = await readLibraryJson(response);
+    if (!response.ok) {
+      ui.confirmStatus.classList.add('editor-error');
+      ui.confirmStatus.textContent = libraryErrorMessage(response, body, 'That image was not removed.');
+      ui.confirmYes.disabled = false;
+      ui.confirmNo.disabled = false;
+      ui.confirmYes.textContent = 'Remove image';
+      ui.confirmYes.focus();
+      return;
+    }
+    hideLibraryConfirm();
+    setImageStatus(`Removed “${asset.name || 'the image'}”. The live show was not changed.`, 'status');
+    await refreshLibraryImages();
+  } catch (err) {
+    ui.confirmStatus.classList.add('editor-error');
+    ui.confirmStatus.textContent = 'That image was not removed.';
+    ui.confirmYes.disabled = false;
+    ui.confirmNo.disabled = false;
+    ui.confirmYes.textContent = 'Remove image';
+  } finally {
+    libraryGuard.finish();
+    ui.confirm.setAttribute('aria-busy', 'false');
+  }
+}
+
+function setImageStatus(message, tone) {
+  const status = libraryDom().imagesStatus;
+  status.dataset.tone = tone || 'status';
+  status.textContent = message || '';
+}
+
+async function refreshLibraryImages() {
+  const ui = libraryDom();
+  const scriptId = libraryImagesScriptId;
+  if (!scriptId) return;
+  revokePreviewUrls();
+  ui.imagesList.replaceChildren();
+  let response;
+  let body;
+  try {
+    response = await libraryFetch(`/api/library/${scriptId}/assets`);
+    body = await readLibraryJson(response);
+  } catch (err) {
+    setImageStatus('The images could not be loaded.', 'alert');
+    return;
+  }
+  if (libraryImagesScriptId !== scriptId) return;
+  if (!response.ok || !body || !Array.isArray(body.assets)) {
+    setImageStatus(libraryErrorMessage(response, body, 'The images could not be loaded.'), 'alert');
+    return;
+  }
+  if (ui.imagesStatus.textContent === 'Loading images…') setImageStatus('', 'status');
+  ui.imagesEmpty.hidden = body.assets.length > 0;
+  body.assets.forEach((asset) => {
+    const card = document.createElement('article');
+    card.className = 'library-image-card';
+    const frame = document.createElement('div');
+    const name = document.createElement('p');
+    name.className = 'library-title';
+    name.textContent = asset.name || 'Saved image';
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'btn';
+    remove.textContent = 'Remove';
+    remove.setAttribute('aria-label', `Remove ${asset.name || 'image'}`);
+    remove.addEventListener('click', () => beginRemoveLibraryImage(asset));
+    card.append(frame, name, remove);
+    ui.imagesList.append(card);
+    showResolvedImage(frame, ScriptLibrary.imageReference(scriptId, asset.id));
+  });
+}
+
+async function openLibraryImages(entry) {
+  const ui = libraryDom();
+  hideLibraryPreview();
+  libraryImagesScriptId = entry.id;
+  ui.add.hidden = true;
+  ui.list.hidden = true;
+  ui.empty.hidden = true;
+  ui.images.hidden = false;
+  ui.imagesTitle.textContent = `Images for ${entry.title || 'this production'}`;
+  setImageStatus('Loading images…', 'status');
+  await refreshLibraryImages();
+  ui.imageFile.focus();
+}
+
+async function uploadLibraryImage() {
+  const ui = libraryDom();
+  const file = ui.imageFile.files && ui.imageFile.files[0];
+  ui.imageFile.value = '';
+  if (!file || !libraryImagesScriptId) return;
+  if (!libraryGuard.tryStart()) return;
+  setImageStatus('Uploading image…', 'status');
+  try {
+    const response = await libraryFetch(`/api/library/${libraryImagesScriptId}/assets`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': file.type || 'application/octet-stream',
+        'X-Asset-Name': encodeURIComponent(file.name || 'Image'),
+      },
+      body: file,
+    });
+    const body = await readLibraryJson(response);
+    if (!response.ok || !body || !body.asset) {
+      setImageStatus(libraryErrorMessage(response, body, 'That image was not uploaded.'), 'alert');
+      return;
+    }
+    setImageStatus(`Uploaded “${body.asset.name}”. The live show was not changed.`, 'status');
+    await refreshLibraryImages();
+  } catch (err) {
+    setImageStatus('That image was not uploaded. The live show was not changed.', 'alert');
+  } finally {
+    libraryGuard.finish();
+  }
 }
 
 async function runLibrarySetLive() {
@@ -3352,6 +3764,7 @@ function closeLibrary() {
     return;
   }
   hideLibraryPreview();
+  hideLibraryImages();
   if (ui.dialog.open) ui.dialog.close();
   document.getElementById('btn-script-library').focus();
 }
@@ -3368,11 +3781,20 @@ function initScriptLibrary() {
     setLibraryStatus('', 'status');
     document.getElementById('library-close').focus();
   });
+  document.getElementById('library-images-back').addEventListener('click', () => {
+    hideLibraryImages();
+    setLibraryStatus('', 'status');
+    document.getElementById('library-close').focus();
+  });
+  ui.imageFile.addEventListener('change', uploadLibraryImage);
   ui.confirmNo.addEventListener('click', () => {
     if (ui.confirm.getAttribute('aria-busy') === 'true') return;
     hideLibraryConfirm();
   });
-  ui.confirmYes.addEventListener('click', runLibrarySetLive);
+  ui.confirmYes.addEventListener('click', () => {
+    if (libraryPendingAsset) runRemoveLibraryImage();
+    else runLibrarySetLive();
+  });
   ui.confirm.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
       event.preventDefault();

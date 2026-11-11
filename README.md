@@ -136,6 +136,7 @@ Full instructions are in [Script Library](#script-library).
 | `# Title`                                          | Starts a new scene                              |
 | `---`                                              | Separates scenes (required between every scene) |
 | `@image: images/file.jpg`                          | Shows an image before the first line (optional) |
+| `@image: library:<script-id>/<image-id>`           | Shows an image saved with that production       |
 | `[NAME]` on its own line                           | Character name shown in left sidebar            |
 | `[NAME] & [NAME]`                                  | Two characters speaking together                |
 | `{stage direction}`                                | Italic brown text                               |
@@ -178,7 +179,7 @@ Where are we?
 - `##` only needed at the very start and very end of a lyrics block
 - `<` and `>` only needed at the very start and very end of a sing-along block
 - Blank lines elsewhere in the script are ignored
-- Image files go in the `prompter/images/` folder
+- Image files for a saved production are uploaded in **Script Library → Manage Images**. Older scripts can still use a file in the `prompter/images/` folder with `@image: images/file.jpg`.
 
 ---
 
@@ -226,14 +227,16 @@ The library keeps more than one script on the server. The live show still uses o
 2. Click **Script Library**.
 3. To keep the show that is live now, type a title and click **Save current live script**. This adds a new saved script. It does not replace one already in the list.
 4. To add a different production, type a title and choose a plain-text `.txt` file. PDF and Word files are not imported here.
-5. **Preview** reads a saved script on the Controller only. The live cue does not move. Actor and Audience screens do not change.
-6. **Edit** opens that saved script in the script editor.
+5. **Preview** reads a saved script on the Controller only. The live cue does not move. Actor and Audience screens do not change. Pictures in that preview come from the production being previewed.
+6. **Manage Images** uploads JPEG, PNG, or WebP pictures for that production only. Two productions can use the same file name. Removing a picture asks you to confirm, and a picture that is still used by a scene stays until you remove it from the scene and save.
+7. **Edit** opens that saved script in the script editor.
    - **Save Draft** keeps unfinished edits in this browser. A draft belongs to that saved script and its revision, so it cannot replace a different production.
-   - **Save to Library** writes the edit back to that saved script. The live show does not change.
+   - **Choose image** on a scene uses a picture uploaded for that production. You do not type a file path.
+   - **Save to Library** writes the edit, including the chosen picture, back to that saved script. The live show does not change.
    - If the saved script changed after you opened it, your edit is not written over the newer copy.
    - **Set as Live** uses the saved copy. Save to the library first when the editor still has newer typing.
-7. **Rename** changes the title. The script text stays the same.
-8. **Set as Live** asks you to confirm. The window names the script that is live now and the script that will replace it. It stays open until the server accepts the change. Every connected screen then receives the selected script. Actors who were browsing are returned to Live when the script itself changes. The cue starts at the beginning, because this is a different production.
+8. **Rename** changes the title. The script text and pictures stay the same.
+9. **Set as Live** asks you to confirm. The window names the script that is live now and the script that will replace it. It stays open until the server accepts the change. Every connected screen then receives the selected script and that production's pictures. Actors who were browsing are returned to Live when the script itself changes. The cue starts at the beginning, because this is a different production.
 
 The first time the server starts, the current `script.txt` is copied into the library if that text is not already saved. Starting the server again does not create a second copy of the same text. The saved scripts remain after a restart, and the server remembers which one was set live.
 
@@ -243,28 +246,30 @@ The first time the server starts, the current `script.txt` is copied into the li
 | --- | --- |
 | **Edit Script**, then **Publish Script** | Updates the live show. Keeps the same scene and line numbers when they still exist. Also updates the matching library copy when that copy has not changed since the editor opened. |
 | **Replace Script** | Updates the live show immediately and keeps the same scene and line numbers when they still exist. Does not change library copies. If the pasted text is not one of the saved scripts, the show is live without a matching library entry until you save it. |
-| **Restore Previous Script** | Puts back the previous live file, as before. It does not delete library scripts. |
-| **Save to Library** | Updates only the saved script you are editing. |
-| **Set as Live** | Copies that saved script into the live show. A different production starts at the first cue. Setting the same production live again keeps the current cue. |
+| **Restore Previous Script** | Puts back the previous live file, as before. It does not delete library scripts or their pictures. The restored show uses the pictures named in that previous script. |
+| **Save to Library** | Updates only the saved script you are editing, including which picture each scene uses. |
+| **Manage Images** | Adds or removes pictures for one saved production. It does not change the live show. |
+| **Set as Live** | Copies that saved script into the live show and shows that production's pictures. A different production starts at the first cue. Setting the same production live again keeps the current cue. |
 
 ---
 
 ## Storage and deployment
 
-Saved scripts are files, not a database. They are stored in `data/library/` next to `script.txt`:
+Saved scripts and their pictures are files, not a database. They are stored in `data/library/` next to `script.txt`:
 
 - `data/library/index.json` stores titles, ids, dates, and which script is live
 - `data/library/scripts/` stores the script text
+- `data/library/assets/<script-id>/` stores that production's pictures and a small `manifest.json` with the picture's display name, type, size, and date
 
-`script.txt` is still the live show. `script.previous.txt` is still the one-step backup used by **Restore Previous Script**.
+`script.txt` is still the live show. `script.previous.txt` is still the one-step backup used by **Restore Previous Script**. `script.previous.txt.meta.json` remembers which saved production that backup belonged to, so its pictures still resolve.
 
-The `data/` folder is not part of git. Do not commit uploaded scripts. On a production machine, keep `data/library/` on a disk that survives restarts and deploys. You can move it with:
+The `data/` folder is not part of git. Do not commit uploaded scripts or pictures. On a production machine, keep `data/library/` on a disk that survives restarts and deploys. Copy that whole folder, plus `script.txt`, `script.previous.txt`, and `script.previous.txt.meta.json`, when you make a backup. You can move the library with:
 
 ```bash
 SCRIPT_LIBRARY_DIR=/var/lib/stage-prompter/library node server.js
 ```
 
-`SCRIPT_FILE` and `PREVIOUS_SCRIPT_FILE` still choose the live file and the previous-script backup. When `SCRIPT_LIBRARY_DIR` is not set, the library is created beside the live script file.
+`SCRIPT_FILE` and `PREVIOUS_SCRIPT_FILE` still choose the live file and the previous-script backup. When `SCRIPT_LIBRARY_DIR` is not set, the library is created beside the live script file. A path on a temporary disk is wiped on the next deploy, so point `SCRIPT_LIBRARY_DIR` at storage that outlives the process. `PROMPTER_IMAGE_MAX_BYTES` changes the per-image limit. The default is 10 MB.
 
 ### Security limitation
 
@@ -272,7 +277,9 @@ The Controller page is not a login. `?role=controller` only changes what that br
 
 **Edit Script**, **Replace Script**, and **Restore Previous Script** use `POST /script`, which has no password. Anyone who can reach the server can replace the live script. This is the same exposure the app already had.
 
-Library files are not in the public file list. A browser cannot open `data/library/` as a web address. Unpublished script text is available through the library address, not as a static file.
+Library files are not in the public file list. A browser cannot open `data/library/` as a web address. Unpublished script text and pictures are available through the library address, not as a static file.
+
+Pictures for the show that is live now can be loaded by Controller, Actor, and Audience screens. That is the same exposure as the live script text. Pictures that belong to a production which is not currently in the live script are not served on that public address. Uploading, listing, and deleting pictures use the library address and, when a staff code is set, require that code. The code is sent as a header. It is not placed in the image address.
 
 Set a shared staff code before anyone outside the trusted Wi-Fi can reach the server:
 
@@ -282,7 +289,7 @@ PROMPTER_STAFF_TOKEN="choose-a-long-private-code" node server.js
 
 When that code is set, every library request must include it. The Controller asks for the code and keeps it in that browser tab. The code is not written into the page. Do not commit the code or put it in the README.
 
-Without `PROMPTER_STAFF_TOKEN`, anyone who can reach the server can read and change every saved script. That is a blocking limitation for a public deployment. Keep the server on trusted Wi-Fi, and do not put it on the public internet. The staff code is one shared passphrase, not separate accounts. The live show is still sent to every connected screen, including Audience.
+Without `PROMPTER_STAFF_TOKEN`, anyone who can reach the server can read and change every saved script and its pictures. That is a blocking limitation for a public deployment. Keep the server on trusted Wi-Fi, and do not put it on the public internet. The staff code is one shared passphrase, not separate accounts. The live show, including the pictures named in the live script, is still sent to every connected screen, including Audience. `POST /script` remains open even when the staff code is set, so Replace Script and Publish Script are not protected by that code.
 
 Script text is not written into the server log. Error messages do not return a saved script.
 

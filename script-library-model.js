@@ -7,6 +7,9 @@
     root.ScriptLibrary = scriptLibrary;
   }
 }(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  const LIBRARY_IMAGE = /^library:([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\/([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i;
+  const LEGACY_IMAGE = /^images\/[A-Za-z0-9._-]+$/;
+
   function displayTitle(title, fallback) {
     const text = typeof title === 'string' ? title.trim() : '';
     return text || fallback;
@@ -46,6 +49,9 @@
     if (resetPosition) {
       message += ' The cue is at the beginning.';
     }
+    if (Number(body.missingImages) > 0) {
+      message += ' Some scene images could not be found.';
+    }
     return {
       ok: true,
       closeConfirm: true,
@@ -54,9 +60,48 @@
     };
   }
 
+  function imageReference(scriptId, assetId) {
+    return `library:${String(scriptId).toLowerCase()}/${String(assetId).toLowerCase()}`;
+  }
+
+  function parseImageReference(value) {
+    const text = typeof value === 'string' ? value.trim() : '';
+    if (!text) return { kind: 'empty' };
+    const libraryMatch = text.match(LIBRARY_IMAGE);
+    if (libraryMatch) {
+      return {
+        kind: 'library',
+        scriptId: libraryMatch[1].toLowerCase(),
+        assetId: libraryMatch[2].toLowerCase(),
+      };
+    }
+    if (LEGACY_IMAGE.test(text) && !text.includes('..')) {
+      return { kind: 'legacy', path: text };
+    }
+    return { kind: 'unknown' };
+  }
+
+  function liveAssetUrl(scriptId, assetId) {
+    return `/api/live/assets/${String(scriptId).toLowerCase()}/${String(assetId).toLowerCase()}`;
+  }
+
+  function imageLabel(reference, assets) {
+    const parsed = parseImageReference(reference);
+    if (parsed.kind === 'legacy') return parsed.path.slice('images/'.length);
+    if (parsed.kind !== 'library') return '';
+    const match = (assets || []).find((asset) => asset
+      && asset.id === parsed.assetId
+      && (!asset.scriptId || asset.scriptId === parsed.scriptId));
+    return match && match.name ? match.name : 'Saved image';
+  }
+
   return {
     liveSwitchConfirmContent,
     setLiveRequestState,
     setLiveOutcome,
+    imageReference,
+    parseImageReference,
+    liveAssetUrl,
+    imageLabel,
   };
 }));

@@ -1,4 +1,5 @@
 node_modules/
 .DS_Store
 script.previous.txt
+script.previous.txt.meta.json
 data/

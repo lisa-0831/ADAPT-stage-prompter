@@ -91,7 +91,7 @@
     return line({
       kind: 'image',
       label: 'Scene image',
-      note: 'Shown before the first line. Use a file already in the images folder, such as images/scene.jpg.',
+      note: 'Shown before the first line. Choose an image from this production, or keep an older images/filename.jpg line.',
       raw,
       ...parts,
     });
@@ -391,6 +391,28 @@
     if (/[\[\]]/.test(next)) return false;
     entry.names[nameIndex] = next;
     entry.value = entry.names.join(' & ');
+    return true;
+  }
+
+  function sceneImageValue(model, sceneIndex) {
+    if (!model || model.mode !== 'scenes') return '';
+    const scene = model.scenes[sceneIndex];
+    if (!scene) return '';
+    const images = scene.lines.filter((entry) => entry.kind === 'image');
+    if (!images.length) return '';
+    return String(images[images.length - 1].value || '').trim();
+  }
+
+  function setSceneImage(model, sceneIndex, reference) {
+    if (!model || model.mode !== 'scenes') return false;
+    const scene = model.scenes[sceneIndex];
+    if (!scene) return false;
+    const next = reference == null ? '' : String(reference).trim();
+    scene.lines = scene.lines.filter((entry) => entry.kind !== 'image');
+    if (!next) return true;
+    const image = makeImage(`@image: ${next}`);
+    const titleIndex = scene.lines.findIndex((entry) => entry.kind === 'title');
+    scene.lines.splice(titleIndex >= 0 ? titleIndex + 1 : 0, 0, image);
     return true;
   }
 
@@ -776,6 +798,8 @@
     serializeScene,
     setLineText,
     setSpeakerName,
+    sceneImageValue,
+    setSceneImage,
     setRawText,
     sceneTitle,
     validate,

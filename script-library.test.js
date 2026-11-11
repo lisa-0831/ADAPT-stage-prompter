@@ -78,6 +78,7 @@ function startServer(t, options = {}) {
     previousFile,
     libraryDir,
     staffToken: options.staffToken !== undefined ? options.staffToken : '',
+    imageMaxBytes: options.imageMaxBytes,
   });
   const sockets = [];
   t.after(async () => {
@@ -580,6 +581,315 @@ test('the controller page offers the library without removing the current script
   assert.match(client, /ScriptLibrary\.liveSwitchConfirmContent/);
   assert.match(client, /ScriptLibrary\.setLiveOutcome/);
   assert.match(client, /ScriptLibrary\.setLiveRequestState/);
+  assert.match(client, /Manage Images/);
+  assert.match(client, /Choose image/);
+  assert.match(client, /ScriptEditor\.setSceneImage/);
+  assert.match(client, /ScriptLibrary\.parseImageReference/);
   assert.match(client, /isActor && scriptChanged/);
   assert.match(client, /ActorModeModel\.followLive\(\)/);
+});
+
+const TINY_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64',
+);
+
+function jpegBytes(fill) {
+  return Buffer.concat([
+    Buffer.from([0xFF, 0xD8, 0xFF, 0xE0]),
+    Buffer.alloc(16, fill),
+    Buffer.from([0xFF, 0xD9]),
+  ]);
+}
+
+function webpBytes() {
+  const payload = Buffer.from('VP8XXXXXXXXX');
+  const buf = Buffer.alloc(12 + payload.length);
+  buf.write('RIFF', 0);
+  buf.writeUInt32LE(buf.length - 8, 4);
+  buf.write('WEBP', 8);
+  payload.copy(buf, 12);
+  return buf;
+}
+
+async function uploadImage(base, scriptId, bytes, options = {}) {
+  const headers = {
+    'Content-Type': options.type || 'application/octet-stream',
+    'X-Asset-Name': encodeURIComponent(options.name || 'card.png'),
+  };
+  if (options.token) headers['X-Staff-Token'] = options.token;
+  return fetch(`${base}/api/library/${scriptId}/assets`, {
+    method: 'POST',
+    headers,
+    body: bytes,
+  });
+}
+
+test('image references keep legacy paths and name a production asset explicitly', () => {
+  const { parseImageReference, imageReference, imageLabel, setLiveOutcome } = require('./script-library-model');
+  assert.equal(parseImageReference('images/Title_Card.jpeg').kind, 'legacy');
+  assert.equal(parseImageReference('images/../server.js').kind, 'unknown');
+  assert.equal(parseImageReference('https://example.com/a.jpg').kind, 'unknown');
+  const scriptId = '11111111-1111-4111-8111-111111111111';
+  const assetId = '22222222-2222-4222-8222-222222222222';
+  const reference = imageReference(scriptId, assetId);
+  assert.equal(parseImageReference(reference).scriptId, scriptId);
+  assert.equal(imageLabel(reference, [{ id: assetId, scriptId, name: 'Door.jpeg' }]), 'Door.jpeg');
+  assert.equal(imageLabel('images/Title_Card.jpeg'), 'Title_Card.jpeg');
+  const outcome = setLiveOutcome(true, { ok: true, resetPosition: true, missingImages: 1 });
+  assert.match(outcome.message, /Some scene images could not be found/);
+});
+
+test('each production keeps its own copy when image file names match', async (t) => {
+  const fixture = startServer(t, { scriptText: HAMLET });
+  const port = await listen(fixture.created.server);
+  const base = `http://127.0.0.1:${port}`;
+  const first = await fetch(`${base}/api/library`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: 'Red show', text: HAMLET }),
+  });
+  const second = await fetch(`${base}/api/library`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: 'Blue show', text: MACBETH }),
+  });
+  const red = (await first.json()).script;
+  const blue = (await second.json()).script;
+  const redUpload = await uploadImage(base, red.id, jpegBytes(1), { name: 'backdrop.jpg', type: 'image/jpeg' });
+  const blueUpload = await uploadImage(base, blue.id, jpegBytes(2), { name: 'backdrop.jpg', type: 'image/jpeg' });
+  assert.equal(redUpload.status, 201);
+  assert.equal(blueUpload.status, 201);
+  const redAsset = (await redUpload.json()).asset;
+  const blueAsset = (await blueUpload.json()).asset;
+  assert.equal(redAsset.name, 'backdrop.jpg');
+  assert.equal(blueAsset.name, 'backdrop.jpg');
+  assert.notEqual(redAsset.id, blueAsset.id);
+  const redBytes = Buffer.from(await (await fetch(`${base}/api/library/${red.id}/assets/${redAsset.id}`)).arrayBuffer());
+  const blueBytes = Buffer.from(await (await fetch(`${base}/api/library/${blue.id}/assets/${blueAsset.id}`)).arrayBuffer());
+  assert.deepEqual(redBytes, jpegBytes(1));
+  assert.deepEqual(blueBytes, jpegBytes(2));
+  const crossed = await fetch(`${base}/api/library/${red.id}/assets/${blueAsset.id}`);
+  assert.equal(crossed.status, 404);
+
+  const png = await uploadImage(base, red.id, TINY_PNG, { name: 'dot.png', type: 'image/png' });
+  const webp = await uploadImage(base, red.id, webpBytes(), { name: 'dot.webp', type: 'image/webp' });
+  assert.equal(png.status, 201);
+  assert.equal(webp.status, 201);
+  const listed = await fetch(`${base}/api/library/${red.id}/assets`);
+  const names = (await listed.json()).assets.map((asset) => asset.name).sort();
+  assert.deepEqual(names, ['backdrop.jpg', 'dot.png', 'dot.webp']);
+
+  const text = await uploadImage(base, red.id, Buffer.from('this is not an image file'), { name: 'notes.svg', type: 'image/svg+xml' });
+  assert.equal(text.status, 400);
+  assert.match((await text.json()).error, /JPEG, PNG, or WebP/);
+  const truncated = await uploadImage(base, red.id, Buffer.concat([Buffer.from([0xFF, 0xD8, 0xFF]), Buffer.alloc(20, 1)]), { type: 'image/jpeg' });
+  assert.equal(truncated.status, 400);
+  assert.match((await truncated.json()).error, /incomplete/);
+  assert.equal(fs.readFileSync(fixture.scriptFile, 'utf8'), HAMLET);
+});
+
+test('oversized images are rejected and private files are not served from the library folder', async (t) => {
+  const fixture = startServer(t, { scriptText: HAMLET, imageMaxBytes: 100 });
+  const port = await listen(fixture.created.server);
+  const base = `http://127.0.0.1:${port}`;
+  const created = await fetch(`${base}/api/library`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: 'Hamlet', text: HAMLET }),
+  });
+  const script = (await created.json()).script;
+  const tooBig = await uploadImage(
+    base,
+    script.id,
+    Buffer.concat([Buffer.from([0xFF, 0xD8, 0xFF]), Buffer.alloc(120, 3), Buffer.from([0xFF, 0xD9])]),
+    { type: 'image/jpeg' },
+  );
+  assert.equal(tooBig.status, 413);
+  assert.match((await tooBig.json()).error, /too large/);
+  const saved = await uploadImage(base, script.id, TINY_PNG, { name: 'secret.png', type: 'image/png' });
+  assert.equal(saved.status, 201);
+  const asset = (await saved.json()).asset;
+  const folder = path.relative(fixture.dir, fixture.libraryDir).split(path.sep).join('/');
+  const direct = await fetch(`${base}/${folder}/assets/${script.id}/${asset.id}.png`);
+  assert.equal(direct.status, 404);
+  assert.equal((await direct.text()).includes('PNG'), false);
+  const escaped = await fetch(`${base}/api/library/${script.id}/assets/..%2F..%2Findex.json`);
+  assert.equal(escaped.status >= 400, true);
+  const badId = await fetch(`${base}/api/library/${script.id}/assets/not-an-id`);
+  assert.equal(badId.status, 404);
+});
+
+test('saving a library image reference does not change the live show', async (t) => {
+  const fixture = startServer(t, { scriptText: HAMLET });
+  const port = await listen(fixture.created.server);
+  const base = `http://127.0.0.1:${port}`;
+  const client = openSocket(`ws://127.0.0.1:${port}`);
+  fixture.sockets.push(client.socket);
+  await waitFor(() => client.messages.some((message) => message.type === 'script'));
+  const before = client.messages.length;
+  const created = await fetch(`${base}/api/library`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: 'Side show', text: MACBETH }),
+  });
+  const script = (await created.json()).script;
+  const uploaded = await uploadImage(base, script.id, TINY_PNG, { name: 'door.png', type: 'image/png' });
+  const asset = (await uploaded.json()).asset;
+  const text = `# Side show\n@image: library:${script.id}/${asset.id}\n[MACBETH]\nTomorrow.\n`;
+  const saved = await fetch(`${base}/api/library/${script.id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, expectedRevision: script.revision }),
+  });
+  assert.equal(saved.status, 200);
+  assert.equal(fs.readFileSync(fixture.scriptFile, 'utf8'), HAMLET);
+  assert.equal(client.messages.length, before);
+  const hidden = await fetch(`${base}/api/live/assets/${script.id}/${asset.id}`);
+  assert.equal(hidden.status, 404);
+  const preview = await fetch(`${base}/api/library/${script.id}/assets/${asset.id}`);
+  assert.equal(preview.status, 200);
+  assert.equal(preview.headers.get('content-type').includes('image/png'), true);
+});
+
+test('setting a production live shows only that production images and restore brings the previous ones back', async (t) => {
+  const fixture = startServer(t, { scriptText: HAMLET });
+  const port = await listen(fixture.created.server);
+  const base = `http://127.0.0.1:${port}`;
+  const actor = openSocket(`ws://127.0.0.1:${port}`);
+  const audience = openSocket(`ws://127.0.0.1:${port}`);
+  fixture.sockets.push(actor.socket, audience.socket);
+  await waitFor(() => actor.messages.some((message) => message.type === 'script'));
+  await waitFor(() => audience.messages.some((message) => message.type === 'script'));
+
+  async function makeShow(title, text, bytes) {
+    const created = await fetch(`${base}/api/library`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, text }),
+    });
+    const script = (await created.json()).script;
+    const uploaded = await uploadImage(base, script.id, bytes, { name: 'backdrop.jpg', type: 'image/jpeg' });
+    const asset = (await uploaded.json()).asset;
+    const withImage = `# ${title}\n@image: library:${script.id}/${asset.id}\n[A]\nLine\n`;
+    const saved = await fetch(`${base}/api/library/${script.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: withImage, expectedRevision: script.revision }),
+    });
+    assert.equal(saved.status, 200);
+    return { id: script.id, assetId: asset.id, revision: (await saved.json()).script.revision, text: withImage };
+  }
+
+  const red = await makeShow('Red show', HAMLET, jpegBytes(4));
+  const blue = await makeShow('Blue show', MACBETH, jpegBytes(5));
+  const redLive = await fetch(`${base}/api/library/${red.id}/live`, { method: 'POST' });
+  assert.equal((await redLive.json()).ok, true);
+  const edited = `# Red show\n@image: library:${red.id}/${red.assetId}\n[A]\nChanged in the library only\n`;
+  const libraryEdit = await fetch(`${base}/api/library/${red.id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: edited, expectedRevision: red.revision }),
+  });
+  assert.equal(libraryEdit.status, 200);
+  assert.equal(fs.readFileSync(fixture.scriptFile, 'utf8').includes('Changed in the library only'), false);
+
+  const blueLive = await fetch(`${base}/api/library/${blue.id}/live`, { method: 'POST' });
+  const blueBody = await blueLive.json();
+  assert.equal(blueBody.resetPosition, true);
+  await waitFor(() => audience.messages.some((message) => (
+    message.type === 'script'
+    && message.liveScriptId === blue.id
+    && message.slides[0].titleImage === `library:${blue.id}/${blue.assetId}`
+  )));
+  await waitFor(() => actor.messages.some((message) => (
+    message.type === 'state' && message.state.slideIndex === 0 && message.state.showTitleImage === true
+  )));
+  const blueBytes = Buffer.from(await (await fetch(`${base}/api/live/assets/${blue.id}/${blue.assetId}`)).arrayBuffer());
+  assert.deepEqual(blueBytes, jpegBytes(5));
+  assert.equal((await fetch(`${base}/api/live/assets/${red.id}/${red.assetId}`)).status, 404);
+
+  const legacy = `# Legacy\n@image: images/Title_Card.jpeg\n[A]\nOld path\n`;
+  const legacyScript = await fetch(`${base}/api/library`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: 'Legacy', text: legacy }),
+  });
+  const legacyId = (await legacyScript.json()).script.id;
+  const legacyLive = await fetch(`${base}/api/library/${legacyId}/live`, { method: 'POST' });
+  assert.equal((await legacyLive.json()).ok, true);
+  await waitFor(() => audience.messages.some((message) => (
+    message.type === 'script' && message.slides[0].titleImage === 'images/Title_Card.jpeg'
+  )));
+
+  const previous = await fetch(`${base}/script/previous`);
+  assert.equal(await previous.text(), blue.text);
+  const restored = await fetch(`${base}/script`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain' },
+    body: blue.text,
+  });
+  const restoredBody = await restored.json();
+  assert.equal(restoredBody.ok, true);
+  assert.equal(restoredBody.liveScriptId, blue.id);
+  const restoredBytes = Buffer.from(await (await fetch(`${base}/api/live/assets/${blue.id}/${blue.assetId}`)).arrayBuffer());
+  assert.deepEqual(restoredBytes, jpegBytes(5));
+  const inUse = await fetch(`${base}/api/library/${blue.id}/assets/${blue.assetId}`, { method: 'DELETE' });
+  assert.equal(inUse.status, 409);
+  assert.match((await inUse.json()).error, /still used/);
+});
+
+test('uploaded images remain after a restart and require the staff code to change', async (t) => {
+  const dir = tempDir('prompter-lib-images-');
+  const scriptFile = path.join(dir, 'script.txt');
+  const previousFile = path.join(dir, 'script.previous.txt');
+  const libraryDir = path.join(dir, 'data', 'library');
+  fs.writeFileSync(scriptFile, HAMLET);
+  const token = 'staff-code';
+  const first = createPrompterServer({ scriptFile, previousFile, libraryDir, staffToken: token });
+  t.after(async () => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+  const port = await listen(first.server);
+  const base = `http://127.0.0.1:${port}`;
+  const created = await fetch(`${base}/api/library`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Staff-Token': token },
+    body: JSON.stringify({ title: 'Hamlet', text: HAMLET }),
+  });
+  const script = (await created.json()).script;
+  const denied = await uploadImage(base, script.id, TINY_PNG, { name: 'door.png', type: 'image/png' });
+  assert.equal(denied.status, 401);
+  const uploaded = await uploadImage(base, script.id, TINY_PNG, { name: 'door.png', type: 'image/png', token });
+  assert.equal(uploaded.status, 201);
+  const asset = (await uploaded.json()).asset;
+  const withImage = `# Hamlet\n@image: library:${script.id}/${asset.id}\n[HAMLET]\nTo be.\n`;
+  const saved = await fetch(`${base}/api/library/${script.id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'X-Staff-Token': token },
+    body: JSON.stringify({ text: withImage, expectedRevision: script.revision }),
+  });
+  assert.equal(saved.status, 200);
+  const live = await fetch(`${base}/api/library/${script.id}/live`, {
+    method: 'POST',
+    headers: { 'X-Staff-Token': token },
+  });
+  assert.equal((await live.json()).missingImages, 0);
+  await closeAll(first, []);
+
+  const second = createPrompterServer({ scriptFile, previousFile, libraryDir, staffToken: token });
+  const secondPort = await listen(second.server);
+  t.after(async () => {
+    await closeAll(second, []);
+  });
+  const again = await fetch(`http://127.0.0.1:${secondPort}/api/live/assets/${script.id}/${asset.id}`);
+  assert.equal(again.status, 200);
+  assert.deepEqual(Buffer.from(await again.arrayBuffer()), TINY_PNG);
+  const listed = await fetch(`http://127.0.0.1:${secondPort}/api/library/${script.id}/assets`);
+  assert.equal(listed.status, 401);
+  const allowed = await fetch(`http://127.0.0.1:${secondPort}/api/library/${script.id}/assets`, {
+    headers: { 'X-Staff-Token': token },
+  });
+  assert.equal((await allowed.json()).assets[0].name, 'door.png');
+  assert.equal(fs.existsSync(path.join(libraryDir, 'assets', script.id, `${asset.id}.png`)), true);
 });

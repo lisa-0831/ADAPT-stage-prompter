@@ -111,6 +111,20 @@ test('editing dialogue leaves the other scene, lyrics, image, and speaker intact
   assert.equal(parsed[0].titleImage, 'images/a.jpg');
 });
 
+test('choosing a scene image keeps the rest of the scene and can clear it', () => {
+  const original = '# ONE\n@image: images/a.jpg\n[DOROTHY]\nHello\n';
+  const model = ScriptEditor.load(original);
+  assert.equal(ScriptEditor.sceneImageValue(model, 0), 'images/a.jpg');
+  assert.equal(ScriptEditor.setSceneImage(model, 0, 'library:11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222'), true);
+  const saved = ScriptEditor.serialize(model);
+  assert.match(saved, /@image: library:11111111-1111-4111-8111-111111111111\/22222222-2222-4222-8222-222222222222/);
+  assert.match(saved, /\[DOROTHY\]/);
+  assert.match(saved, /Hello/);
+  assert.equal(ScriptEditor.setSceneImage(model, 0, ''), true);
+  assert.equal(ScriptEditor.serialize(model).includes('@image:'), false);
+  assert.match(ScriptEditor.serialize(model), /Hello/);
+});
+
 test('editing a stage direction keeps the braces and nearby capitalization', () => {
   const original = '# S\n{A DOG BARKS}\nGo Away.\n';
   const model = ScriptEditor.load(original);

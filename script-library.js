@@ -2,6 +2,8 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { validate } = require('./script-editor-model');
+const { parseScript } = require('./script-format');
+const { imageReference, parseImageReference } = require('./script-library-model');
 
 const SCRIPT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const TITLE_MAX = 120;
@@ -48,7 +50,8 @@ function writeAtomic(filePath, data) {
     `.${path.basename(filePath)}.${process.pid}.${Date.now()}.tmp`,
   );
   try {
-    fs.writeFileSync(tmp, data, 'utf8');
+    if (Buffer.isBuffer(data)) fs.writeFileSync(tmp, data);
+    else fs.writeFileSync(tmp, data, 'utf8');
     const fd = fs.openSync(tmp, 'r+');
     try {
       fs.fsyncSync(fd);
@@ -60,6 +63,40 @@ function writeAtomic(filePath, data) {
     try { fs.unlinkSync(tmp); } catch (_) { /* The temp file may already be gone. */ }
     throw err;
   }
+}
+
+const IMAGE_TYPES = {
+  jpg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+};
+
+function detectImage(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 12) return null;
+  if (buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) {
+    const complete = buffer[buffer.length - 2] === 0xFF && buffer[buffer.length - 1] === 0xD9;
+    return complete ? { ext: 'jpg', mime: IMAGE_TYPES.jpg } : { incomplete: true };
+  }
+  const png = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+  if (buffer.subarray(0, 8).equals(png)) {
+    const marker = buffer.subarray(buffer.length - 8, buffer.length - 4).toString('ascii');
+    return marker === 'IEND' ? { ext: 'png', mime: IMAGE_TYPES.png } : { incomplete: true };
+  }
+  if (buffer.subarray(0, 4).toString('ascii') === 'RIFF' && buffer.subarray(8, 12).toString('ascii') === 'WEBP') {
+    const size = buffer.readUInt32LE(4);
+    const expected = size + 8;
+    const padded = size % 2 === 1 && buffer.length === expected + 1;
+    return buffer.length === expected || padded
+      ? { ext: 'webp', mime: IMAGE_TYPES.webp }
+      : { incomplete: true };
+  }
+  return null;
+}
+
+function displayAssetName(originalName) {
+  const base = path.basename(String(originalName || 'Image')).replace(/[\u0000-\u001F]/g, '');
+  const cleaned = base.replace(/[\\/]/g, '').trim().slice(0, 120);
+  return cleaned || 'Image';
 }
 
 function createPrivatePathGuard(libraryDir, staticRoot) {
@@ -101,7 +138,11 @@ function createScriptLibrary(options = {}) {
   if (!options.dir) throw new Error('A library directory is required');
   const dir = path.resolve(options.dir);
   const scriptsDir = path.join(dir, 'scripts');
+  const assetsRoot = path.join(dir, 'assets');
   const indexPath = path.join(dir, 'index.json');
+  const maxImageBytes = Number.isInteger(options.maxImageBytes) && options.maxImageBytes > 0
+    ? options.maxImageBytes
+    : 10 * 1024 * 1024;
   const now = typeof options.now === 'function' ? options.now : () => new Date();
   let index = { version: 1, liveId: null, scripts: [] };
 
@@ -267,9 +308,270 @@ function createScriptLibrary(options = {}) {
 
   function open() {
     fs.mkdirSync(scriptsDir, { recursive: true });
+    fs.mkdirSync(assetsRoot, { recursive: true });
     loadIndex();
     reconcile();
     return list();
+  }
+
+  function assetsDir(scriptId) {
+    if (!isValidScriptId(scriptId)) {
+      const error = new Error('Invalid script id');
+      error.code = 'invalid-id';
+      throw error;
+    }
+    const folder = path.resolve(assetsRoot, scriptId.toLowerCase());
+    const root = path.resolve(assetsRoot);
+    if (folder !== path.join(root, scriptId.toLowerCase())) {
+      const error = new Error('Invalid script id');
+      error.code = 'invalid-id';
+      throw error;
+    }
+    return folder;
+  }
+
+  function manifestPath(scriptId) {
+    return path.join(assetsDir(scriptId), 'manifest.json');
+  }
+
+  function assetPath(scriptId, assetId, ext) {
+    if (!isValidScriptId(assetId) || !IMAGE_TYPES[ext]) {
+      const error = new Error('Invalid asset id');
+      error.code = 'invalid-id';
+      throw error;
+    }
+    const folder = assetsDir(scriptId);
+    const filePath = path.resolve(folder, `${assetId.toLowerCase()}.${ext}`);
+    if (!filePath.startsWith(`${folder}${path.sep}`)) {
+      const error = new Error('Invalid asset id');
+      error.code = 'invalid-id';
+      throw error;
+    }
+    return filePath;
+  }
+
+  function emptyManifest() {
+    return { version: 1, assets: [] };
+  }
+
+  function cloneAsset(scriptId, asset) {
+    return {
+      id: asset.id,
+      scriptId,
+      name: asset.name,
+      mime: asset.mime,
+      bytes: asset.bytes,
+      createdAt: asset.createdAt,
+    };
+  }
+
+  function rebuildManifest(scriptId) {
+    const folder = assetsDir(scriptId);
+    let names = [];
+    try {
+      names = fs.readdirSync(folder);
+    } catch (err) {
+      return emptyManifest();
+    }
+    const assets = [];
+    names.forEach((name) => {
+      const match = name.match(/^([0-9a-f-]{36})\.(jpg|png|webp)$/i);
+      if (!match || !isValidScriptId(match[1].toLowerCase())) return;
+      const ext = match[2].toLowerCase();
+      const id = match[1].toLowerCase();
+      let buffer;
+      try {
+        buffer = fs.readFileSync(assetPath(scriptId, id, ext));
+      } catch (err) {
+        return;
+      }
+      const detected = detectImage(buffer);
+      if (!detected || detected.incomplete || detected.ext !== ext) return;
+      const stat = fs.statSync(assetPath(scriptId, id, ext));
+      assets.push({
+        id,
+        name: 'Recovered image',
+        ext,
+        mime: detected.mime,
+        bytes: buffer.length,
+        createdAt: stat.mtime.toISOString(),
+      });
+    });
+    const manifest = { version: 1, assets };
+    fs.mkdirSync(folder, { recursive: true });
+    writeAtomic(manifestPath(scriptId), `${JSON.stringify(manifest, null, 2)}\n`);
+    return manifest;
+  }
+
+  function loadManifest(scriptId) {
+    const filePath = manifestPath(scriptId);
+    if (!fs.existsSync(filePath)) return emptyManifest();
+    try {
+      const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.assets)) {
+        throw new Error('invalid asset manifest');
+      }
+      const seen = new Set();
+      const assets = [];
+      parsed.assets.forEach((asset) => {
+        if (!asset || typeof asset !== 'object') return;
+        const id = typeof asset.id === 'string' ? asset.id.toLowerCase() : '';
+        const ext = asset.ext;
+        if (!isValidScriptId(id) || !IMAGE_TYPES[ext] || seen.has(id)) return;
+        if (!fs.existsSync(assetPath(scriptId, id, ext))) return;
+        seen.add(id);
+        assets.push({
+          id,
+          name: displayAssetName(asset.name),
+          ext,
+          mime: IMAGE_TYPES[ext],
+          bytes: Number.isInteger(asset.bytes) ? asset.bytes : 0,
+          createdAt: typeof asset.createdAt === 'string' ? asset.createdAt : timestamp(),
+        });
+      });
+      return { version: 1, assets };
+    } catch (err) {
+      const dest = path.join(assetsDir(scriptId), `manifest.corrupt-${Date.now()}.json`);
+      try { fs.renameSync(filePath, dest); } catch (_) { /* Already unreadable. */ }
+      console.warn('[library] Rebuilt an image list after an unreadable manifest');
+      return rebuildManifest(scriptId);
+    }
+  }
+
+  function saveManifest(scriptId, manifest) {
+    fs.mkdirSync(assetsDir(scriptId), { recursive: true });
+    writeAtomic(manifestPath(scriptId), `${JSON.stringify(manifest, null, 2)}\n`);
+  }
+
+  function listAssets(scriptId) {
+    if (!isValidScriptId(scriptId)) return invalidId();
+    if (!find(scriptId)) return missing();
+    const manifest = loadManifest(scriptId);
+    return {
+      ok: true,
+      assets: manifest.assets.map((asset) => cloneAsset(scriptId, asset)),
+    };
+  }
+
+  function readAsset(scriptId, assetId) {
+    if (!isValidScriptId(scriptId) || !isValidScriptId(assetId)) return invalidId();
+    const manifest = loadManifest(scriptId);
+    const asset = manifest.assets.find((entry) => entry.id === assetId.toLowerCase());
+    if (!asset) return { ok: false, status: 404, code: 'missing', error: 'That image could not be found.' };
+    try {
+      const filePath = assetPath(scriptId, asset.id, asset.ext);
+      const body = fs.readFileSync(filePath);
+      return { ok: true, ...cloneAsset(scriptId, asset), body };
+    } catch (err) {
+      return { ok: false, status: 404, code: 'missing', error: 'That image could not be found.' };
+    }
+  }
+
+  function imageTooLarge() {
+    const limit = maxImageBytes >= 1024 * 1024 && maxImageBytes % (1024 * 1024) === 0
+      ? `${maxImageBytes / (1024 * 1024)} MB`
+      : `${maxImageBytes} bytes`;
+    return {
+      ok: false,
+      status: 413,
+      code: 'too-large',
+      error: `That image is too large. Use a file of ${limit} or smaller.`,
+    };
+  }
+
+  function addAsset(scriptId, input) {
+    if (!isValidScriptId(scriptId)) return invalidId();
+    if (!find(scriptId)) return missing();
+    const body = input && input.body;
+    if (!Buffer.isBuffer(body) || body.length === 0) {
+      return { ok: false, status: 400, code: 'invalid-image', error: 'That file is not a JPEG, PNG, or WebP image.' };
+    }
+    if (body.length > maxImageBytes) return imageTooLarge();
+    const detected = detectImage(body);
+    if (!detected) {
+      return { ok: false, status: 400, code: 'invalid-image', error: 'That file is not a JPEG, PNG, or WebP image.' };
+    }
+    if (detected.incomplete) {
+      return { ok: false, status: 400, code: 'incomplete-image', error: 'That image file is incomplete. Try exporting it again.' };
+    }
+    const id = crypto.randomUUID();
+    const asset = {
+      id,
+      name: displayAssetName(input && input.name),
+      ext: detected.ext,
+      mime: detected.mime,
+      bytes: body.length,
+      createdAt: timestamp(),
+    };
+    const manifest = loadManifest(scriptId);
+    fs.mkdirSync(assetsDir(scriptId), { recursive: true });
+    writeAtomic(assetPath(scriptId, id, detected.ext), body);
+    manifest.assets.push(asset);
+    try {
+      saveManifest(scriptId, manifest);
+    } catch (err) {
+      try { fs.unlinkSync(assetPath(scriptId, id, detected.ext)); } catch (_) { /* The file may already be gone. */ }
+      return { ok: false, status: 500, code: 'unreadable', error: 'That image could not be saved.' };
+    }
+    return { ok: true, asset: cloneAsset(scriptId, asset) };
+  }
+
+  function assetReferenced(scriptId, assetId, extraTexts) {
+    const needle = imageReference(scriptId, assetId).toLowerCase();
+    const texts = [];
+    index.scripts.forEach((entry) => {
+      try { texts.push(fs.readFileSync(scriptFile(entry.id), 'utf8')); } catch (err) { /* Skip an unreadable script. */ }
+    });
+    (extraTexts || []).forEach((text) => {
+      if (typeof text === 'string') texts.push(text);
+    });
+    return texts.some((text) => text.toLowerCase().includes(needle));
+  }
+
+  function removeAsset(scriptId, assetId, extraTexts) {
+    if (!isValidScriptId(scriptId) || !isValidScriptId(assetId)) return invalidId();
+    if (!find(scriptId)) return missing();
+    const manifest = loadManifest(scriptId);
+    const asset = manifest.assets.find((entry) => entry.id === assetId.toLowerCase());
+    if (!asset) return { ok: false, status: 404, code: 'missing', error: 'That image could not be found.' };
+    if (assetReferenced(scriptId, asset.id, extraTexts)) {
+      return {
+        ok: false,
+        status: 409,
+        code: 'in-use',
+        error: 'This image is still used by a script. Remove it from the scene and save before deleting it.',
+      };
+    }
+    try {
+      fs.unlinkSync(assetPath(scriptId, asset.id, asset.ext));
+    } catch (err) {
+      if (err.code !== 'ENOENT') {
+        return { ok: false, status: 500, code: 'unreadable', error: 'That image could not be removed.' };
+      }
+    }
+    manifest.assets = manifest.assets.filter((entry) => entry.id !== asset.id);
+    saveManifest(scriptId, manifest);
+    return { ok: true };
+  }
+
+  function countMissingImages(text) {
+    let slides = [];
+    try {
+      slides = parseScript(text);
+    } catch (err) {
+      return 0;
+    }
+    const seen = new Set();
+    let missing = 0;
+    slides.forEach((slide) => {
+      const parsed = parseImageReference(slide && slide.titleImage);
+      if (parsed.kind !== 'library') return;
+      const key = `${parsed.scriptId}/${parsed.assetId}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      if (!readAsset(parsed.scriptId, parsed.assetId).ok) missing += 1;
+    });
+    return missing;
   }
 
   function find(id) {
@@ -449,6 +751,12 @@ function createScriptLibrary(options = {}) {
     getLiveId,
     findByRevision,
     adoptLiveText,
+    listAssets,
+    readAsset,
+    addAsset,
+    removeAsset,
+    countMissingImages,
+    maxImageBytes,
   };
 }
 
@@ -461,4 +769,6 @@ module.exports = {
   writeAtomic,
   createPrivatePathGuard,
   createScriptLibrary,
+  detectImage,
+  displayAssetName,
 };
