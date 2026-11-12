@@ -5,7 +5,7 @@ const os = require('os');
 const path = require('node:path');
 const { WebSocket } = require('ws');
 
-const { createPrompterServer } = require('./server');
+const { createPrompterServer } = require('../server');
 
 function waitFor(predicate, timeout = 3000) {
   const start = Date.now();

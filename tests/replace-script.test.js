@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createReplaceScript } = require('./public/replace-script');
+const { createReplaceScript } = require('../public/replace-script');
 
 function classList() {
   const names = new Set();

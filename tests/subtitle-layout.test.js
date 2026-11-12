@@ -2,11 +2,12 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { cueRevealOffset, DIRECTION_BLOCK_GAP } = require('./subtitle-layout');
+const root = path.join(__dirname, '..');
+const { cueRevealOffset, DIRECTION_BLOCK_GAP } = require('../subtitle-layout');
 
-const client = fs.readFileSync(path.join(__dirname, 'client.html'), 'utf8');
-const stage = fs.readFileSync(path.join(__dirname, 'public/stage.js'), 'utf8');
-const styles = fs.readFileSync(path.join(__dirname, 'styles.css'), 'utf8');
+const client = fs.readFileSync(path.join(root, 'client.html'), 'utf8');
+const stage = fs.readFileSync(path.join(root, 'public/stage.js'), 'utf8');
+const styles = fs.readFileSync(path.join(root, 'styles.css'), 'utf8');
 
 function parseCaption(role) {
   const block = styles.match(new RegExp(`html\\[data-role="${role}"\\]\\s*\\{([^}]+)\\}`));

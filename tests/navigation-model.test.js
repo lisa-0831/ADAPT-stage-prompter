@@ -9,7 +9,7 @@ const {
   movePosition,
   normalizePosition,
   positionsEqual,
-} = require('./navigation-model');
+} = require('../navigation-model');
 
 const slides = [
   { title: 'One', lines: [{ text: '1' }, { text: '2' }], titleImage: 'one.jpg' },

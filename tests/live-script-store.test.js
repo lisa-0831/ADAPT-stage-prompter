@@ -6,15 +6,15 @@ const os = require('os');
 const path = require('path');
 const { WebSocket } = require('ws');
 
-const { createPrompterServer } = require('./server');
-const { createScriptLibrary } = require('./script-library');
+const { createPrompterServer } = require('../server');
+const { createScriptLibrary } = require('../script-library');
 const {
   LIVE_WRITE_STAGES,
   commitLiveFiles,
   journalLayout,
   readBackupMeta,
   recoverLiveFiles,
-} = require('./live-script-store');
+} = require('../live-script-store');
 
 const BLUE = '# Blue\n[BLUE]\nBlue line\n';
 const RED = '# Red\n[RED]\nRed line\n';

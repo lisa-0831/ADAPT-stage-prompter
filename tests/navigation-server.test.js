@@ -5,9 +5,9 @@ const os = require('os');
 const path = require('path');
 const { WebSocket } = require('ws');
 
-const { createPrompterServer } = require('./server');
-const { movePosition, positionsEqual, cueDistance } = require('./navigation-model');
-const { browse, effectivePosition, followLive } = require('./actor-mode-model');
+const { createPrompterServer } = require('../server');
+const { movePosition, positionsEqual, cueDistance } = require('../navigation-model');
+const { browse, effectivePosition, followLive } = require('../actor-mode-model');
 
 const SCRIPT = [
   '# Opening',

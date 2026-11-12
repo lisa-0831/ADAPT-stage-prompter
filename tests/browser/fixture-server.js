@@ -3,7 +3,9 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { createPrompterServer } = require('../server');
+const { createPrompterServer } = require('../../server');
+
+const repoRoot = path.resolve(__dirname, '..', '..');
 
 const SPOKEN = 'FIRST SPOKEN LINE';
 const TAIL = 'LAST SPOKEN LINE';
@@ -19,7 +21,7 @@ const PNG = Buffer.from(
 
 function assertDisposable(dir) {
   const resolved = path.resolve(dir);
-  const repo = path.resolve(__dirname, '..');
+  const repo = repoRoot;
   const tmp = path.resolve(os.tmpdir());
   if (resolved === repo || resolved.startsWith(`${repo}${path.sep}`)) {
     throw new Error(`Refusing to use a repository path for test data: ${resolved}`);
@@ -73,7 +75,7 @@ async function startFixture() {
   const previousFile = path.join(dir, 'script.previous.txt');
   const libraryDir = path.join(dir, 'library');
   const journalDir = path.join(dir, 'live-journal');
-  const repoScript = path.join(__dirname, '..', 'script.txt');
+  const repoScript = path.join(repoRoot, 'script.txt');
   const repoScriptHash = crypto.createHash('sha256').update(fs.readFileSync(repoScript)).digest('hex');
 
   fs.writeFileSync(scriptFile, '# Bootstrap Holder\n[BOOT]\nBoot line\n');

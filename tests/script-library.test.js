@@ -3,21 +3,22 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('os');
 const path = require('node:path');
+const root = path.join(__dirname, '..');
 const { WebSocket } = require('ws');
 
-const { createPrompterServer } = require('./server');
+const { createPrompterServer } = require('../server');
 const {
   createScriptLibrary,
   createPrivatePathGuard,
   hashText,
   writeAtomic,
-} = require('./script-library');
+} = require('../script-library');
 const {
   liveSwitchConfirmContent,
   reviewedLiveRevision,
   setLiveOutcome,
   setLiveRequestState,
-} = require('./script-library-model');
+} = require('../script-library-model');
 
 const HAMLET = '# Hamlet\n[HAMLET]\nTo be or not to be.\n';
 const MACBETH = '# Macbeth\n[MACBETH]\nTomorrow and tomorrow.\n---\n# Dunsinane\n[MACDUFF]\nTurn, hell-hound.\n';
@@ -525,7 +526,7 @@ test('an edit to the same live production keeps the current cue', async (t) => {
 });
 
 test('library files are not served statically and ids cannot traverse directories', async (t) => {
-  const libraryDir = path.join(__dirname, 'data', `library-exposure-${process.pid}-${Date.now()}`);
+  const libraryDir = path.join(root, 'data', `library-exposure-${process.pid}-${Date.now()}`);
   const dir = tempDir('prompter-lib-exposure-');
   const fixture = startServer(t, {
     dir,
@@ -546,7 +547,7 @@ test('library files are not served statically and ids cannot traverse directorie
     body: JSON.stringify({ title: 'Secret', text: secret }),
   });
   const body = await created.json();
-  const relative = path.relative(__dirname, libraryDir).split(path.sep).join('/');
+  const relative = path.relative(root, libraryDir).split(path.sep).join('/');
   const indexUrl = `${base}/${relative}/index.json`;
   const scriptUrl = `${base}/${relative}/scripts/${body.script.id}.txt`;
   const indexResponse = await fetch(indexUrl);
@@ -606,7 +607,7 @@ test('a staff token is required for library text when it is configured', async (
 });
 
 test('the controller page offers the library without removing the current script tools', () => {
-  const client = fs.readFileSync(path.join(__dirname, 'client.html'), 'utf8');
+  const client = fs.readFileSync(path.join(root, 'client.html'), 'utf8');
   assert.match(client, /id="btn-script-library"/);
   assert.match(client, /id="script-library"/);
   assert.match(client, /id="btn-edit-script"/);
@@ -620,14 +621,14 @@ test('the controller page offers the library without removing the current script
   assert.match(client, /Manage Images/);
   assert.match(client, /ScriptLibrary\.parseImageReference/);
   assert.match(client, /PrompterEditor\.noteScriptRevision/);
-  const editorView = fs.readFileSync(path.join(__dirname, 'public/editor-view.js'), 'utf8');
+  const editorView = fs.readFileSync(path.join(root, 'public/editor-view.js'), 'utf8');
   assert.match(editorView, /Choose image/);
   assert.match(editorView, /ScriptEditor\.setSceneImage/);
-  const connection = fs.readFileSync(path.join(__dirname, 'public/connection.js'), 'utf8');
+  const connection = fs.readFileSync(path.join(root, 'public/connection.js'), 'utf8');
   assert.match(connection, /isActor && scriptChanged/);
   assert.match(connection, /actor\.onScriptChanged\(\)/);
   assert.match(connection, /liveShow\.applyState\(null\)/);
-  const actorView = fs.readFileSync(path.join(__dirname, 'public/actor-view.js'), 'utf8');
+  const actorView = fs.readFileSync(path.join(root, 'public/actor-view.js'), 'utf8');
   assert.match(actorView, /actorMode\.followLive\(\)/);
 });
 
@@ -668,7 +669,7 @@ async function uploadImage(base, scriptId, bytes, options = {}) {
 }
 
 test('image references keep legacy paths and name a production asset explicitly', () => {
-  const { parseImageReference, imageReference, imageLabel, setLiveOutcome } = require('./script-library-model');
+  const { parseImageReference, imageReference, imageLabel, setLiveOutcome } = require('../script-library-model');
   assert.equal(parseImageReference('images/Title_Card.jpeg').kind, 'legacy');
   assert.equal(parseImageReference('images/../server.js').kind, 'unknown');
   assert.equal(parseImageReference('https://example.com/a.jpg').kind, 'unknown');
@@ -883,7 +884,7 @@ test('setting a production live shows only that production images and restore br
 });
 
 test('restoring the previous live script keeps both library productions', async (t) => {
-  const editor = fs.readFileSync(path.join(__dirname, 'public/editor-view.js'), 'utf8');
+  const editor = fs.readFileSync(path.join(root, 'public/editor-view.js'), 'utf8');
   const marker = "headers['X-Restore-Previous'] = '1'";
   const markerAt = editor.indexOf(marker);
   assert.notEqual(markerAt, -1);
@@ -1020,8 +1021,8 @@ test('restoring the previous live script keeps both library productions', async 
 });
 
 test('set as live rejects a stale revision and keeps the current show', async (t) => {
-  const client = fs.readFileSync(path.join(__dirname, 'client.html'), 'utf8');
-  const editor = fs.readFileSync(path.join(__dirname, 'public/editor-view.js'), 'utf8');
+  const client = fs.readFileSync(path.join(root, 'client.html'), 'utf8');
+  const editor = fs.readFileSync(path.join(root, 'public/editor-view.js'), 'utf8');
   assert.match(editor, /expectedRevision: editorLibraryRevision/);
   assert.match(client, /expectedRevision: libraryPendingRevision/);
   assert.match(editor, /Save to the library before setting this script live/);

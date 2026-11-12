@@ -10,7 +10,7 @@ const { defineConfig } = require('@playwright/test');
 //   npx playwright install chromium
 
 module.exports = defineConfig({
-  testDir: './browser',
+  testDir: './tests/browser',
   testMatch: '**/*.spec.js',
   timeout: 30_000,
   expect: { timeout: 5_000 },

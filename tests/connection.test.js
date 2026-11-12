@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createLiveShow } = require('./public/live-show');
-const { createConnection } = require('./public/connection');
+const { createLiveShow } = require('../public/live-show');
+const { createConnection } = require('../public/connection');
 
 function element() {
   const classes = new Set();

@@ -1,9 +1,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { createActorView } = require('./public/actor-view');
-const NavigationModel = require('./navigation-model');
-const ActorModeModel = require('./actor-mode-model');
+const { createActorView } = require('../public/actor-view');
+const NavigationModel = require('../navigation-model');
+const ActorModeModel = require('../actor-mode-model');
 
 const slides = [
   {

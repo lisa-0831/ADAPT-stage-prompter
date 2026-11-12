@@ -2,11 +2,12 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const root = path.join(__dirname, '..');
 
-const { parseScript, positionAfterScriptReplace } = require('./script-format');
-const ScriptEditor = require('./script-editor-model');
+const { parseScript, positionAfterScriptReplace } = require('../script-format');
+const ScriptEditor = require('../script-editor-model');
 
-const scriptPath = path.join(__dirname, 'script.txt');
+const scriptPath = path.join(root, 'script.txt');
 const scriptText = fs.readFileSync(scriptPath, 'utf8');
 
 function memoryStorage() {
@@ -399,7 +400,7 @@ test('replacing a script keeps scene and line numbers only when they still exist
 });
 
 test('the controller page exposes Edit Script without removing Replace Script or actor follow-live', () => {
-  const client = fs.readFileSync(path.join(__dirname, 'client.html'), 'utf8');
+  const client = fs.readFileSync(path.join(root, 'client.html'), 'utf8');
   const controller = client.slice(client.indexOf('<div id="controller">'), client.indexOf('<div id="actor-controls">'));
   assert.match(controller, /id="btn-edit-script"/);
   assert.match(controller, /id="btn-upload-toggle"/);
@@ -413,7 +414,7 @@ test('the controller page exposes Edit Script without removing Replace Script or
   assert.equal(client.includes('function openEditor'), false);
   assert.equal(client.includes('function runPublish'), false);
   assert.equal(client.includes('isEditorOpen'), false);
-  const editorView = fs.readFileSync(path.join(__dirname, 'public/editor-view.js'), 'utf8');
+  const editorView = fs.readFileSync(path.join(root, 'public/editor-view.js'), 'utf8');
   assert.match(editorView, /ScriptEditor\.publicationStatus/);
   assert.match(editorView, /ScriptEditor\.publishConfirmContent/);
   assert.match(editorView, /ScriptEditor\.publishOutcome/);
@@ -421,11 +422,11 @@ test('the controller page exposes Edit Script without removing Replace Script or
   assert.match(editorView, /showConfirmFailure\(outcome\.message\)/);
   assert.match(editorView, /ScriptEditor\.publishLiveNotice/);
   assert.match(editorView, /editorDom\.workspace\.inert = true/);
-  const connection = fs.readFileSync(path.join(__dirname, 'public/connection.js'), 'utf8');
+  const connection = fs.readFileSync(path.join(root, 'public/connection.js'), 'utf8');
   assert.match(connection, /if \(!isActor \|\| !scriptChanged\) stage\.render\(\)/);
   assert.match(connection, /isActor && scriptChanged/);
   assert.match(connection, /actor\.onScriptChanged\(\)/);
   assert.match(connection, /liveShow\.applyState\(null\)/);
-  const actorView = fs.readFileSync(path.join(__dirname, 'public/actor-view.js'), 'utf8');
+  const actorView = fs.readFileSync(path.join(root, 'public/actor-view.js'), 'utf8');
   assert.match(actorView, /actorMode\.followLive\(\)/);
 });

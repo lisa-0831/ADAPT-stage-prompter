@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { createLiveShow } = require('./public/live-show');
+const { createLiveShow } = require('../public/live-show');
 
 function scriptMessage(overrides) {
   return Object.assign({

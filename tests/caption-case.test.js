@@ -2,12 +2,13 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const root = path.join(__dirname, '..');
 
-const { toSentenceCase } = require('./caption-case');
+const { toSentenceCase } = require('../caption-case');
 
-const client = fs.readFileSync(path.join(__dirname, 'client.html'), 'utf8');
-const stage = fs.readFileSync(path.join(__dirname, 'public/stage.js'), 'utf8');
-const styles = fs.readFileSync(path.join(__dirname, 'styles.css'), 'utf8');
+const client = fs.readFileSync(path.join(root, 'client.html'), 'utf8');
+const stage = fs.readFileSync(path.join(root, 'public/stage.js'), 'utf8');
+const styles = fs.readFileSync(path.join(root, 'styles.css'), 'utf8');
 
 test('turns an all-caps cue into sentence case', () => {
   assert.equal(
@@ -38,7 +39,7 @@ test('the case toggle is controller-only and does not restyle character names', 
   assert.match(client, /id="btn-case"/);
   assert.match(client, /if \(isController\) return PrompterController\.formatCue\(text, type\)/);
   assert.match(client, /return PrompterText\.displayText\(text, type\)/);
-  const controller = fs.readFileSync(path.join(__dirname, 'public/controller-view.js'), 'utf8');
+  const controller = fs.readFileSync(path.join(root, 'public/controller-view.js'), 'utf8');
   assert.match(controller, /CaptionCase\.toSentenceCase/);
   assert.match(controller, /prompter-caption-case/);
   assert.match(styles, /\.char-name\s*\{[^}]*text-transform:\s*uppercase/);

@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { lineType, displayText } = require('./public/text');
+const { lineType, displayText } = require('../public/text');
 
 test('classifies a cue by its first marker', () => {
   assert.equal(lineType('HELLO THERE'), 'dialogue');

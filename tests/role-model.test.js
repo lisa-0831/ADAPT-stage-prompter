@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { ROLES, isKnownUrlRole, resolveRole } = require('./role-model');
+const { ROLES, isKnownUrlRole, resolveRole } = require('../role-model');
 
 test('resolves each supported role', () => {
   assert.equal(resolveRole('controller'), ROLES.CONTROLLER);

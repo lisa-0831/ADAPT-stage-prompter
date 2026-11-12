@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { directionForKey } = require('./actor-input-model');
+const { directionForKey } = require('../actor-input-model');
 
 test('maps Actor previous navigation keys', () => {
   assert.equal(directionForKey('ArrowLeft'), 'prev');

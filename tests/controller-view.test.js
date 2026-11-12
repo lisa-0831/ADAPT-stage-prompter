@@ -1,8 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const PrompterText = require('./public/text');
-const { toSentenceCase } = require('./caption-case');
-const { createControllerView } = require('./public/controller-view');
+const PrompterText = require('../public/text');
+const { toSentenceCase } = require('../caption-case');
+const { createControllerView } = require('../public/controller-view');
 
 function memoryStorage(initial) {
   const data = Object.assign({}, initial);

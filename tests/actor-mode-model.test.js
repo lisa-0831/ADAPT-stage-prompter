@@ -6,7 +6,7 @@ const {
   browse,
   effectivePosition,
   followLive,
-} = require('./actor-mode-model');
+} = require('../actor-mode-model');
 
 test('starts in FOLLOW_LIVE without a local position', () => {
   assert.deepEqual(followLive(), {

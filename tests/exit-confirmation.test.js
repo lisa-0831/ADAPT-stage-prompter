@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createExitConfirmation } = require('./public/exit-confirmation');
+const { createExitConfirmation } = require('../public/exit-confirmation');
 
 function classList() {
   const names = new Set();

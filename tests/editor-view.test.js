@@ -1,9 +1,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createEditorView } = require('./public/editor-view');
-const ScriptEditor = require('./script-editor-model');
-const ScriptLibrary = require('./script-library-model');
-const ScriptFormat = require('./script-format');
+const { createEditorView } = require('../public/editor-view');
+const ScriptEditor = require('../script-editor-model');
+const ScriptLibrary = require('../script-library-model');
+const ScriptFormat = require('../script-format');
 
 function element() {
   const node = {
