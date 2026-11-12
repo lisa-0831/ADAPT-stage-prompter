@@ -69,6 +69,9 @@ test('each role shows only its own controls', async ({ browser, prompter }) => {
     const exitScript = await controller.page.request.get(`${prompter.baseURL}/public/exit-confirmation.js`);
     expect(exitScript.status()).toBe(200);
     expect(exitScript.headers()['content-type'] || '').toMatch(/javascript/);
+    const editorScript = await controller.page.request.get(`${prompter.baseURL}/public/editor-view.js`);
+    expect(editorScript.status()).toBe(200);
+    expect(editorScript.headers()['content-type'] || '').toMatch(/javascript/);
 
     for (const entry of [controller, actor, audience]) {
       await expect(entry.page.locator('link[rel="stylesheet"]')).toHaveAttribute('href', '/styles.css');
@@ -81,6 +84,7 @@ test('each role shows only its own controls', async ({ browser, prompter }) => {
       await expect(entry.page.locator('script[src="public/controller-view.js"]')).toHaveCount(1);
       await expect(entry.page.locator('script[src="public/replace-script.js"]')).toHaveCount(1);
       await expect(entry.page.locator('script[src="public/exit-confirmation.js"]')).toHaveCount(1);
+      await expect(entry.page.locator('script[src="public/editor-view.js"]')).toHaveCount(1);
       const classified = await entry.page.evaluate(() => ({
         dialogue: PrompterText.lineType('HELLO THERE'),
         direction: PrompterText.lineType('  {She exits.}'),
@@ -142,6 +146,8 @@ test('each role shows only its own controls', async ({ browser, prompter }) => {
       expect(controllerEnabled).toBe(entry.page === controller.page);
       const exitEnabled = await entry.page.evaluate(() => PrompterExitConfirmation.isEnabled());
       expect(exitEnabled).toBe(entry.page === controller.page);
+      const editorEnabled = await entry.page.evaluate(() => PrompterEditor.isEnabled());
+      expect(editorEnabled).toBe(entry.page === controller.page);
       if (entry.page === actor.page) {
         const aligned = await entry.page.evaluate(() => {
           const live = PrompterLiveShow.getLiveState();

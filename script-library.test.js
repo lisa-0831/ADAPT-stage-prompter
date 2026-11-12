@@ -618,10 +618,11 @@ test('the controller page offers the library without removing the current script
   assert.match(client, /ScriptLibrary\.setLiveOutcome/);
   assert.match(client, /ScriptLibrary\.setLiveRequestState/);
   assert.match(client, /Manage Images/);
-  assert.match(client, /Choose image/);
-  assert.match(client, /ScriptEditor\.setSceneImage/);
   assert.match(client, /ScriptLibrary\.parseImageReference/);
-  assert.match(client, /onScriptApplied: noteEditorScriptRevision/);
+  assert.match(client, /PrompterEditor\.noteScriptRevision/);
+  const editorView = fs.readFileSync(path.join(__dirname, 'public/editor-view.js'), 'utf8');
+  assert.match(editorView, /Choose image/);
+  assert.match(editorView, /ScriptEditor\.setSceneImage/);
   const connection = fs.readFileSync(path.join(__dirname, 'public/connection.js'), 'utf8');
   assert.match(connection, /isActor && scriptChanged/);
   assert.match(connection, /actor\.onScriptChanged\(\)/);
@@ -882,12 +883,12 @@ test('setting a production live shows only that production images and restore br
 });
 
 test('restoring the previous live script keeps both library productions', async (t) => {
-  const client = fs.readFileSync(path.join(__dirname, 'client.html'), 'utf8');
+  const editor = fs.readFileSync(path.join(__dirname, 'public/editor-view.js'), 'utf8');
   const marker = "headers['X-Restore-Previous'] = '1'";
-  const markerAt = client.indexOf(marker);
+  const markerAt = editor.indexOf(marker);
   assert.notEqual(markerAt, -1);
-  const branchStart = client.lastIndexOf("if (mode === 'restore')", markerAt);
-  const restoreBranch = client.slice(branchStart, client.indexOf('else if', markerAt));
+  const branchStart = editor.lastIndexOf("if (mode === 'restore')", markerAt);
+  const restoreBranch = editor.slice(branchStart, editor.indexOf('else if', markerAt));
   assert.doesNotMatch(restoreBranch, /X-Library-Id/);
 
   const fixture = startServer(t, { scriptText: HAMLET });
@@ -1020,11 +1021,12 @@ test('restoring the previous live script keeps both library productions', async 
 
 test('set as live rejects a stale revision and keeps the current show', async (t) => {
   const client = fs.readFileSync(path.join(__dirname, 'client.html'), 'utf8');
-  assert.match(client, /expectedRevision: editorLibraryRevision/);
+  const editor = fs.readFileSync(path.join(__dirname, 'public/editor-view.js'), 'utf8');
+  assert.match(editor, /expectedRevision: editorLibraryRevision/);
   assert.match(client, /expectedRevision: libraryPendingRevision/);
-  assert.match(client, /Save to the library before setting this script live/);
+  assert.match(editor, /Save to the library before setting this script live/);
   assert.match(client, /Review latest/);
-  assert.match(client, /Load latest version/);
+  assert.match(editor, /Load latest version/);
   assert.match(client, /reviewedLiveRevision\(entry, libraryReviewed\)/);
 
   const fixture = startServer(t, { scriptText: MACBETH });
