@@ -6,6 +6,7 @@ const path = require('node:path');
 const { toSentenceCase } = require('./caption-case');
 
 const client = fs.readFileSync(path.join(__dirname, 'client.html'), 'utf8');
+const styles = fs.readFileSync(path.join(__dirname, 'styles.css'), 'utf8');
 
 test('turns an all-caps cue into sentence case', () => {
   assert.equal(
@@ -36,6 +37,6 @@ test('the case toggle is controller-only and does not restyle character names', 
   assert.match(client, /id="btn-case"/);
   assert.match(client, /isController && sentenceCase/);
   assert.match(client, /CaptionCase\.toSentenceCase/);
-  assert.match(client, /\.char-name\s*\{[^}]*text-transform:\s*uppercase/);
+  assert.match(styles, /\.char-name\s*\{[^}]*text-transform:\s*uppercase/);
   assert.match(client, /nameEl\.textContent = showName \? speaker : ''/);
 });

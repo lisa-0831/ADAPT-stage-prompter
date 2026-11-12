@@ -33,6 +33,36 @@ test('each role shows only its own controls', async ({ browser, prompter }) => {
       await expect(entry.page.locator('#btn-actor-next')).toBeHidden();
     }
 
+    const stylesheet = await controller.page.request.get(`${prompter.baseURL}/styles.css`);
+    expect(stylesheet.status()).toBe(200);
+    expect(stylesheet.headers()['content-type'] || '').toMatch(/css/);
+    const css = await stylesheet.text();
+    const assetUrls = [...css.matchAll(/url\(\s*(['"]?)([^'")]+)\1\s*\)/g)].map((match) => match[2]);
+    expect(assetUrls.length).toBeGreaterThan(0);
+    for (const assetUrl of assetUrls) {
+      const resolved = new URL(assetUrl, `${prompter.baseURL}/styles.css`);
+      const asset = await controller.page.request.get(resolved.toString());
+      expect(asset.status(), assetUrl).toBe(200);
+    }
+
+    for (const entry of [controller, actor, audience]) {
+      await expect(entry.page.locator('link[rel="stylesheet"]')).toHaveAttribute('href', '/styles.css');
+      await expect(entry.page.locator('style')).toHaveCount(0);
+      const applied = await entry.page.evaluate(() => {
+        const root = getComputedStyle(document.documentElement);
+        const body = getComputedStyle(document.body);
+        const stage = getComputedStyle(document.getElementById('stage'));
+        return {
+          caption: root.getPropertyValue('--caption-size').trim(),
+          background: body.backgroundColor,
+          stageImage: stage.backgroundImage,
+        };
+      });
+      expect(applied.caption).toContain('clamp');
+      expect(applied.background).toBe('rgb(10, 10, 10)');
+      expect(applied.stageImage).toContain('background.jpg');
+    }
+
     assertQuiet(pages);
   } finally {
     await closeShows(pages);

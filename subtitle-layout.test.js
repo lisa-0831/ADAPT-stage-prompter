@@ -5,9 +5,10 @@ const path = require('node:path');
 const { cueRevealOffset, DIRECTION_BLOCK_GAP } = require('./subtitle-layout');
 
 const client = fs.readFileSync(path.join(__dirname, 'client.html'), 'utf8');
+const styles = fs.readFileSync(path.join(__dirname, 'styles.css'), 'utf8');
 
 function parseCaption(role) {
-  const block = client.match(new RegExp(`html\\[data-role="${role}"\\]\\s*\\{([^}]+)\\}`));
+  const block = styles.match(new RegExp(`html\\[data-role="${role}"\\]\\s*\\{([^}]+)\\}`));
   assert.ok(block, `missing caption rules for ${role}`);
   const sizes = block[1].match(
     /--caption-size:\s*clamp\(\s*([0-9.]+)rem\s*,\s*calc\(\s*([0-9.]+)rem\s*\+\s*min\(\s*([0-9.]+)cqw\s*,\s*([0-9.]+)cqh\s*\)\s*\)\s*,\s*([0-9.]+)rem\s*\)/,
@@ -32,11 +33,13 @@ test('caption size follows the stage box on both axes', () => {
   const actor = parseCaption('actor');
   const controller = parseCaption('controller');
 
-  assert.match(client, /container:\s*stage\s*\/\s*size/);
-  assert.match(client, /overflow-wrap:\s*anywhere/);
+  assert.match(client, /<link rel="stylesheet" href="\/styles\.css">/);
+  assert.doesNotMatch(client, /<style[\s>]/);
+  assert.match(styles, /container:\s*stage\s*\/\s*size/);
+  assert.match(styles, /overflow-wrap:\s*anywhere/);
   assert.match(client, /documentElement\.dataset\.role\s*=\s*role/);
-  assert.doesNotMatch(client, /font-size:\s*clamp\(1\.5rem,\s*3\.2vw,\s*2\.4rem\)/);
-  assert.doesNotMatch(client, /max-width:\s*160px/);
+  assert.doesNotMatch(styles, /font-size:\s*clamp\(1\.5rem,\s*3\.2vw,\s*2\.4rem\)/);
+  assert.doesNotMatch(styles, /max-width:\s*160px/);
   assert.doesNotMatch(client, /addEventListener\(\s*['"]resize['"]/);
 
   const stage = { width: 1800, height: 980 };
@@ -67,7 +70,7 @@ test('captions stay readable on a phone and grow when text is enlarged', () => {
 test('stage directions use a caption-relative gap instead of a root-em gap', () => {
   assert.equal(DIRECTION_BLOCK_GAP, '0.85em');
   assert.match(client, /SubtitleLayout\.DIRECTION_BLOCK_GAP/);
-  assert.doesNotMatch(client, /2\.8em/);
+  assert.doesNotMatch(styles, /2\.8em/);
 });
 
 test('a tall active cue is scrolled into view only when it is not already readable', () => {
@@ -108,20 +111,20 @@ test('a tall active cue is scrolled into view only when it is not already readab
 });
 
 test('lines before and after the current cue use the same paler ink', () => {
-  assert.match(client, /\.line-row\.past,\s*\.line-row\.future\s*\{[^}]*--idle-strength:\s*32%/);
-  assert.match(client, /\.line-row\.past \.script-line,\s*\.line-row\.future \.script-line\s*\{[^}]*color-mix\(in srgb, var\(--ink\) var\(--idle-strength\), var\(--bg\)\)/);
-  assert.doesNotMatch(client, /\.line-row\.past\s*\{\s*opacity:/);
+  assert.match(styles, /\.line-row\.past,\s*\.line-row\.future\s*\{[^}]*--idle-strength:\s*32%/);
+  assert.match(styles, /\.line-row\.past \.script-line,\s*\.line-row\.future \.script-line\s*\{[^}]*color-mix\(in srgb, var\(--ink\) var\(--idle-strength\), var\(--bg\)\)/);
+  assert.doesNotMatch(styles, /\.line-row\.past\s*\{\s*opacity:/);
   assert.doesNotMatch(client, /future-\$\{ahead\}/);
 });
 
 test('layout keeps caption overflow inside the stage and preserves actor controls', () => {
-  assert.match(client, /#stage[\s\S]*?min-height:\s*0/);
-  assert.match(client, /#stage[\s\S]*?overflow-y:\s*auto/);
-  assert.match(client, /#lines-current[\s\S]*?flex:\s*0\s*0\s*auto/);
-  assert.match(client, /#lines-past[\s\S]*?overflow:\s*hidden/);
+  assert.match(styles, /#stage[\s\S]*?min-height:\s*0/);
+  assert.match(styles, /#stage[\s\S]*?overflow-y:\s*auto/);
+  assert.match(styles, /#lines-current[\s\S]*?flex:\s*0\s*0\s*auto/);
+  assert.match(styles, /#lines-past[\s\S]*?overflow:\s*hidden/);
   assert.match(client, /dom\.stage\.scrollTop\s*=\s*0/);
-  assert.match(client, /#actor-nav-buttons \.actor-action[\s\S]*?min-height:\s*64px/);
-  assert.match(client, /\.btn:focus-visible/);
-  assert.match(client, /--amber:\s*#f5c842/);
-  assert.match(client, /--bg:\s*#0a0a0a/);
+  assert.match(styles, /#actor-nav-buttons \.actor-action[\s\S]*?min-height:\s*64px/);
+  assert.match(styles, /\.btn:focus-visible/);
+  assert.match(styles, /--amber:\s*#f5c842/);
+  assert.match(styles, /--bg:\s*#0a0a0a/);
 });
