@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test"
+    "test": "node --test",
+    "test:browser": "playwright test"
   },
   "keywords": [],
   "author": "",
@@ -13,5 +14,8 @@
   "dependencies": {
     "express": "^5.2.1",
     "ws": "^8.21.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.0"
   }
 }

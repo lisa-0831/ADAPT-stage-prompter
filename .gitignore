@@ -3,3 +3,7 @@ node_modules/
 script.previous.txt
 script.previous.txt.meta.json
 data/
+playwright-report/
+test-results/
+blob-report/
+browser/.runtime/
