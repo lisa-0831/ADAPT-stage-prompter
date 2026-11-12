@@ -8,11 +8,15 @@ const { parseScript, positionAfterScriptReplace } = require('./script-format');
 const { stagePublishedScript } = require('./script-editor-model');
 const {
   createScriptLibrary,
-  writeAtomic,
   createPrivatePathGuard,
   hashText,
   isValidScriptId,
 } = require('./script-library');
+const {
+  commitLiveFiles,
+  recoverLiveFiles,
+  readBackupMeta,
+} = require('./live-script-store');
 
 function imageLimitMessage(limit) {
   const amount = limit >= 1024 * 1024 && limit % (1024 * 1024) === 0
@@ -114,6 +118,21 @@ function createPrompterServer(options = {}) {
     : (Number.isInteger(configuredLimit) && configuredLimit > 0 ? configuredLimit : 10 * 1024 * 1024);
   const library = createScriptLibrary({ dir: libraryDir, maxImageBytes: imageMaxBytes });
   const previousMetaFile = `${previousFile}.meta.json`;
+  const journalDir = options.journalDir
+    || path.join(path.dirname(scriptFile), 'data', 'live-journal');
+  let libraryReady = false;
+  const livePaths = {
+    scriptFile,
+    previousFile,
+    metaFile: previousMetaFile,
+    journalDir,
+    identityMatches(liveId, text) {
+      if (!libraryReady) return true;
+      if (!isValidScriptId(liveId)) return false;
+      const record = library.read(liveId);
+      return Boolean(record.ok && record.text === text);
+    },
+  };
 
   const app = express();
   const server = http.createServer(app);
@@ -193,20 +212,22 @@ function createPrompterServer(options = {}) {
   }
 
   function readPreviousMeta() {
-    try {
-      if (!fs.existsSync(previousMetaFile)) return { liveId: null };
-      const parsed = JSON.parse(fs.readFileSync(previousMetaFile, 'utf8'));
-      const liveId = parsed && typeof parsed.liveId === 'string' ? parsed.liveId : null;
-      return { liveId: isValidScriptId(liveId) ? liveId.toLowerCase() : null };
-    } catch (err) {
-      return { liveId: null };
-    }
+    const meta = readBackupMeta(previousMetaFile, previousFile);
+    const liveId = isValidScriptId(meta.liveId) ? meta.liveId.toLowerCase() : null;
+    return { liveId };
+  }
+
+  function healLiveFiles() {
+    const healed = recoverLiveFiles(livePaths);
+    if (healed.scriptChanged) loadScript(false);
+    return healed;
   }
 
   function writeLiveScript(nextText, preservePosition) {
     let currentText = '';
     let previousText = '';
     try {
+      healLiveFiles();
       currentText = readTextFile(scriptFile);
       previousText = readTextFile(previousFile);
     } catch (err) {
@@ -228,14 +249,17 @@ function createPrompterServer(options = {}) {
 
     try {
       if (staged.changed) {
-        if (staged.previousText) {
-          writeAtomic(previousFile, staged.previousText);
-          writeAtomic(previousMetaFile, `${JSON.stringify({ liveId: library.getLiveId() })}\n`);
-        }
-        writeAtomic(scriptFile, staged.text);
+        commitLiveFiles({
+          ...livePaths,
+          nextText: staged.text,
+          nextPreviousText: staged.previousText || null,
+          nextPreviousLiveId: staged.previousText ? library.getLiveId() : null,
+          onStage: options.onLiveWriteStage,
+        });
       }
     } catch (err) {
-      console.error(err);
+      // Fault-injection tests throw this code on purpose. A real save error is still logged.
+      if (!err || err.code !== 'injected-stop') console.error(err);
       return { ok: false, status: 500, error: 'Could not save the script' };
     }
 
@@ -402,7 +426,7 @@ function createPrompterServer(options = {}) {
   // Library routes use PROMPTER_STAFF_TOKEN when that variable is set.
   app.use(express.text({ type: 'text/plain', limit: '5mb' }));
   app.use(express.json({ limit: '5mb' }));
-  app.use(createPrivatePathGuard(libraryDir, __dirname));
+  app.use(createPrivatePathGuard(libraryDir, __dirname, [journalDir]));
   app.use(express.static(__dirname, { index: false }));
 
   app.get('/', (req, res) => {
@@ -689,6 +713,18 @@ function createPrompterServer(options = {}) {
 
   try {
     library.open();
+    libraryReady = true;
+  } catch (err) {
+    console.error('[library] The current script could not be added to the library');
+    console.error(err);
+  }
+  try {
+    recoverLiveFiles(livePaths);
+  } catch (err) {
+    console.error('[server] The live script backup could not be recovered');
+    console.error(err);
+  }
+  try {
     if (!fs.existsSync(scriptFile)) {
       fs.writeFileSync(scriptFile, defaultScript(), 'utf8');
       console.log('[server] Created default script.txt');
@@ -696,6 +732,7 @@ function createPrompterServer(options = {}) {
     library.adoptLiveText(fs.readFileSync(scriptFile, 'utf8'));
   } catch (err) {
     console.error('[library] The current script could not be added to the library');
+    console.error(err);
   }
 
   loadScript();

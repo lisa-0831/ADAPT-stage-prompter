@@ -99,14 +99,17 @@ function displayAssetName(originalName) {
   return cleaned || 'Image';
 }
 
-function createPrivatePathGuard(libraryDir, staticRoot) {
-  const resolvedLibrary = path.resolve(libraryDir);
+function createPrivatePathGuard(libraryDir, staticRoot, extraPrivateDirs = []) {
   const root = path.resolve(staticRoot);
-  const relative = path.relative(root, resolvedLibrary);
-  const insideRoot = relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
-  const urlPrefix = insideRoot && relative
-    ? `/${relative.split(path.sep).filter(Boolean).join('/')}`
-    : null;
+  const directories = [libraryDir].concat(extraPrivateDirs).filter(Boolean).map((dirPath) => {
+    const resolvedDir = path.resolve(dirPath);
+    const relative = path.relative(root, resolvedDir);
+    const insideRoot = relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+    const urlPrefix = insideRoot && relative
+      ? `/${relative.split(path.sep).filter(Boolean).join('/')}`
+      : null;
+    return { resolvedDir, urlPrefix };
+  });
 
   return function privatePathGuard(req, res, next) {
     let pathname = req.path || '';
@@ -120,13 +123,16 @@ function createPrivatePathGuard(libraryDir, staticRoot) {
       res.status(400).type('text/plain').send('Bad request');
       return;
     }
-    const blockedPrefix = urlPrefix && (
-      pathname === urlPrefix || pathname.startsWith(`${urlPrefix}/`)
-    );
     const resolved = path.resolve(root, `.${pathname}`);
-    const insideLibrary = resolved === resolvedLibrary
-      || resolved.startsWith(`${resolvedLibrary}${path.sep}`);
-    if (blockedPrefix || insideLibrary) {
+    const blocked = directories.some((dir) => {
+      const blockedPrefix = dir.urlPrefix && (
+        pathname === dir.urlPrefix || pathname.startsWith(`${dir.urlPrefix}/`)
+      );
+      const insideDir = resolved === dir.resolvedDir
+        || resolved.startsWith(`${dir.resolvedDir}${path.sep}`);
+      return blockedPrefix || insideDir;
+    });
+    if (blocked) {
       res.status(404).type('text/plain').send('Not found');
       return;
     }

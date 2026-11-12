@@ -229,7 +229,8 @@ test('the private path guard rejects library urls and path traversal', () => {
   const root = tempDir('prompter-lib-guard-');
   const libraryDir = path.join(root, 'data', 'library');
   fs.mkdirSync(libraryDir, { recursive: true });
-  const guard = createPrivatePathGuard(libraryDir, root);
+  const journalDir = path.join(root, 'data', 'live-journal');
+  const guard = createPrivatePathGuard(libraryDir, root, [journalDir]);
   function request(urlPath) {
     let status = 0;
     const res = {
@@ -243,6 +244,8 @@ test('the private path guard rejects library urls and path traversal', () => {
   }
   assert.equal(request('/data/library/index.json').status, 404);
   assert.equal(request('/data/library/scripts/secret.txt').next, false);
+  assert.equal(request('/data/live-journal/committed/live.txt').status, 404);
+  assert.equal(request('/data/live-journal/pending/live.txt').next, false);
   assert.equal(request('/client.html').next, true);
   assert.equal(request('/script.txt').next, true);
   fs.rmSync(root, { recursive: true, force: true });
