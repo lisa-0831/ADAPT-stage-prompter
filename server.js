@@ -546,6 +546,28 @@ function createPrompterServer(options = {}) {
     if (!record.ok) {
       return res.status(record.status || 404).json({ ok: false, error: record.error });
     }
+    const requestBody = req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body)
+      ? req.body
+      : {};
+    const expectedRevision = typeof requestBody.expectedRevision === 'string'
+      ? requestBody.expectedRevision
+      : '';
+    // Missing and stale revisions are rejected before the live file is touched.
+    // A rename does not change the revision, because the revision is the script text.
+    if (!expectedRevision) {
+      return res.status(400).json({
+        ok: false,
+        code: 'revision-required',
+        error: 'The script revision was missing, so this script was not set live. Open the library again and review the script before setting it live.',
+      });
+    }
+    if (record.revision !== expectedRevision) {
+      return res.status(409).json({
+        ok: false,
+        code: 'conflict',
+        error: 'This saved script changed after you reviewed it. It was not set live. Review the latest version, then set it live again.',
+      });
+    }
     const previousId = library.getLiveId();
     const differentProduction = previousId !== record.id;
     let previousTitle = '';

@@ -12,7 +12,12 @@ const {
   hashText,
   writeAtomic,
 } = require('./script-library');
-const { liveSwitchConfirmContent, setLiveOutcome, setLiveRequestState } = require('./script-library-model');
+const {
+  liveSwitchConfirmContent,
+  reviewedLiveRevision,
+  setLiveOutcome,
+  setLiveRequestState,
+} = require('./script-library-model');
 
 const HAMLET = '# Hamlet\n[HAMLET]\nTo be or not to be.\n';
 const MACBETH = '# Macbeth\n[MACBETH]\nTomorrow and tomorrow.\n---\n# Dunsinane\n[MACDUFF]\nTurn, hell-hound.\n';
@@ -86,6 +91,16 @@ function startServer(t, options = {}) {
     if (!options.keepDir) fs.rmSync(dir, { recursive: true, force: true });
   });
   return { dir, scriptFile, previousFile, libraryDir, created, sockets };
+}
+
+function setLive(base, id, revision, options = {}) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (options.token) headers['X-Staff-Token'] = options.token;
+  return fetch(`${base}/api/library/${id}/live`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ expectedRevision: revision }),
+  });
 }
 
 test('library entries keep their own ids when titles match', () => {
@@ -241,7 +256,22 @@ test('set-live confirmation names both scripts and waits for success', () => {
   assert.match(content.notes.join('\n'), /returned to Live/);
   assert.match(content.notes.join('\n'), /beginning/);
   assert.equal(setLiveRequestState(true).allowDismiss, false);
-  assert.equal(setLiveOutcome(false, { ok: false, error: 'The live script was not changed.' }).closeConfirm, false);
+  const refused = setLiveOutcome(false, { ok: false, error: 'The live script was not changed.' });
+  assert.equal(refused.closeConfirm, false);
+  assert.equal(refused.review, false);
+  const conflict = setLiveOutcome(false, {
+    ok: false,
+    code: 'conflict',
+    error: 'This saved script changed after you reviewed it. It was not set live. Review the latest version, then set it live again.',
+  });
+  assert.equal(conflict.closeConfirm, false);
+  assert.equal(conflict.conflict, true);
+  assert.equal(conflict.review, true);
+  assert.match(conflict.message, /was not set live/);
+  const entry = { id: 'red', revision: 'revision-1' };
+  assert.equal(reviewedLiveRevision(entry, null), 'revision-1');
+  assert.equal(reviewedLiveRevision(entry, { id: 'other', revision: 'revision-9' }), 'revision-1');
+  assert.equal(reviewedLiveRevision(entry, { id: 'red', revision: 'revision-2' }), 'revision-2');
   const success = setLiveOutcome(true, { ok: true, resetPosition: true });
   assert.equal(success.closeConfirm, true);
   assert.match(success.message, /beginning/);
@@ -310,7 +340,7 @@ test('setting a different production live resets the cue and reaches every clien
   });
   const createdBody = await created.json();
   const before = Math.max(controller.messages.length, actor.messages.length);
-  const switched = await fetch(`${base}/api/library/${createdBody.script.id}/live`, { method: 'POST' });
+  const switched = await setLive(base, createdBody.script.id, createdBody.script.revision);
   const body = await switched.json();
   assert.equal(switched.status, 200);
   assert.equal(body.ok, true);
@@ -332,7 +362,7 @@ test('setting a different production live resets the cue and reaches every clien
   );
   assert.equal(macbeth.text, MACBETH);
 
-  const again = await fetch(`${base}/api/library/${body.liveId}/live`, { method: 'POST' });
+  const again = await setLive(base, body.liveId, createdBody.script.revision);
   const againBody = await again.json();
   assert.equal(againBody.unchanged, true);
   assert.equal(againBody.resetPosition, false);
@@ -367,9 +397,11 @@ test('the selected live script is still the live script after a server restart',
     body: JSON.stringify({ title: 'Hamlet', text: HAMLET }),
   });
   const createdBody = await created.json();
-  const switched = await fetch(`http://127.0.0.1:${port}/api/library/${createdBody.script.id}/live`, {
-    method: 'POST',
-  });
+  const switched = await setLive(
+    `http://127.0.0.1:${port}`,
+    createdBody.script.id,
+    createdBody.script.revision,
+  );
   assert.equal((await switched.json()).ok, true);
   await closeAll(first, sockets);
 
@@ -477,9 +509,10 @@ test('an edit to the same live production keeps the current cue', async (t) => {
     body: JSON.stringify({ text: edited, expectedRevision: current.revision }),
   });
   assert.equal(saved.status, 200);
+  const savedBody = await saved.json();
   assert.equal(fs.readFileSync(fixture.scriptFile, 'utf8'), MACBETH);
   const before = client.messages.length;
-  const switched = await fetch(`${base}/api/library/${liveId}/live`, { method: 'POST' });
+  const switched = await setLive(base, liveId, savedBody.script.revision);
   const body = await switched.json();
   assert.equal(body.resetPosition, false);
   await waitFor(() => client.messages.slice(before).some((message) => (
@@ -783,7 +816,7 @@ test('setting a production live shows only that production images and restore br
 
   const red = await makeShow('Red show', HAMLET, jpegBytes(4));
   const blue = await makeShow('Blue show', MACBETH, jpegBytes(5));
-  const redLive = await fetch(`${base}/api/library/${red.id}/live`, { method: 'POST' });
+  const redLive = await setLive(base, red.id, red.revision);
   assert.equal((await redLive.json()).ok, true);
   const edited = `# Red show\n@image: library:${red.id}/${red.assetId}\n[A]\nChanged in the library only\n`;
   const libraryEdit = await fetch(`${base}/api/library/${red.id}`, {
@@ -794,7 +827,7 @@ test('setting a production live shows only that production images and restore br
   assert.equal(libraryEdit.status, 200);
   assert.equal(fs.readFileSync(fixture.scriptFile, 'utf8').includes('Changed in the library only'), false);
 
-  const blueLive = await fetch(`${base}/api/library/${blue.id}/live`, { method: 'POST' });
+  const blueLive = await setLive(base, blue.id, blue.revision);
   const blueBody = await blueLive.json();
   assert.equal(blueBody.resetPosition, true);
   await waitFor(() => audience.messages.some((message) => (
@@ -815,8 +848,9 @@ test('setting a production live shows only that production images and restore br
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ title: 'Legacy', text: legacy }),
   });
-  const legacyId = (await legacyScript.json()).script.id;
-  const legacyLive = await fetch(`${base}/api/library/${legacyId}/live`, { method: 'POST' });
+  const legacyBody = await legacyScript.json();
+  const legacyId = legacyBody.script.id;
+  const legacyLive = await setLive(base, legacyId, legacyBody.script.revision);
   assert.equal((await legacyLive.json()).ok, true);
   await waitFor(() => audience.messages.some((message) => (
     message.type === 'script' && message.slides[0].titleImage === 'images/Title_Card.jpeg'
@@ -874,8 +908,8 @@ test('restoring the previous live script keeps both library productions', async 
 
   const blue = await makeShow('Blue', jpegBytes(1));
   const red = await makeShow('Red', jpegBytes(2));
-  assert.equal((await (await fetch(`${base}/api/library/${blue.id}/live`, { method: 'POST' })).json()).ok, true);
-  assert.equal((await (await fetch(`${base}/api/library/${red.id}/live`, { method: 'POST' })).json()).ok, true);
+  assert.equal((await (await setLive(base, blue.id, blue.revision)).json()).ok, true);
+  assert.equal((await (await setLive(base, red.id, red.revision)).json()).ok, true);
 
   function stored(id) {
     return fixture.created.library.read(id);
@@ -976,6 +1010,142 @@ test('restoring the previous live script keeps both library productions', async 
   assert.equal(stored(red.id).revision, red.revision);
 });
 
+test('set as live rejects a stale revision and keeps the current show', async (t) => {
+  const client = fs.readFileSync(path.join(__dirname, 'client.html'), 'utf8');
+  assert.match(client, /expectedRevision: editorLibraryRevision/);
+  assert.match(client, /expectedRevision: libraryPendingRevision/);
+  assert.match(client, /Save to the library before setting this script live/);
+  assert.match(client, /Review latest/);
+  assert.match(client, /Load latest version/);
+  assert.match(client, /reviewedLiveRevision\(entry, libraryReviewed\)/);
+
+  const fixture = startServer(t, { scriptText: MACBETH });
+  const port = await listen(fixture.created.server);
+  const base = `http://127.0.0.1:${port}`;
+  const firstController = openSocket(`ws://127.0.0.1:${port}`);
+  const secondController = openSocket(`ws://127.0.0.1:${port}`);
+  fixture.sockets.push(firstController.socket, secondController.socket);
+  await waitFor(() => firstController.messages.some((message) => message.type === 'script' && message.liveScriptId));
+  await waitFor(() => secondController.messages.some((message) => message.type === 'state'));
+  const macbethId = firstController.messages.find((message) => message.type === 'script').liveScriptId;
+  const macbethRevision = fixture.created.library.read(macbethId).revision;
+  firstController.socket.send(JSON.stringify({ type: 'goto', slideIndex: 1, lineIndex: 0 }));
+  await waitFor(() => firstController.messages.some((message) => (
+    message.type === 'state' && message.state.slideIndex === 1
+  )));
+
+  const created = await fetch(`${base}/api/library`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: 'Red', text: '# Red\n[A]\nFirst line\n' }),
+  });
+  const createdScript = (await created.json()).script;
+  const uploaded = await uploadImage(base, createdScript.id, jpegBytes(7), { name: 'door.jpg', type: 'image/jpeg' });
+  assert.equal(uploaded.status, 201);
+  const asset = (await uploaded.json()).asset;
+  const reviewed = `# Red\n@image: library:${createdScript.id}/${asset.id}\n[A]\nReviewed line\n`;
+  const saved = await fetch(`${base}/api/library/${createdScript.id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: reviewed, expectedRevision: createdScript.revision }),
+  });
+  const reviewedRevision = (await saved.json()).script.revision;
+  assert.equal(saved.status, 200);
+
+  const matching = await setLive(base, createdScript.id, reviewedRevision);
+  const matchingBody = await matching.json();
+  assert.equal(matching.status, 200);
+  assert.equal(matchingBody.ok, true);
+  assert.equal(matchingBody.resetPosition, true);
+  assert.equal(matchingBody.liveId, createdScript.id);
+  assert.equal(fs.readFileSync(fixture.scriptFile, 'utf8'), reviewed);
+  assert.deepEqual(
+    Buffer.from(await (await fetch(`${base}/api/live/assets/${createdScript.id}/${asset.id}`)).arrayBuffer()),
+    jpegBytes(7),
+  );
+  await waitFor(() => {
+    const latest = firstController.messages.filter((message) => message.type === 'state').at(-1);
+    return latest && latest.state.slideIndex === 0 && latest.state.lineIndex === 0;
+  });
+
+  const back = await setLive(base, macbethId, macbethRevision);
+  assert.equal((await back.json()).ok, true);
+  assert.equal(fs.readFileSync(fixture.scriptFile, 'utf8'), MACBETH);
+  firstController.socket.send(JSON.stringify({ type: 'goto', slideIndex: 1, lineIndex: 0 }));
+  await waitFor(() => {
+    const latest = firstController.messages.filter((message) => message.type === 'state').at(-1);
+    return latest && latest.state.slideIndex === 1;
+  });
+  const quietAt = firstController.messages.length;
+  const secondQuietAt = secondController.messages.length;
+
+  const newer = `# Red\n@image: library:${createdScript.id}/${asset.id}\n[A]\nA newer line that has not been reviewed\n`;
+  const updated = await fetch(`${base}/api/library/${createdScript.id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: newer, expectedRevision: reviewedRevision }),
+  });
+  const newerRevision = (await updated.json()).script.revision;
+  assert.notEqual(newerRevision, reviewedRevision);
+  assert.equal(fs.readFileSync(fixture.scriptFile, 'utf8'), MACBETH);
+
+  const stale = await setLive(base, createdScript.id, reviewedRevision);
+  const staleBody = await stale.json();
+  assert.equal(stale.status, 409);
+  assert.equal(staleBody.ok, false);
+  assert.equal(staleBody.code, 'conflict');
+  assert.match(staleBody.error, /was not set live/);
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert.equal(firstController.messages.length, quietAt);
+  assert.equal(secondController.messages.length, secondQuietAt);
+  assert.equal(fs.readFileSync(fixture.scriptFile, 'utf8'), MACBETH);
+  assert.equal(fixture.created.library.getLiveId(), macbethId);
+  assert.equal(fixture.created.library.read(createdScript.id).text, newer);
+  assert.equal(fixture.created.library.read(macbethId).text, MACBETH);
+  const latestState = firstController.messages.filter((message) => message.type === 'state').at(-1);
+  assert.equal(latestState.state.slideIndex, 1);
+  assert.equal(latestState.state.lineIndex, 0);
+
+  const current = await setLive(base, createdScript.id, newerRevision);
+  const currentBody = await current.json();
+  assert.equal(current.status, 200);
+  assert.equal(currentBody.resetPosition, true);
+  assert.equal(currentBody.liveId, createdScript.id);
+  assert.equal(fs.readFileSync(fixture.scriptFile, 'utf8'), newer);
+  assert.deepEqual(
+    Buffer.from(await (await fetch(`${base}/api/live/assets/${createdScript.id}/${asset.id}`)).arrayBuffer()),
+    jpegBytes(7),
+  );
+
+  const renamed = await fetch(`${base}/api/library/${createdScript.id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: 'Red company copy', expectedRevision: newerRevision }),
+  });
+  const renamedBody = await renamed.json();
+  assert.equal(renamed.status, 200);
+  assert.equal(renamedBody.script.revision, newerRevision);
+  const afterRename = await setLive(base, createdScript.id, newerRevision);
+  const afterRenameBody = await afterRename.json();
+  assert.equal(afterRename.status, 200);
+  assert.equal(afterRenameBody.resetPosition, false);
+  assert.equal(fs.readFileSync(fixture.scriptFile, 'utf8'), newer);
+  assert.equal(fixture.created.library.read(createdScript.id).title, 'Red company copy');
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  const afterRenameState = firstController.messages.filter((message) => message.type === 'state').at(-1);
+  assert.equal(afterRenameState.state.slideIndex, 0);
+  assert.equal(afterRenameState.state.lineIndex, 0);
+
+  const missing = await fetch(`${base}/api/library/${createdScript.id}/live`, { method: 'POST' });
+  const missingBody = await missing.json();
+  assert.equal(missing.status, 400);
+  assert.equal(missingBody.code, 'revision-required');
+  assert.match(missingBody.error, /was not set live/);
+  assert.equal(fs.readFileSync(fixture.scriptFile, 'utf8'), newer);
+  assert.equal(fixture.created.library.getLiveId(), createdScript.id);
+  assert.equal(fixture.created.library.read(createdScript.id).revision, newerRevision);
+});
+
 test('uploaded images remain after a restart and require the staff code to change', async (t) => {
   const dir = tempDir('prompter-lib-images-');
   const scriptFile = path.join(dir, 'script.txt');
@@ -1007,10 +1177,8 @@ test('uploaded images remain after a restart and require the staff code to chang
     body: JSON.stringify({ text: withImage, expectedRevision: script.revision }),
   });
   assert.equal(saved.status, 200);
-  const live = await fetch(`${base}/api/library/${script.id}/live`, {
-    method: 'POST',
-    headers: { 'X-Staff-Token': token },
-  });
+  const savedBody = await saved.json();
+  const live = await setLive(base, script.id, savedBody.script.revision, { token });
   assert.equal((await live.json()).missingImages, 0);
   await closeAll(first, []);
 

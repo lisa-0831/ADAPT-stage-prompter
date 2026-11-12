@@ -35,12 +35,27 @@
     return { label: 'Set as Live', busy: false, allowDismiss: true };
   }
 
+  function reviewedLiveRevision(entry, preview) {
+    const selected = entry && typeof entry.revision === 'string' ? entry.revision : '';
+    if (!preview || !entry || preview.id !== entry.id) return selected;
+    return typeof preview.revision === 'string' && preview.revision
+      ? preview.revision
+      : selected;
+  }
+
   function setLiveOutcome(httpOk, body) {
     if (!httpOk || !body || body.ok !== true) {
       const message = body && typeof body.error === 'string' && body.error
         ? body.error
         : 'The live script was not changed.';
-      return { ok: false, closeConfirm: false, message };
+      const review = Boolean(body && (body.code === 'conflict' || body.code === 'revision-required'));
+      return {
+        ok: false,
+        closeConfirm: false,
+        conflict: Boolean(body && body.code === 'conflict'),
+        review,
+        message,
+      };
     }
     const resetPosition = body.resetPosition === true;
     let message = body.unchanged
@@ -97,6 +112,7 @@
 
   return {
     liveSwitchConfirmContent,
+    reviewedLiveRevision,
     setLiveRequestState,
     setLiveOutcome,
     imageReference,

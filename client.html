@@ -2999,6 +2999,10 @@ function beginSetLiveFromEditor() {
     editorDom.status.textContent = 'Save to the library before setting this script live. The live show was not changed.';
     return;
   }
+  if (!editorLibraryRevision) {
+    editorDom.status.textContent = 'The script revision was missing, so this script was not set live. Close the editor and open the saved script again.';
+    return;
+  }
   showEditorConfirm('set-live');
 }
 
@@ -3009,10 +3013,18 @@ async function runEditorSetLive() {
   editorDom.confirmNo.disabled = true;
   try {
     setConfirmBusy(true);
-    const res = await libraryFetch(`/api/library/${editorLibraryId}/live`, { method: 'POST' });
+    const res = await libraryFetch(`/api/library/${editorLibraryId}/live`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expectedRevision: editorLibraryRevision }),
+    });
     const body = await res.json().catch(() => null);
     const outcome = ScriptLibrary.setLiveOutcome(res.ok, body);
     if (!outcome.ok) {
+      if (outcome.review) {
+        editorConfirmMode = 'reload-saved';
+        editorConfirmYesLabel = 'Load latest version';
+      }
       showConfirmFailure(outcome.message);
       return;
     }
@@ -3030,6 +3042,43 @@ async function runEditorSetLive() {
       editorDom.confirmNo.disabled = false;
       editorDom.confirmYes.textContent = editorConfirmYesLabel;
     }
+    refreshEditorChrome();
+  }
+}
+
+async function loadLatestSavedScript() {
+  if (!editorLibraryId) return;
+  if (editorIsDirty()) {
+    showConfirmFailure('Save or discard the open edits before loading the latest saved script. The live show was not changed.');
+    return;
+  }
+  if (!editorPublishGuard.tryStart()) return;
+  editorDom.confirmYes.disabled = true;
+  editorDom.confirmNo.disabled = true;
+  try {
+    const res = await libraryFetch(`/api/library/${editorLibraryId}`);
+    const body = await res.json().catch(() => null);
+    if (!res.ok || !body || !body.script || typeof body.script.text !== 'string') {
+      showConfirmFailure('The latest saved script could not be loaded. The live show was not changed.');
+      return;
+    }
+    const script = body.script;
+    editorLibraryRevision = script.revision || null;
+    editorLibraryTitle = script.title || editorLibraryTitle;
+    editorBaseRevision = script.revision || editorBaseRevision;
+    editorBaselineText = script.text;
+    editorModel = ScriptEditor.load(script.text);
+    editorSceneIndex = 0;
+    renderEditor();
+    showStaleDrafts();
+    hideEditorConfirm();
+    editorDom.status.textContent = 'Loaded the latest saved script. The live show was not changed. Review it, then set it live.';
+  } catch (err) {
+    showConfirmFailure('The latest saved script could not be loaded. The live show was not changed.');
+  } finally {
+    editorPublishGuard.finish();
+    editorDom.confirmYes.disabled = false;
+    editorDom.confirmNo.disabled = false;
     refreshEditorChrome();
   }
 }
@@ -3059,6 +3108,7 @@ function initScriptEditor() {
     if (mode === 'publish') runPublish(ScriptEditor.serialize(editorModel));
     if (mode === 'restore') runPublish(editorPreviousText);
     if (mode === 'set-live') runEditorSetLive();
+    if (mode === 'reload-saved') loadLatestSavedScript();
   });
   editorDom.previewBtn.addEventListener('click', () => {
     editorPreviewOn = !editorPreviewOn;
@@ -3104,6 +3154,9 @@ let libraryEntries = [];
 let libraryLiveIdCached = null;
 let libraryBusy = false;
 let libraryPendingId = null;
+let libraryPendingRevision = '';
+let libraryPendingReview = false;
+let libraryReviewed = null;
 let libraryPendingAsset = null;
 let libraryImagesScriptId = null;
 const libraryGuard = ScriptEditor.createPublishGuard();
@@ -3490,6 +3543,10 @@ async function previewLibraryScript(id) {
       setLibraryStatus(libraryErrorMessage(response, body, 'The preview could not be opened. The live show was not changed.'), 'alert');
       return;
     }
+    libraryReviewed = {
+      id: body.script.id,
+      revision: body.script.revision || '',
+    };
     renderLibraryPreview(body.script);
     setLibraryStatus('Preview only. The live show was not changed.', 'status');
   } catch (err) {
@@ -3536,6 +3593,8 @@ function beginLibrarySetLive(entry) {
   if (!libraryGuard.tryStart()) return;
   libraryGuard.finish();
   libraryPendingId = entry.id;
+  libraryPendingRevision = ScriptLibrary.reviewedLiveRevision(entry, libraryReviewed);
+  libraryPendingReview = false;
   const ui = libraryDom();
   const content = ScriptLibrary.liveSwitchConfirmContent(libraryCurrentTitle(), entry.title);
   ui.confirmBody.replaceChildren();
@@ -3564,6 +3623,8 @@ function beginLibrarySetLive(entry) {
 function hideLibraryConfirm() {
   const ui = libraryDom();
   libraryPendingId = null;
+  libraryPendingRevision = '';
+  libraryPendingReview = false;
   libraryPendingAsset = null;
   ui.confirm.hidden = true;
   ui.confirmStatus.textContent = '';
@@ -3576,6 +3637,8 @@ function beginRemoveLibraryImage(asset) {
   libraryGuard.finish();
   libraryPendingAsset = asset;
   libraryPendingId = null;
+  libraryPendingRevision = '';
+  libraryPendingReview = false;
   const ui = libraryDom();
   ui.confirmBody.replaceChildren();
   ui.confirmStatus.textContent = '';
@@ -3731,7 +3794,11 @@ async function runLibrarySetLive() {
   ui.confirmYes.textContent = ScriptLibrary.setLiveRequestState(true).label;
   ui.confirmStatus.textContent = ui.confirmYes.textContent;
   try {
-    const response = await libraryFetch(`/api/library/${id}/live`, { method: 'POST' });
+    const response = await libraryFetch(`/api/library/${id}/live`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expectedRevision: libraryPendingRevision }),
+    });
     const body = await readLibraryJson(response);
     const outcome = ScriptLibrary.setLiveOutcome(response.ok, body);
     if (!outcome.ok) {
@@ -3739,7 +3806,12 @@ async function runLibrarySetLive() {
       ui.confirmStatus.textContent = outcome.message;
       ui.confirmYes.disabled = false;
       ui.confirmNo.disabled = false;
-      ui.confirmYes.textContent = ScriptLibrary.setLiveRequestState(false).label;
+      if (outcome.review) {
+        libraryPendingReview = true;
+        ui.confirmYes.textContent = 'Review latest';
+      } else {
+        ui.confirmYes.textContent = ScriptLibrary.setLiveRequestState(false).label;
+      }
       ui.confirmYes.focus();
       return;
     }
@@ -3755,6 +3827,16 @@ async function runLibrarySetLive() {
   } finally {
     libraryGuard.finish();
     ui.confirm.setAttribute('aria-busy', 'false');
+  }
+}
+
+async function reviewLatestBeforeSetLive() {
+  const id = libraryPendingId;
+  hideLibraryConfirm();
+  await refreshLibrary('');
+  if (id) await previewLibraryScript(id);
+  if (libraryReviewed && libraryReviewed.id === id) {
+    setLibraryStatus('This saved script changed. Review the latest version below before setting it live.', 'status');
   }
 }
 
@@ -3795,6 +3877,7 @@ function initScriptLibrary() {
   });
   ui.confirmYes.addEventListener('click', () => {
     if (libraryPendingAsset) runRemoveLibraryImage();
+    else if (libraryPendingReview) reviewLatestBeforeSetLive();
     else runLibrarySetLive();
   });
   ui.confirm.addEventListener('keydown', (event) => {
