@@ -1533,8 +1533,9 @@ function render(positionOverride = null) {
   const lines = slide.lines; // array of { text, speaker }
 
   dom.slideTitle.textContent = slide.title;
+  const showingTitleImage = Boolean(position.showTitleImage && slide.titleImage);
 
-  if (position.showTitleImage && slide.titleImage) {
+  if (showingTitleImage) {
     const src = stageImageUrl(slide.titleImage);
     dom.titleOverlay.classList.add('show');
     dom.stage.scrollTop = 0;
@@ -1549,66 +1550,63 @@ function render(positionOverride = null) {
       dom.titleImage.dataset.resolved = src;
       dom.titleImage.src = src;
     }
-    return; // don't render lines while image is showing
   } else {
     dom.titleOverlay.classList.remove('show');
     dom.titleImage.dataset.resolved = '';
     dom.titleImage.removeAttribute('src');
     dom.titleImage.hidden = false;
     dom.titleMissing.hidden = true;
-  }
 
-  const from = Math.max(0, li - 3);
-  const to   = Math.min(lines.length - 1, li + 3);
+    const from = Math.max(0, li - 3);
+    const to   = Math.min(lines.length - 1, li + 3);
 
-  // dom.linesContainer.innerHTML = '';
-  dom.linesPast.innerHTML = '';
-  dom.linesCurrent.innerHTML = '';
-  dom.linesFuture.innerHTML = '';
+    dom.linesPast.innerHTML = '';
+    dom.linesCurrent.innerHTML = '';
+    dom.linesFuture.innerHTML = '';
 
-  for (let i = from; i <= to; i++) {
-    const { text, speaker } = lines[i];
-    const type     = lineType(text);
-    const ahead = i - li;
-    const position = ahead < 0 ? 'past' : ahead === 0 ? 'current' : 'future';
+    for (let i = from; i <= to; i++) {
+      const { text, speaker } = lines[i];
+      const type     = lineType(text);
+      const ahead = i - li;
+      const linePosition = ahead < 0 ? 'past' : ahead === 0 ? 'current' : 'future';
 
-    const prevSpeaker = i > from ? (lines[i - 1].speaker || '') : '';
-    const showName = speaker && speaker !== prevSpeaker;
+      const prevSpeaker = i > from ? (lines[i - 1].speaker || '') : '';
+      const showName = speaker && speaker !== prevSpeaker;
 
-    const row = document.createElement('div');
-    row.className = `line-row ${position}`;
-    if (type === 'direction') {
-      if (i > from) row.style.marginTop = SubtitleLayout.DIRECTION_BLOCK_GAP;
-      row.style.marginBottom = SubtitleLayout.DIRECTION_BLOCK_GAP;
+      const row = document.createElement('div');
+      row.className = `line-row ${linePosition}`;
+      if (type === 'direction') {
+        if (i > from) row.style.marginTop = SubtitleLayout.DIRECTION_BLOCK_GAP;
+        row.style.marginBottom = SubtitleLayout.DIRECTION_BLOCK_GAP;
+      }
+
+      const nameEl = document.createElement('div');
+      nameEl.className = showName ? 'char-name' : 'char-name empty';
+      nameEl.textContent = showName ? speaker : '';
+
+      const textEl = document.createElement('div');
+      textEl.className = `script-line ${type}`;
+      textEl.textContent = shownCueText(text, type);
+
+      row.appendChild(nameEl);
+      row.appendChild(textEl);
+
+      if (i < li)      dom.linesPast.appendChild(row);
+      else if (i === li) dom.linesCurrent.appendChild(row);
+      else             dom.linesFuture.appendChild(row);
     }
-
-    const nameEl = document.createElement('div');
-    nameEl.className = showName ? 'char-name' : 'char-name empty';
-    nameEl.textContent = showName ? speaker : '';
-
-    const textEl = document.createElement('div');
-    textEl.className = `script-line ${type}`;
-    textEl.textContent = shownCueText(text, type);
-
-    row.appendChild(nameEl);
-    row.appendChild(textEl);
-
-    if (i < li)      dom.linesPast.appendChild(row);
-    else if (i === li) dom.linesCurrent.appendChild(row);
-    else             dom.linesFuture.appendChild(row);
   }
 
-  // Progress
-  const totalLines = slides.reduce((s, sl) => s + sl.lines.length, 0);
-  const doneLines  = slides.slice(0, position.slideIndex).reduce((s, sl) => s + sl.lines.length, 0) + position.lineIndex;
-  dom.progressFill.style.width = totalLines > 0 ? `${(doneLines / (totalLines - 1)) * 100}%` : '0%';
+  syncLiveCueChrome(position);
+  if (!showingTitleImage) revealCurrentCue();
+}
 
+function syncLiveCueChrome(position) {
+  dom.progressFill.style.width = `${NavigationModel.cueProgressPercent(slides, position)}%`;
   if (dom.slideSelect.value !== String(position.slideIndex)) {
     dom.slideSelect.value = String(position.slideIndex);
   }
-
-  dom.ctrlStatus.textContent = `Slide ${position.slideIndex + 1}/${slides.length} · Line ${position.lineIndex + 1}/${lines.length}`;
-  revealCurrentCue();
+  dom.ctrlStatus.textContent = NavigationModel.cueStatusLabel(slides, position);
 }
 
 function revealCurrentCue() {

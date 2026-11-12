@@ -146,6 +146,24 @@
     return priorCues + (lines.length > 0 ? current.lineIndex : 0);
   }
 
+  function cueProgressPercent(slides, position) {
+    const index = cueIndex(slides, position);
+    if (!Array.isArray(slides) || index === null) return 0;
+    const total = slides.reduce((sum, slide) => sum + cueCount(slide), 0);
+    if (total <= 1) return 0;
+    return (index / (total - 1)) * 100;
+  }
+
+  function cueStatusLabel(slides, position) {
+    if (!Array.isArray(slides) || slides.length === 0 || !position) return '';
+    const current = normalizePosition(slides, position);
+    const slide = slides[current.slideIndex] || { lines: [] };
+    const lines = linesFor(slide);
+    const scene = `Slide ${current.slideIndex + 1}/${slides.length}`;
+    if (slide.titleImage && current.showTitleImage) return `${scene} · Title image`;
+    return `${scene} · Line ${current.lineIndex + 1}/${lines.length}`;
+  }
+
   function cueDistance(slides, actorPosition, livePosition) {
     const actorCue = cueIndex(slides, actorPosition);
     const liveCue = cueIndex(slides, livePosition);
@@ -156,6 +174,8 @@
   return {
     cueDistance,
     cueIndex,
+    cueProgressPercent,
+    cueStatusLabel,
     movePosition,
     normalizePosition,
     positionsEqual,

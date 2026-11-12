@@ -4,6 +4,8 @@ const assert = require('node:assert/strict');
 const {
   cueDistance,
   cueIndex,
+  cueProgressPercent,
+  cueStatusLabel,
   movePosition,
   normalizePosition,
   positionsEqual,
@@ -164,6 +166,35 @@ test('image-only scenes move to a real cue in both directions', () => {
     }
     cursor = forward;
   }
+});
+
+test('title-image cues keep their own status and progress', () => {
+  const script = [
+    { title: 'Opening', lines: [], titleImage: 'opening.jpg' },
+    { title: 'Hello', lines: [{ text: 'One line' }], titleImage: null },
+    { title: 'Picture A', lines: [], titleImage: 'a.jpg' },
+    { title: 'Picture B', lines: [], titleImage: 'b.jpg' },
+    { title: 'Tail', lines: [{ text: 'End' }], titleImage: null },
+  ];
+  const opening = { slideIndex: 0, lineIndex: 0, showTitleImage: true };
+  const hello = movePosition(script, opening, 'next');
+  const pictureA = movePosition(script, hello, 'next');
+  const pictureB = movePosition(script, pictureA, 'next');
+  const back = movePosition(script, pictureB, 'prev');
+
+  assert.equal(cueStatusLabel(script, opening), 'Slide 1/5 · Title image');
+  assert.equal(cueProgressPercent(script, opening), 0);
+  assert.equal(cueStatusLabel(script, hello), 'Slide 2/5 · Line 1/1');
+  assert.equal(cueProgressPercent(script, hello), 25);
+  assert.equal(cueStatusLabel(script, pictureA), 'Slide 3/5 · Title image');
+  assert.equal(cueProgressPercent(script, pictureA), 50);
+  assert.equal(cueStatusLabel(script, pictureB), 'Slide 4/5 · Title image');
+  assert.equal(cueProgressPercent(script, pictureB), 75);
+  assert.notEqual(cueProgressPercent(script, pictureA), cueProgressPercent(script, pictureB));
+  assert.deepEqual(back, pictureA);
+  assert.equal(cueStatusLabel(script, back), 'Slide 3/5 · Title image');
+  assert.equal(cueStatusLabel(script, { slideIndex: 2, lineIndex: 0, showTitleImage: true }), 'Slide 3/5 · Title image');
+  assert.doesNotMatch(cueStatusLabel(script, pictureA), /Line /);
 });
 
 test('calculates whether live is ahead, behind, or at the actor position', () => {
