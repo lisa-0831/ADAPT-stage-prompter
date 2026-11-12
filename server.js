@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { timingSafeEqual } = require('crypto');
 const { parseScript, positionAfterScriptReplace } = require('./script-format');
+const { movePosition } = require('./navigation-model');
 const { stagePublishedScript } = require('./script-editor-model');
 const {
   createScriptLibrary,
@@ -339,49 +340,10 @@ function createPrompterServer(options = {}) {
   }
 
   function handleNavigate(dir) {
-    const slide = currentSlide();
-    const maxLine = slide.lines.length - 1;
-
-    if (dir === 'next') {
-      if (state.showTitleImage) {
-        state.showTitleImage = false;
-      } else if (state.lineIndex < maxLine) {
-        state.lineIndex++;
-      } else if (state.slideIndex < slides.length - 1) {
-        state.slideIndex++;
-        state.lineIndex = 0;
-        state.showTitleImage = !!(slides[state.slideIndex].titleImage);
-      }
-    } else if (dir === 'prev') {
-      if (state.showTitleImage) {
-        if (state.slideIndex > 0) {
-          state.slideIndex--;
-          state.lineIndex = slides[state.slideIndex].lines.length - 1;
-          state.showTitleImage = false;
-        }
-      } else if (state.lineIndex === 0 && slide.titleImage) {
-        state.showTitleImage = true;
-      } else if (state.lineIndex > 0) {
-        state.lineIndex--;
-      } else if (state.slideIndex > 0) {
-        state.slideIndex--;
-        state.lineIndex = slides[state.slideIndex].lines.length - 1;
-        state.showTitleImage = false;
-      }
-    } else if (dir === 'nextSlide') {
-      if (state.slideIndex < slides.length - 1) {
-        state.slideIndex++;
-        state.lineIndex = 0;
-        state.showTitleImage = !!(slides[state.slideIndex].titleImage);
-      }
-    } else if (dir === 'prevSlide') {
-      if (state.slideIndex > 0) {
-        state.slideIndex--;
-        state.lineIndex = 0;
-        state.showTitleImage = !!(slides[state.slideIndex].titleImage);
-      }
-    }
-
+    const next = movePosition(slides, state, dir);
+    state.slideIndex = next.slideIndex;
+    state.lineIndex = next.lineIndex;
+    state.showTitleImage = next.showTitleImage;
     broadcast({ type: 'state', state });
   }
 
@@ -404,9 +366,15 @@ function createPrompterServer(options = {}) {
           handleNavigate(msg.direction);
           break;
         case 'goto':
-          if (msg.slideIndex !== undefined) state.slideIndex = clamp(msg.slideIndex, 0, slides.length - 1);
-          if (msg.lineIndex !== undefined) state.lineIndex = clamp(msg.lineIndex, 0, currentSlide().lines.length - 1);
-          state.showTitleImage = !!(currentSlide().titleImage && state.lineIndex === 0);
+          if (slides.length) {
+            if (msg.slideIndex !== undefined) {
+              state.slideIndex = clamp(msg.slideIndex, 0, slides.length - 1);
+            }
+            if (msg.lineIndex !== undefined) {
+              state.lineIndex = clamp(msg.lineIndex, 0, Math.max(0, currentSlide().lines.length - 1));
+            }
+            state.showTitleImage = !!(currentSlide().titleImage && state.lineIndex === 0);
+          }
           broadcast({ type: 'state', state });
           break;
         case 'reloadScript':

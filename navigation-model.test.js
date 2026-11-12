@@ -106,6 +106,66 @@ test('assigns cue indexes across lines, images, and empty scenes', () => {
   }), 5);
 });
 
+test('an image-only scene is never an invisible cue', () => {
+  assert.deepEqual(
+    normalizePosition(slides, { slideIndex: 2, lineIndex: -1, showTitleImage: false }),
+    { slideIndex: 2, lineIndex: 0, showTitleImage: true },
+  );
+});
+
+test('image-only scenes move to a real cue in both directions', () => {
+  const script = [
+    { title: 'Opening', lines: [], titleImage: 'opening.jpg' },
+    { title: 'Hello', lines: [{ text: 'One line' }], titleImage: null },
+    { title: 'Card', lines: [{ text: 'First' }, { text: 'Second' }], titleImage: 'card.jpg' },
+    { title: 'Picture A', lines: [], titleImage: 'a.jpg' },
+    { title: 'Picture B', lines: [], titleImage: 'b.jpg' },
+    { title: 'Blank', lines: [], titleImage: null },
+    { title: 'Tail', lines: [{ text: 'End' }], titleImage: null },
+    { title: 'Closing', lines: [], titleImage: 'closing.jpg' },
+  ];
+  const opening = { slideIndex: 0, lineIndex: 0, showTitleImage: true };
+  const hello = movePosition(script, opening, 'next');
+  assert.deepEqual(hello, { slideIndex: 1, lineIndex: 0, showTitleImage: false });
+  assert.deepEqual(movePosition(script, hello, 'prev'), opening);
+
+  const cardImage = movePosition(script, hello, 'nextSlide');
+  assert.deepEqual(cardImage, { slideIndex: 2, lineIndex: 0, showTitleImage: true });
+  const firstLine = movePosition(script, cardImage, 'next');
+  assert.deepEqual(firstLine, { slideIndex: 2, lineIndex: 0, showTitleImage: false });
+  assert.deepEqual(movePosition(script, firstLine, 'prev'), cardImage);
+
+  const pictureA = movePosition(script, { slideIndex: 2, lineIndex: 1, showTitleImage: false }, 'next');
+  const pictureB = movePosition(script, pictureA, 'next');
+  assert.deepEqual(pictureA, { slideIndex: 3, lineIndex: 0, showTitleImage: true });
+  assert.deepEqual(pictureB, { slideIndex: 4, lineIndex: 0, showTitleImage: true });
+  assert.deepEqual(movePosition(script, pictureB, 'prev'), pictureA);
+
+  const blank = movePosition(script, pictureB, 'next');
+  assert.deepEqual(blank, { slideIndex: 5, lineIndex: 0, showTitleImage: false });
+  const tail = movePosition(script, blank, 'next');
+  const closing = movePosition(script, tail, 'next');
+  assert.deepEqual(closing, { slideIndex: 7, lineIndex: 0, showTitleImage: true });
+  assert.deepEqual(movePosition(script, closing, 'next'), closing);
+  assert.deepEqual(movePosition(script, opening, 'prev'), opening);
+  assert.deepEqual(movePosition(script, pictureA, 'prevSlide'), cardImage);
+
+  let cursor = opening;
+  for (let step = 0; step < 30; step += 1) {
+    const forward = movePosition(script, cursor, 'next');
+    assert.equal(forward.lineIndex >= 0, true);
+    const lines = script[forward.slideIndex].lines;
+    if (lines.length === 0) assert.equal(forward.lineIndex, 0);
+    if (lines.length === 0 && script[forward.slideIndex].titleImage) {
+      assert.equal(forward.showTitleImage, true);
+    }
+    if (!positionsEqual(forward, cursor)) {
+      assert.deepEqual(movePosition(script, forward, 'prev'), cursor);
+    }
+    cursor = forward;
+  }
+});
+
 test('calculates whether live is ahead, behind, or at the actor position', () => {
   const actor = { slideIndex: 0, lineIndex: 1, showTitleImage: false };
   const liveAhead = { slideIndex: 2, lineIndex: 0, showTitleImage: true };

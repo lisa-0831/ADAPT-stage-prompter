@@ -58,12 +58,13 @@
       0,
       Math.max(0, lines.length - 1),
     );
+    const imageOnly = lines.length === 0 && Boolean(slide && slide.titleImage);
 
     return {
       ...position,
       slideIndex,
       lineIndex,
-      showTitleImage: Boolean(position.showTitleImage && slide.titleImage),
+      showTitleImage: imageOnly || Boolean(position.showTitleImage && slide && slide.titleImage),
     };
   }
 
@@ -101,6 +102,14 @@
       } else if (current.slideIndex > 0) {
         return positionAtEnd(slides, current.slideIndex - 1, current);
       }
+    }
+
+    if (direction === 'nextSlide' && current.slideIndex < slides.length - 1) {
+      return positionAtStart(slides, current.slideIndex + 1, current);
+    }
+
+    if (direction === 'prevSlide' && current.slideIndex > 0) {
+      return positionAtStart(slides, current.slideIndex - 1, current);
     }
 
     return current;
