@@ -2870,7 +2870,9 @@ async function runPublish(text) {
     }
     setConfirmBusy(true);
     const headers = { 'Content-Type': 'text/plain' };
-    if (editorMode !== 'library' && editorLibraryId && editorLibraryRevision) {
+    if (mode === 'restore') {
+      headers['X-Restore-Previous'] = '1';
+    } else if (editorMode !== 'library' && editorLibraryId && editorLibraryRevision) {
       headers['X-Library-Id'] = editorLibraryId;
       headers['X-Library-Revision'] = editorLibraryRevision;
     }

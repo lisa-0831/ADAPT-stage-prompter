@@ -219,7 +219,10 @@ function createPrompterServer(options = {}) {
       return { ok: false, status: 400, error: staged.error };
     }
     const priorMeta = readPreviousMeta();
-    const restoredLiveId = staged.changed && previousText && nextText === previousText
+    // Putting the previous live file back is a restore, even when the
+    // caller also sends the library id of the show that is live now.
+    const restoredFromPrevious = Boolean(previousText) && nextText === previousText;
+    const restoredLiveId = staged.changed && restoredFromPrevious
       ? priorMeta.liveId
       : null;
 
@@ -250,7 +253,13 @@ function createPrompterServer(options = {}) {
       broadcast({ type: 'state', state });
     }
 
-    return { ok: true, changed: staged.changed, text: staged.text, restoredLiveId };
+    return {
+      ok: true,
+      changed: staged.changed,
+      text: staged.text,
+      restoredLiveId,
+      restoredFromPrevious,
+    };
   }
 
   function rememberLiveScript(preferredId, text) {
@@ -577,6 +586,22 @@ function createPrompterServer(options = {}) {
     const libraryId = req.get('X-Library-Id') || '';
     const expectedRevision = req.get('X-Library-Revision') || '';
     const resetPosition = req.get('X-Reset-Position') === '1';
+    const restoreRequested = req.get('X-Restore-Previous') === '1';
+    if (restoreRequested) {
+      let previousText = '';
+      try {
+        previousText = readTextFile(previousFile);
+      } catch (err) {
+        console.error(err);
+        return res.status(500).json({ ok: false, error: 'Could not read the script' });
+      }
+      if (!previousText || req.body !== previousText) {
+        return res.status(400).json({
+          ok: false,
+          error: 'The previous script could not be restored. The live show was not changed.',
+        });
+      }
+    }
     const written = writeLiveScript(req.body, !resetPosition);
     if (!written.ok) {
       return res.status(written.status || 500).json({ ok: false, error: written.error });
@@ -584,7 +609,10 @@ function createPrompterServer(options = {}) {
 
     let libraryUpdated = false;
     let libraryConflict = false;
-    if (libraryId || expectedRevision) {
+    // A restore swaps the live file only. Library rows keep the text
+    // each production was saved with, including when this request also
+    // carries the id of the production that is live right now.
+    if ((libraryId || expectedRevision) && !written.restoredFromPrevious) {
       const currentLiveId = library.getLiveId();
       if (
         libraryId

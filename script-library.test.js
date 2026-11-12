@@ -839,6 +839,143 @@ test('setting a production live shows only that production images and restore br
   assert.match((await inUse.json()).error, /still used/);
 });
 
+test('restoring the previous live script keeps both library productions', async (t) => {
+  const client = fs.readFileSync(path.join(__dirname, 'client.html'), 'utf8');
+  const marker = "headers['X-Restore-Previous'] = '1'";
+  const markerAt = client.indexOf(marker);
+  assert.notEqual(markerAt, -1);
+  const branchStart = client.lastIndexOf("if (mode === 'restore')", markerAt);
+  const restoreBranch = client.slice(branchStart, client.indexOf('else if', markerAt));
+  assert.doesNotMatch(restoreBranch, /X-Library-Id/);
+
+  const fixture = startServer(t, { scriptText: HAMLET });
+  const port = await listen(fixture.created.server);
+  const base = `http://127.0.0.1:${port}`;
+
+  async function makeShow(title, bytes) {
+    const created = await fetch(`${base}/api/library`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, text: `# ${title}\n[A]\n${title} line\n` }),
+    });
+    const script = (await created.json()).script;
+    const uploaded = await uploadImage(base, script.id, bytes, { name: 'backdrop.jpg', type: 'image/jpeg' });
+    assert.equal(uploaded.status, 201);
+    const asset = (await uploaded.json()).asset;
+    const text = `# ${title}\n@image: library:${script.id}/${asset.id}\n[A]\n${title} line\n`;
+    const saved = await fetch(`${base}/api/library/${script.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, expectedRevision: script.revision }),
+    });
+    assert.equal(saved.status, 200);
+    return { id: script.id, assetId: asset.id, revision: (await saved.json()).script.revision, text };
+  }
+
+  const blue = await makeShow('Blue', jpegBytes(1));
+  const red = await makeShow('Red', jpegBytes(2));
+  assert.equal((await (await fetch(`${base}/api/library/${blue.id}/live`, { method: 'POST' })).json()).ok, true);
+  assert.equal((await (await fetch(`${base}/api/library/${red.id}/live`, { method: 'POST' })).json()).ok, true);
+
+  function stored(id) {
+    return fixture.created.library.read(id);
+  }
+  assert.equal(stored(blue.id).text, blue.text);
+  assert.equal(stored(red.id).text, red.text);
+  const previous = await (await fetch(`${base}/script/previous`)).text();
+  assert.equal(previous, blue.text);
+
+  const first = await fetch(`${base}/script`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'text/plain',
+      'X-Library-Id': red.id,
+      'X-Library-Revision': red.revision,
+      'X-Restore-Previous': '1',
+    },
+    body: previous,
+  });
+  const firstBody = await first.json();
+  assert.equal(first.status, 200);
+  assert.equal(firstBody.ok, true);
+  assert.equal(firstBody.libraryUpdated, false);
+  assert.equal(firstBody.libraryConflict, false);
+  assert.equal(firstBody.liveScriptId, blue.id);
+  assert.equal(fs.readFileSync(fixture.scriptFile, 'utf8'), blue.text);
+  assert.equal(fs.readFileSync(fixture.previousFile, 'utf8'), red.text);
+  assert.equal(stored(blue.id).text, blue.text);
+  assert.equal(stored(blue.id).revision, blue.revision);
+  assert.equal(stored(red.id).text, red.text);
+  assert.equal(stored(red.id).revision, red.revision);
+  assert.deepEqual(
+    Buffer.from(await (await fetch(`${base}/api/live/assets/${blue.id}/${blue.assetId}`)).arrayBuffer()),
+    jpegBytes(1),
+  );
+  assert.equal((await fetch(`${base}/api/live/assets/${red.id}/${red.assetId}`)).status, 404);
+
+  const second = await fetch(`${base}/script`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'text/plain',
+      'X-Library-Id': blue.id,
+      'X-Library-Revision': blue.revision,
+      'X-Restore-Previous': '1',
+    },
+    body: red.text,
+  });
+  const secondBody = await second.json();
+  assert.equal(second.status, 200);
+  assert.equal(secondBody.libraryUpdated, false);
+  assert.equal(secondBody.liveScriptId, red.id);
+  assert.equal(fs.readFileSync(fixture.scriptFile, 'utf8'), red.text);
+  assert.equal(fs.readFileSync(fixture.previousFile, 'utf8'), blue.text);
+  assert.equal(stored(blue.id).text, blue.text);
+  assert.equal(stored(blue.id).revision, blue.revision);
+  assert.equal(stored(red.id).text, red.text);
+  assert.equal(stored(red.id).revision, red.revision);
+  assert.deepEqual(
+    Buffer.from(await (await fetch(`${base}/api/live/assets/${red.id}/${red.assetId}`)).arrayBuffer()),
+    jpegBytes(2),
+  );
+  assert.equal((await fetch(`${base}/api/live/assets/${blue.id}/${blue.assetId}`)).status, 404);
+
+  const beforeMalformed = fs.readFileSync(fixture.scriptFile, 'utf8');
+  const malformed = await fetch(`${base}/script`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'text/plain',
+      'X-Library-Id': red.id,
+      'X-Library-Revision': red.revision,
+      'X-Restore-Previous': '1',
+    },
+    body: '# Other\n[A]\nThis must not replace either production.\n',
+  });
+  assert.equal(malformed.status, 400);
+  assert.equal((await malformed.json()).ok, false);
+  assert.equal(fs.readFileSync(fixture.scriptFile, 'utf8'), beforeMalformed);
+  assert.equal(fs.readFileSync(fixture.previousFile, 'utf8'), blue.text);
+  assert.equal(stored(blue.id).text, blue.text);
+  assert.equal(stored(red.id).text, red.text);
+  assert.equal(fixture.created.library.getLiveId(), red.id);
+
+  const bare = await fetch(`${base}/script`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'text/plain',
+      'X-Library-Id': red.id,
+      'X-Library-Revision': red.revision,
+    },
+    body: blue.text,
+  });
+  const bareBody = await bare.json();
+  assert.equal(bare.status, 200);
+  assert.equal(bareBody.libraryUpdated, false);
+  assert.equal(bareBody.liveScriptId, blue.id);
+  assert.equal(stored(blue.id).text, blue.text);
+  assert.equal(stored(red.id).text, red.text);
+  assert.equal(stored(red.id).revision, red.revision);
+});
+
 test('uploaded images remain after a restart and require the staff code to change', async (t) => {
   const dir = tempDir('prompter-lib-images-');
   const scriptFile = path.join(dir, 'script.txt');
