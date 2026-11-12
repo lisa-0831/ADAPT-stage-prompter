@@ -48,11 +48,27 @@ test('each role shows only its own controls', async ({ browser, prompter }) => {
     const textScript = await controller.page.request.get(`${prompter.baseURL}/public/text.js`);
     expect(textScript.status()).toBe(200);
     expect(textScript.headers()['content-type'] || '').toMatch(/javascript/);
+    const liveShowScript = await controller.page.request.get(`${prompter.baseURL}/public/live-show.js`);
+    expect(liveShowScript.status()).toBe(200);
+    expect(liveShowScript.headers()['content-type'] || '').toMatch(/javascript/);
+    const stageScript = await controller.page.request.get(`${prompter.baseURL}/public/stage.js`);
+    expect(stageScript.status()).toBe(200);
+    expect(stageScript.headers()['content-type'] || '').toMatch(/javascript/);
+    const actorScript = await controller.page.request.get(`${prompter.baseURL}/public/actor-view.js`);
+    expect(actorScript.status()).toBe(200);
+    expect(actorScript.headers()['content-type'] || '').toMatch(/javascript/);
+    const connectionScript = await controller.page.request.get(`${prompter.baseURL}/public/connection.js`);
+    expect(connectionScript.status()).toBe(200);
+    expect(connectionScript.headers()['content-type'] || '').toMatch(/javascript/);
 
     for (const entry of [controller, actor, audience]) {
       await expect(entry.page.locator('link[rel="stylesheet"]')).toHaveAttribute('href', '/styles.css');
       await expect(entry.page.locator('style')).toHaveCount(0);
       await expect(entry.page.locator('script[src="public/text.js"]')).toHaveCount(1);
+      await expect(entry.page.locator('script[src="public/live-show.js"]')).toHaveCount(1);
+      await expect(entry.page.locator('script[src="public/stage.js"]')).toHaveCount(1);
+      await expect(entry.page.locator('script[src="public/actor-view.js"]')).toHaveCount(1);
+      await expect(entry.page.locator('script[src="public/connection.js"]')).toHaveCount(1);
       const classified = await entry.page.evaluate(() => ({
         dialogue: PrompterText.lineType('HELLO THERE'),
         direction: PrompterText.lineType('  {She exits.}'),
@@ -73,6 +89,56 @@ test('each role shows only its own controls', async ({ browser, prompter }) => {
         lyricText: 'Somewhere',
         singalongText: 'Follow along',
       });
+      const stageApi = await entry.page.evaluate(() => ({
+        legacy: PrompterStage.imageUrl('images/Title_Card.jpeg'),
+        library: PrompterStage.imageUrl(
+          'library:11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222',
+        ),
+        empty: PrompterStage.imageUrl(''),
+        canRender: typeof PrompterStage.render,
+        canRebuild: typeof PrompterStage.rebuildSlideSelect,
+      }));
+      expect(stageApi).toEqual({
+        legacy: 'images/Title_Card.jpeg',
+        library: '/api/live/assets/11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222',
+        empty: '',
+        canRender: 'function',
+        canRebuild: 'function',
+      });
+      await expect.poll(() => entry.page.evaluate(() => {
+        const slides = PrompterLiveShow.getSlides();
+        const state = PrompterLiveShow.getLiveState();
+        return {
+          sameSlides: slides === PrompterLiveShow.getSlides(),
+          slideCount: Array.isArray(slides) ? slides.length : 0,
+          hasState: Boolean(state && Number.isInteger(state.slideIndex)),
+          revision: typeof PrompterLiveShow.getRevision(),
+          liveScriptId: typeof PrompterLiveShow.getLiveScriptId(),
+        };
+      })).toEqual({
+        sameSlides: true,
+        slideCount: 5,
+        hasState: true,
+        revision: 'string',
+        liveScriptId: 'string',
+      });
+      await expect.poll(() => entry.page.evaluate(() => PrompterConnection.getStatus())).toEqual({
+        status: 'connected',
+        waitingForLiveState: false,
+      });
+      if (entry.page === actor.page) {
+        const aligned = await entry.page.evaluate(() => {
+          const live = PrompterLiveShow.getLiveState();
+          const shown = PrompterActor.effectivePosition();
+          return Boolean(
+            live
+            && shown
+            && shown.slideIndex === live.slideIndex
+            && shown.lineIndex === live.lineIndex,
+          );
+        });
+        expect(aligned).toBe(true);
+      }
       const applied = await entry.page.evaluate(() => {
         const root = getComputedStyle(document.documentElement);
         const body = getComputedStyle(document.body);

@@ -13,9 +13,9 @@ const test = base.extend({
   },
 });
 
-async function openShow(browser, baseURL, role, viewport) {
+async function openShow(browser, baseURL, role, viewport, options) {
   const context = await browser.newContext({
-    reducedMotion: 'reduce',
+    reducedMotion: (options && options.reducedMotion) || 'reduce',
     viewport: viewport || { width: 1280, height: 800 },
   });
   const page = await context.newPage();

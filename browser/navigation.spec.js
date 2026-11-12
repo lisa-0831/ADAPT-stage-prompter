@@ -44,3 +44,29 @@ test('browsing stays on one actor until Return to Live', async ({ browser, promp
     await closeShows(pages);
   }
 });
+
+test('Return to Live still finishes when motion is allowed', async ({ browser, prompter }) => {
+  const controller = await openShow(browser, prompter.baseURL, 'controller');
+  const actor = await openShow(browser, prompter.baseURL, 'actor', null, {
+    reducedMotion: 'no-preference',
+  });
+  const pages = [controller, actor];
+
+  try {
+    await controller.page.locator('#btn-next').click();
+    await expect(actor.page.locator('#lines-current .script-line')).toHaveText(prompter.spoken);
+    await actor.page.locator('#btn-actor-next').click();
+    await expect(actor.page.locator('#actor-mode-status')).toHaveText('BROWSING');
+    await expect(actor.page.locator('#slide-title')).toHaveText('Picture A');
+    await expect(controller.page.locator('#ctrl-status')).toHaveText('Slide 1/5 · Line 1/1');
+
+    await actor.page.locator('#btn-return-live').click();
+    await expect(actor.page.locator('#actor-mode-status')).toHaveText('FOLLOWING LIVE');
+    await expect(actor.page.locator('#lines-current .script-line')).toHaveText(prompter.spoken);
+    await expect(controller.page.locator('#ctrl-status')).toHaveText('Slide 1/5 · Line 1/1');
+
+    assertQuiet(pages);
+  } finally {
+    await closeShows(pages);
+  }
+});

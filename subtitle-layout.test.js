@@ -5,6 +5,7 @@ const path = require('node:path');
 const { cueRevealOffset, DIRECTION_BLOCK_GAP } = require('./subtitle-layout');
 
 const client = fs.readFileSync(path.join(__dirname, 'client.html'), 'utf8');
+const stage = fs.readFileSync(path.join(__dirname, 'public/stage.js'), 'utf8');
 const styles = fs.readFileSync(path.join(__dirname, 'styles.css'), 'utf8');
 
 function parseCaption(role) {
@@ -69,7 +70,7 @@ test('captions stay readable on a phone and grow when text is enlarged', () => {
 
 test('stage directions use a caption-relative gap instead of a root-em gap', () => {
   assert.equal(DIRECTION_BLOCK_GAP, '0.85em');
-  assert.match(client, /SubtitleLayout\.DIRECTION_BLOCK_GAP/);
+  assert.match(stage, /SubtitleLayout\.DIRECTION_BLOCK_GAP/);
   assert.doesNotMatch(styles, /2\.8em/);
 });
 
@@ -114,7 +115,7 @@ test('lines before and after the current cue use the same paler ink', () => {
   assert.match(styles, /\.line-row\.past,\s*\.line-row\.future\s*\{[^}]*--idle-strength:\s*32%/);
   assert.match(styles, /\.line-row\.past \.script-line,\s*\.line-row\.future \.script-line\s*\{[^}]*color-mix\(in srgb, var\(--ink\) var\(--idle-strength\), var\(--bg\)\)/);
   assert.doesNotMatch(styles, /\.line-row\.past\s*\{\s*opacity:/);
-  assert.doesNotMatch(client, /future-\$\{ahead\}/);
+  assert.doesNotMatch(stage, /future-\$\{ahead\}/);
 });
 
 test('layout keeps caption overflow inside the stage and preserves actor controls', () => {
@@ -122,7 +123,7 @@ test('layout keeps caption overflow inside the stage and preserves actor control
   assert.match(styles, /#stage[\s\S]*?overflow-y:\s*auto/);
   assert.match(styles, /#lines-current[\s\S]*?flex:\s*0\s*0\s*auto/);
   assert.match(styles, /#lines-past[\s\S]*?overflow:\s*hidden/);
-  assert.match(client, /dom\.stage\.scrollTop\s*=\s*0/);
+  assert.match(stage, /stage\.scrollTop\s*=\s*0/);
   assert.match(styles, /#actor-nav-buttons \.actor-action[\s\S]*?min-height:\s*64px/);
   assert.match(styles, /\.btn:focus-visible/);
   assert.match(styles, /--amber:\s*#f5c842/);

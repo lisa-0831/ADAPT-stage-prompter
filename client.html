@@ -224,6 +224,10 @@
 <script src="script-editor-model.js"></script>
 <script src="script-library-model.js"></script>
 <script src="public/text.js"></script>
+<script src="public/live-show.js"></script>
+<script src="public/stage.js"></script>
+<script src="public/actor-view.js"></script>
+<script src="public/connection.js"></script>
 <script>
 // ── Role detection ────────────────────────────────────────────────────
 const params = new URLSearchParams(location.search);
@@ -241,20 +245,9 @@ const isController = role === RoleModel.ROLES.CONTROLLER;
 const isActor = role === RoleModel.ROLES.ACTOR;
 
 // ── Live show ─────────────────────────────────────────────────────────
-// Written from applyServerMessage. The Controller also refreshes
-// liveScriptId after it loads the library list. The stage reads slides
-// and liveState. The editor compares scriptRevision with its open draft.
-let slides = [];
-let liveState = null;
-let scriptRevision = null;
-let liveScriptId = null;
-
-// ── Actor reading ─────────────────────────────────────────────────────
-// Local to this tab. navigateActor, Return to Live, and a changed
-// script revision write it. Nothing here is sent on the socket.
-let actorReadingState = ActorModeModel.followLive();
-let returnTransition = null;
-const RETURN_TRANSITION_DURATION = 400;
+// slides, liveState, scriptRevision, and liveScriptId live in
+// public/live-show.js. This page reads them when it renders and writes
+// them from server messages or a library list response.
 
 // ── Script editor ─────────────────────────────────────────────────────
 let editorMode = 'live';
@@ -338,8 +331,8 @@ if (isController) {
   dom.controller.classList.add('visible');
   dom.roleLabel.textContent = 'CONTROLLER';
   document.title = '🎭 Prompter — Controller';
-  dom.zonePrev.onclick = () => send({ type: 'navigate', direction: 'prev' });
-  dom.zoneNext.onclick = () => send({ type: 'navigate', direction: 'next' });
+  dom.zonePrev.onclick = () => PrompterConnection.send({ type: 'navigate', direction: 'prev' });
+  dom.zoneNext.onclick = () => PrompterConnection.send({ type: 'navigate', direction: 'next' });
 } else {
   const roleLabel = role === RoleModel.ROLES.ACTOR ? 'ACTOR' : 'AUDIENCE';
   dom.roleLabel.textContent = roleLabel;
@@ -348,92 +341,42 @@ if (isController) {
   if (isActor) {
     dom.actorControls.classList.add('visible');
     dom.zonePrev.parentElement.classList.add('actor-zones');
-    dom.zonePrev.onclick = () => navigateActor('prev');
-    dom.zoneNext.onclick = () => navigateActor('next');
   } else {
     dom.zonePrev.parentElement.style.display = 'none';
   }
 }
 
 // ── WebSocket ─────────────────────────────────────────────────────────
-let ws;
-let reconnectTimer;
-let connectionStatus = 'connecting';
-let waitingForLiveState = true;
+// The socket, reconnect timer, and message order live in
+// public/connection.js. This page supplies the role, status elements,
+// and the editor revision note. Controller commands still call send.
 
-function connect() {
-  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(`${proto}://${location.host}`);
-
-  ws.onopen = () => {
-    clearTimeout(reconnectTimer);
-    connectionStatus = 'connected';
-    dom.connDot.classList.add('connected');
-    dom.connecting.style.display = 'none';
-    updateActorModeUI();
-  };
-
-  ws.onclose = () => {
-    cancelReturnTransition();
-    if (isActor && actorReadingState.mode === ActorModeModel.MODES.BROWSING) {
-      render();
-    }
-    connectionStatus = 'reconnecting';
-    waitingForLiveState = true;
-    dom.connDot.classList.remove('connected');
-    dom.connecting.style.display = isActor && slides.length ? 'none' : 'flex';
-    updateActorModeUI();
-    reconnectTimer = setTimeout(connect, 1500);
-  };
-
-  ws.onmessage = (evt) => {
-    applyServerMessage(JSON.parse(evt.data));
-  };
+// Stage asks for the cue to paint. An Actor supplies its local reading
+// position. Controller and Audience supply the shared live cue.
+// The socket opens only after both are ready to receive the first message.
+if (isActor) {
+  PrompterActor.init({
+    stageElement: dom.stage,
+    getConnection() {
+      return PrompterConnection.getStatus();
+    },
+  });
 }
-
-// The socket calls this synchronously, in the order messages arrive.
-// script updates the shared show and, on a revision change, returns an
-// Actor to Follow Live. state updates the live cue and does not move a
-// browsing Actor.
-function applyServerMessage(msg) {
-  if (msg.type === 'script') {
-    const scriptChanged = scriptRevision !== null && msg.revision !== scriptRevision;
-    slides = msg.slides;
-    scriptRevision = msg.revision;
-    if (typeof msg.liveScriptId === 'string' || msg.liveScriptId === null) {
-      liveScriptId = msg.liveScriptId || null;
-    }
-    if (isActor && scriptChanged) {
-      cancelReturnTransition();
-      actorReadingState = ActorModeModel.followLive();
-      liveState = null;
-      waitingForLiveState = true;
-    }
-    rebuildSlideSelect();
-    if (!isActor || !scriptChanged) render();
-    updateActorModeUI();
-    noteEditorScriptRevision();
-  } else if (msg.type === 'state') {
-    liveState = msg.state;
-    waitingForLiveState = false;
-    if (
-      !isActor
-      || actorReadingState.mode === ActorModeModel.MODES.FOLLOW_LIVE
-      || returnTransition
-    ) {
-      render(returnTransition ? liveState : null);
-    }
-    updateActorModeUI();
-  }
-}
-
-function send(msg) {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify(msg));
-  }
-}
-
-connect();
+PrompterStage.init({
+  formatCue: shownCueText,
+  getPosition() {
+    return isActor
+      ? PrompterActor.effectivePosition()
+      : PrompterLiveShow.getLiveState();
+  },
+});
+PrompterConnection.init({
+  isActor,
+  connDot: dom.connDot,
+  connecting: dom.connecting,
+  onScriptApplied: noteEditorScriptRevision,
+});
+PrompterConnection.connect();
 
 // ── Line type helpers ─────────────────────────────────────────────────
 
@@ -451,329 +394,6 @@ function updateCaseButton() {
   dom.btnCase.setAttribute('aria-pressed', sentenceCase ? 'true' : 'false');
   dom.btnCase.textContent = sentenceCase ? 'Aa' : 'AA';
   dom.btnCase.title = sentenceCase ? 'Switch to all caps' : 'Switch to sentence case';
-}
-
-// ── Render ────────────────────────────────────────────────────────────
-function effectivePosition() {
-  return isActor
-    ? ActorModeModel.effectivePosition(actorReadingState, liveState)
-    : liveState;
-}
-
-function render(positionOverride = null) {
-  if (!slides.length) return;
-  const position = positionOverride || effectivePosition();
-  if (!position) return;
-  const slide = slides[position.slideIndex] || { title: '', lines: [] };
-  const li    = position.lineIndex;
-  const lines = slide.lines; // array of { text, speaker }
-
-  dom.slideTitle.textContent = slide.title;
-  const showingTitleImage = Boolean(position.showTitleImage && slide.titleImage);
-
-  if (showingTitleImage) {
-    const src = stageImageUrl(slide.titleImage);
-    dom.titleOverlay.classList.add('show');
-    dom.stage.scrollTop = 0;
-    if (!src) {
-      dom.titleImage.hidden = true;
-      dom.titleImage.dataset.resolved = '';
-      dom.titleImage.removeAttribute('src');
-      dom.titleMissing.hidden = false;
-    } else if (dom.titleImage.dataset.resolved !== src || dom.titleImage.hidden) {
-      dom.titleMissing.hidden = true;
-      dom.titleImage.hidden = false;
-      dom.titleImage.dataset.resolved = src;
-      dom.titleImage.src = src;
-    }
-  } else {
-    dom.titleOverlay.classList.remove('show');
-    dom.titleImage.dataset.resolved = '';
-    dom.titleImage.removeAttribute('src');
-    dom.titleImage.hidden = false;
-    dom.titleMissing.hidden = true;
-
-    const from = Math.max(0, li - 3);
-    const to   = Math.min(lines.length - 1, li + 3);
-
-    dom.linesPast.innerHTML = '';
-    dom.linesCurrent.innerHTML = '';
-    dom.linesFuture.innerHTML = '';
-
-    for (let i = from; i <= to; i++) {
-      const { text, speaker } = lines[i];
-      const type     = PrompterText.lineType(text);
-      const ahead = i - li;
-      const linePosition = ahead < 0 ? 'past' : ahead === 0 ? 'current' : 'future';
-
-      const prevSpeaker = i > from ? (lines[i - 1].speaker || '') : '';
-      const showName = speaker && speaker !== prevSpeaker;
-
-      const row = document.createElement('div');
-      row.className = `line-row ${linePosition}`;
-      if (type === 'direction') {
-        if (i > from) row.style.marginTop = SubtitleLayout.DIRECTION_BLOCK_GAP;
-        row.style.marginBottom = SubtitleLayout.DIRECTION_BLOCK_GAP;
-      }
-
-      const nameEl = document.createElement('div');
-      nameEl.className = showName ? 'char-name' : 'char-name empty';
-      nameEl.textContent = showName ? speaker : '';
-
-      const textEl = document.createElement('div');
-      textEl.className = `script-line ${type}`;
-      textEl.textContent = shownCueText(text, type);
-
-      row.appendChild(nameEl);
-      row.appendChild(textEl);
-
-      if (i < li)      dom.linesPast.appendChild(row);
-      else if (i === li) dom.linesCurrent.appendChild(row);
-      else             dom.linesFuture.appendChild(row);
-    }
-  }
-
-  syncLiveCueChrome(position);
-  if (!showingTitleImage) revealCurrentCue();
-}
-
-function syncLiveCueChrome(position) {
-  dom.progressFill.style.width = `${NavigationModel.cueProgressPercent(slides, position)}%`;
-  if (dom.slideSelect.value !== String(position.slideIndex)) {
-    dom.slideSelect.value = String(position.slideIndex);
-  }
-  dom.ctrlStatus.textContent = NavigationModel.cueStatusLabel(slides, position);
-}
-
-function revealCurrentCue() {
-  const stage = dom.stage;
-  const current = dom.linesCurrent;
-  stage.scrollTop = 0;
-  if (!current || current.childElementCount === 0) return;
-
-  const stageRect = stage.getBoundingClientRect();
-  const currentRect = current.getBoundingClientRect();
-  const offset = SubtitleLayout.cueRevealOffset({
-    stageTop: stageRect.top,
-    stageBottom: stageRect.bottom,
-    cueTop: currentRect.top,
-    cueBottom: currentRect.bottom,
-  });
-  if (offset > 0) stage.scrollTop = offset;
-}
-
-function rebuildSlideSelect() {
-  dom.slideSelect.innerHTML = '';
-  slides.forEach((s, i) => {
-    const opt = document.createElement('option');
-    opt.value = i;
-    opt.textContent = `${i + 1}. ${s.title}`;
-    dom.slideSelect.appendChild(opt);
-  });
-  render();
-}
-
-// ── Actor actions ─────────────────────────────────────────────────────
-function livePositionLabel() {
-  if (!liveState || !slides.length) return 'Live position unavailable';
-
-  const position = NavigationModel.normalizePosition(slides, liveState);
-  const slide = slides[position.slideIndex];
-  let cueLabel = 'No dialogue';
-
-  if (position.showTitleImage && slide.titleImage) {
-    cueLabel = 'Title image';
-  } else if (slide.lines.length > 0) {
-    cueLabel = `Line ${position.lineIndex + 1}/${slide.lines.length}`;
-  }
-
-  const isFresh = connectionStatus === 'connected' && !waitingForLiveState;
-  const prefix = isFresh ? 'Live' : 'Last known live';
-  return `${prefix}: Scene ${position.slideIndex + 1}/${slides.length} · ${cueLabel}`;
-}
-
-function updateActorLiveAwareness() {
-  if (!isActor) return;
-
-  dom.actorLivePosition.textContent = livePositionLabel();
-  dom.actorLiveRelative.textContent = '';
-
-  if (
-    actorReadingState.mode !== ActorModeModel.MODES.BROWSING
-    || !actorReadingState.localPosition
-    || !liveState
-  ) {
-    return;
-  }
-
-  const distance = NavigationModel.cueDistance(
-    slides,
-    actorReadingState.localPosition,
-    liveState,
-  );
-  if (distance === null) return;
-
-  if (distance === 0) {
-    dom.actorLiveRelative.textContent = 'At live position.';
-  } else {
-    const cueLabel = Math.abs(distance) === 1 ? 'cue' : 'cues';
-    const relation = distance > 0 ? 'ahead' : 'behind';
-    dom.actorLiveRelative.textContent =
-      `Live is ${Math.abs(distance)} ${cueLabel} ${relation}.`;
-  }
-}
-
-function updateActorModeUI() {
-  if (!isActor) return;
-
-  const isBrowsing = actorReadingState.mode === ActorModeModel.MODES.BROWSING;
-  const hasFreshLiveState = connectionStatus === 'connected'
-    && !waitingForLiveState
-    && Boolean(liveState);
-
-  if (returnTransition) {
-    dom.actorModeStatus.textContent = 'RETURNING TO LIVE';
-    dom.actorModeStatus.dataset.mode = 'BROWSING';
-  } else if (isBrowsing) {
-    dom.actorModeStatus.textContent = connectionStatus === 'connected'
-      ? 'BROWSING'
-      : 'BROWSING · RECONNECTING';
-    dom.actorModeStatus.dataset.mode = 'BROWSING';
-  } else if (connectionStatus === 'connecting') {
-    dom.actorModeStatus.textContent = 'CONNECTING';
-    dom.actorModeStatus.dataset.mode = 'DISCONNECTED';
-  } else if (!hasFreshLiveState) {
-    dom.actorModeStatus.textContent = connectionStatus === 'connected'
-      ? 'WAITING FOR LIVE'
-      : 'RECONNECTING';
-    dom.actorModeStatus.dataset.mode = 'DISCONNECTED';
-  } else {
-    dom.actorModeStatus.textContent = 'FOLLOWING LIVE';
-    dom.actorModeStatus.dataset.mode = 'FOLLOW_LIVE';
-  }
-
-  dom.btnReturnLive.disabled =
-    Boolean(returnTransition) || !isBrowsing || !hasFreshLiveState;
-  updateActorLiveAwareness();
-}
-
-function navigateActor(direction) {
-  if (!isActor || !slides.length) return;
-
-  cancelReturnTransition();
-  const startingPosition = effectivePosition();
-  if (!startingPosition) return;
-  const nextPosition = NavigationModel.movePosition(slides, startingPosition, direction);
-  actorReadingState = ActorModeModel.browse(nextPosition);
-  updateActorModeUI();
-  render();
-}
-
-function cancelReturnTransition() {
-  if (!returnTransition) return;
-
-  clearTimeout(returnTransition.completionTimer);
-  returnTransition.outgoingAnimation.cancel();
-  returnTransition.incomingAnimation.cancel();
-  returnTransition.snapshot.remove();
-  returnTransition = null;
-}
-
-function finishReturnTransition() {
-  cancelReturnTransition();
-  actorReadingState = ActorModeModel.followLive();
-  render();
-  updateActorModeUI();
-}
-
-function createStageSnapshot() {
-  const bounds = dom.stage.getBoundingClientRect();
-  const snapshot = dom.stage.cloneNode(true);
-  snapshot.id = 'return-transition-snapshot';
-  Object.assign(snapshot.style, {
-    position: 'fixed',
-    top: `${bounds.top}px`,
-    left: `${bounds.left}px`,
-    width: `${bounds.width}px`,
-    height: `${bounds.height}px`,
-    margin: '0',
-    zIndex: '50',
-  });
-  document.body.appendChild(snapshot);
-  return snapshot;
-}
-
-function startReturnTransition(direction) {
-  if (!dom.stage.animate) {
-    finishReturnTransition();
-    return;
-  }
-
-  const snapshot = createStageSnapshot();
-  render(liveState);
-
-  const offset = direction > 0 ? -48 : 48;
-  const animationOptions = {
-    duration: RETURN_TRANSITION_DURATION,
-    easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
-    fill: 'both',
-  };
-  const outgoingAnimation = snapshot.animate([
-    { opacity: 1, transform: 'translateY(0)' },
-    { opacity: 0, transform: `translateY(${offset}px)` },
-  ], animationOptions);
-  const incomingAnimation = dom.stage.animate([
-    { opacity: 0.65, transform: `translateY(${-offset}px)` },
-    { opacity: 1, transform: 'translateY(0)' },
-  ], animationOptions);
-
-  const transition = {
-    completionTimer: null,
-    incomingAnimation,
-    outgoingAnimation,
-    snapshot,
-  };
-  returnTransition = transition;
-  transition.completionTimer = setTimeout(() => {
-    if (returnTransition === transition) finishReturnTransition();
-  }, RETURN_TRANSITION_DURATION + 30);
-  updateActorModeUI();
-
-  Promise.allSettled([
-    outgoingAnimation.finished,
-    incomingAnimation.finished,
-  ]).then(() => {
-    if (returnTransition === transition) finishReturnTransition();
-  });
-}
-
-function returnActorToLive() {
-  const hasFreshLiveState = connectionStatus === 'connected'
-    && !waitingForLiveState
-    && Boolean(liveState);
-  if (!isActor || !hasFreshLiveState) return;
-
-  const reducedMotion = window.matchMedia(
-    '(prefers-reduced-motion: reduce)',
-  ).matches;
-  const distance = NavigationModel.cueDistance(
-    slides,
-    actorReadingState.localPosition,
-    liveState,
-  );
-  if (reducedMotion || distance === null || distance === 0) {
-    finishReturnTransition();
-    return;
-  }
-
-  cancelReturnTransition();
-  startReturnTransition(distance);
-}
-
-if (isActor) {
-  dom.btnActorPrev.onclick = () => navigateActor('prev');
-  dom.btnActorNext.onclick = () => navigateActor('next');
-  dom.btnReturnLive.onclick = returnActorToLive;
 }
 
 // ── Script editor ─────────────────────────────────────────────────────
@@ -865,8 +485,8 @@ function syncEditorConflict() {
   const changed = editorMode !== 'library'
     && isEditorOpen()
     && editorBaseRevision
-    && scriptRevision
-    && editorBaseRevision !== scriptRevision
+    && PrompterLiveShow.getRevision()
+    && editorBaseRevision !== PrompterLiveShow.getRevision()
     && !editorAwaitingRevision;
   editorDom.conflict.hidden = !changed;
   if (changed) {
@@ -1197,19 +817,6 @@ function renderEditor() {
   refreshEditorChrome();
 }
 
-function stageImageUrl(reference) {
-  const parsed = ScriptLibrary.parseImageReference(reference);
-  if (parsed.kind === 'legacy') return parsed.path;
-  if (parsed.kind === 'library') return ScriptLibrary.liveAssetUrl(parsed.scriptId, parsed.assetId);
-  return '';
-}
-
-dom.titleImage.addEventListener('error', () => {
-  if (!dom.titleImage.dataset.resolved) return;
-  dom.titleImage.hidden = true;
-  dom.titleMissing.hidden = false;
-});
-
 const previewObjectUrls = [];
 
 function revokePreviewUrls() {
@@ -1417,7 +1024,7 @@ function showEditorConfirm(mode, warnings) {
   if (mode === 'publish') {
     const content = ScriptEditor.publishConfirmContent(warnings, {
       liveChanged: Boolean(
-        editorBaseRevision && scriptRevision && editorBaseRevision !== scriptRevision,
+        editorBaseRevision && PrompterLiveShow.getRevision() && editorBaseRevision !== PrompterLiveShow.getRevision(),
       ),
       librarySync: Boolean(editorLibraryId),
     });
@@ -1668,7 +1275,7 @@ async function openEditor(libraryScript) {
           const body = await listed.json();
           if (body && Array.isArray(body.scripts)) {
             rememberLibraryEntries(body.scripts, body.liveId);
-            if (body.liveId) liveScriptId = body.liveId;
+            if (body.liveId) PrompterLiveShow.setLiveScriptId(body.liveId);
           }
         }
       } catch (err) {
@@ -1678,9 +1285,9 @@ async function openEditor(libraryScript) {
     if (token !== editorOpenToken || !editorDom.dialog.open) return;
     const hash = await scriptHash(published);
     if (token !== editorOpenToken || !editorDom.dialog.open) return;
-    editorBaseRevision = hash || (fromLibrary ? editorLibraryRevision : scriptRevision);
+    editorBaseRevision = hash || (fromLibrary ? editorLibraryRevision : PrompterLiveShow.getRevision());
     if (!fromLibrary) {
-      const linked = libraryEntries.find((item) => item.id === liveScriptId);
+      const linked = libraryEntries.find((item) => item.id === PrompterLiveShow.getLiveScriptId());
       editorLibraryId = null;
       editorLibraryRevision = null;
       if (linked && hash && linked.revision === hash) {
@@ -1832,6 +1439,8 @@ async function runPublish(text) {
       if (outcome.revision) editorBaseRevision = outcome.revision;
       editorBaselineText = text;
       forceCloseEditor();
+      const liveState = PrompterLiveShow.getLiveState();
+      const slides = PrompterLiveShow.getSlides();
       const liveSlide = liveState && slides[liveState.slideIndex];
       let notice = ScriptEditor.publishLiveNotice(
         outcome.message,
@@ -2101,7 +1710,7 @@ function rememberLibraryEntries(scripts, liveId) {
 }
 
 function libraryCurrentTitle() {
-  const id = liveScriptId || libraryLiveIdCached;
+  const id = PrompterLiveShow.getLiveScriptId() || libraryLiveIdCached;
   const entry = libraryEntries.find((item) => item.id === id);
   if (entry && entry.title) return entry.title;
   return '';
@@ -2241,7 +1850,7 @@ function renderLibraryList() {
     title.className = 'library-title';
     title.textContent = entry.title || 'Untitled script';
     head.append(title);
-    const isLive = entry.live || entry.id === liveScriptId;
+    const isLive = entry.live || entry.id === PrompterLiveShow.getLiveScriptId();
     if (isLive) {
       const badge = document.createElement('p');
       badge.className = 'library-live';
@@ -2370,8 +1979,8 @@ async function refreshLibrary(keptStatus) {
       return;
     }
     rememberLibraryEntries(body.scripts, body.liveId);
-    if (body.liveId) liveScriptId = body.liveId;
-    else if (body.liveId === null) liveScriptId = null;
+    if (body.liveId) PrompterLiveShow.setLiveScriptId(body.liveId);
+    else if (body.liveId === null) PrompterLiveShow.setLiveScriptId(null);
     renderLibraryList();
     if (keptStatus) setLibraryStatus(keptStatus, 'status');
     else if (!libraryEntries.length) setLibraryStatus('No saved scripts yet.', 'status');
@@ -2523,7 +2132,7 @@ async function renameLibraryScript(entry, title) {
 }
 
 function beginLibrarySetLive(entry) {
-  if (entry.live || entry.id === liveScriptId) return;
+  if (entry.live || entry.id === PrompterLiveShow.getLiveScriptId()) return;
   if (!libraryGuard.tryStart()) return;
   libraryGuard.finish();
   libraryPendingId = entry.id;
@@ -2840,16 +2449,16 @@ if (isController) {
       // The toggle still applies for this page load.
     }
     updateCaseButton();
-    render();
+    PrompterStage.render();
   };
 
-  dom.btnNext.onclick      = () => send({ type: 'navigate', direction: 'next' });
-  dom.btnPrev.onclick      = () => send({ type: 'navigate', direction: 'prev' });
-  dom.btnNextSlide.onclick = () => send({ type: 'navigate', direction: 'nextSlide' });
-  dom.btnPrevSlide.onclick = () => send({ type: 'navigate', direction: 'prevSlide' });
+  dom.btnNext.onclick      = () => PrompterConnection.send({ type: 'navigate', direction: 'next' });
+  dom.btnPrev.onclick      = () => PrompterConnection.send({ type: 'navigate', direction: 'prev' });
+  dom.btnNextSlide.onclick = () => PrompterConnection.send({ type: 'navigate', direction: 'nextSlide' });
+  dom.btnPrevSlide.onclick = () => PrompterConnection.send({ type: 'navigate', direction: 'prevSlide' });
 
   dom.slideSelect.onchange = () => {
-    send({ type: 'goto', slideIndex: parseInt(dom.slideSelect.value), lineIndex: 0 });
+    PrompterConnection.send({ type: 'goto', slideIndex: parseInt(dom.slideSelect.value), lineIndex: 0 });
   };
 
   dom.btnUploadToggle.onclick = () => {
@@ -2889,23 +2498,23 @@ document.addEventListener('keydown', (e) => {
     const direction = ActorInputModel.directionForKey(e.key);
     if (!direction || e.repeat) return;
     e.preventDefault();
-    navigateActor(direction);
+    PrompterActor.navigate(direction);
     return;
   }
 
   if (!isController || isEditorOpen() || isLibraryOpen()) return;
   if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') {
     e.preventDefault();
-    send({ type: 'navigate', direction: 'next' });
+    PrompterConnection.send({ type: 'navigate', direction: 'next' });
   } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
     e.preventDefault();
-    send({ type: 'navigate', direction: 'prev' });
+    PrompterConnection.send({ type: 'navigate', direction: 'prev' });
   } else if (e.key === 'PageDown') {
     e.preventDefault();
-    send({ type: 'navigate', direction: 'nextSlide' });
+    PrompterConnection.send({ type: 'navigate', direction: 'nextSlide' });
   } else if (e.key === 'PageUp') {
     e.preventDefault();
-    send({ type: 'navigate', direction: 'prevSlide' });
+    PrompterConnection.send({ type: 'navigate', direction: 'prevSlide' });
   }
 });
 
@@ -2939,7 +2548,7 @@ document.addEventListener('touchend', e => {
   const dx = e.changedTouches[0].clientX - touchStartX;
   const dy = e.changedTouches[0].clientY - touchStartY;
   if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50) {
-    send({ type: 'navigate', direction: dx < 0 ? 'next' : 'prev' });
+    PrompterConnection.send({ type: 'navigate', direction: dx < 0 ? 'next' : 'prev' });
   }
 }, { passive: true });
 </script>

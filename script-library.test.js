@@ -621,8 +621,13 @@ test('the controller page offers the library without removing the current script
   assert.match(client, /Choose image/);
   assert.match(client, /ScriptEditor\.setSceneImage/);
   assert.match(client, /ScriptLibrary\.parseImageReference/);
-  assert.match(client, /isActor && scriptChanged/);
-  assert.match(client, /ActorModeModel\.followLive\(\)/);
+  assert.match(client, /onScriptApplied: noteEditorScriptRevision/);
+  const connection = fs.readFileSync(path.join(__dirname, 'public/connection.js'), 'utf8');
+  assert.match(connection, /isActor && scriptChanged/);
+  assert.match(connection, /actor\.onScriptChanged\(\)/);
+  assert.match(connection, /liveShow\.applyState\(null\)/);
+  const actorView = fs.readFileSync(path.join(__dirname, 'public/actor-view.js'), 'utf8');
+  assert.match(actorView, /actorMode\.followLive\(\)/);
 });
 
 const TINY_PNG = Buffer.from(

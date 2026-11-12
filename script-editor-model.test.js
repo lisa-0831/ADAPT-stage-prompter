@@ -415,8 +415,13 @@ test('the controller page exposes Edit Script without removing Replace Script or
   assert.equal(client.includes('<dialog id="editor-confirm"'), false);
   assert.match(client, /showConfirmFailure\(outcome\.message\)/);
   assert.match(client, /ScriptEditor\.publishLiveNotice/);
-  assert.match(client, /if \(!isActor \|\| !scriptChanged\) render\(\)/);
   assert.match(client, /editorDom\.workspace\.inert = true/);
-  assert.match(client, /isActor && scriptChanged/);
-  assert.match(client, /ActorModeModel\.followLive\(\)/);
+  assert.match(client, /onScriptApplied: noteEditorScriptRevision/);
+  const connection = fs.readFileSync(path.join(__dirname, 'public/connection.js'), 'utf8');
+  assert.match(connection, /if \(!isActor \|\| !scriptChanged\) stage\.render\(\)/);
+  assert.match(connection, /isActor && scriptChanged/);
+  assert.match(connection, /actor\.onScriptChanged\(\)/);
+  assert.match(connection, /liveShow\.applyState\(null\)/);
+  const actorView = fs.readFileSync(path.join(__dirname, 'public/actor-view.js'), 'utf8');
+  assert.match(actorView, /actorMode\.followLive\(\)/);
 });
