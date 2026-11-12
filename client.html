@@ -228,6 +228,9 @@
 <script src="public/stage.js"></script>
 <script src="public/actor-view.js"></script>
 <script src="public/connection.js"></script>
+<script src="public/controller-view.js"></script>
+<script src="public/replace-script.js"></script>
+<script src="public/exit-confirmation.js"></script>
 <script>
 // ── Role detection ────────────────────────────────────────────────────
 const params = new URLSearchParams(location.search);
@@ -269,17 +272,6 @@ let editorPreviousText = '';
 let editorAwaitingRevision = false;
 let controllerNoticeTimer = 0;
 const editorPublishGuard = ScriptEditor.createPublishGuard();
-
-// ── Controller display ────────────────────────────────────────────────
-// Session-only caption case. Audience and Actor text is not rewritten.
-let sentenceCase = false;
-if (isController) {
-  try {
-    sentenceCase = sessionStorage.getItem('prompter-caption-case') === 'sentence';
-  } catch (_) {
-    sentenceCase = false;
-  }
-}
 
 // ── DOM refs ─────────────────────────────────────────────────────────
 const dom = {
@@ -331,8 +323,6 @@ if (isController) {
   dom.controller.classList.add('visible');
   dom.roleLabel.textContent = 'CONTROLLER';
   document.title = '🎭 Prompter — Controller';
-  dom.zonePrev.onclick = () => PrompterConnection.send({ type: 'navigate', direction: 'prev' });
-  dom.zoneNext.onclick = () => PrompterConnection.send({ type: 'navigate', direction: 'next' });
 } else {
   const roleLabel = role === RoleModel.ROLES.ACTOR ? 'ACTOR' : 'AUDIENCE';
   dom.roleLabel.textContent = roleLabel;
@@ -349,11 +339,36 @@ if (isController) {
 // ── WebSocket ─────────────────────────────────────────────────────────
 // The socket, reconnect timer, and message order live in
 // public/connection.js. This page supplies the role, status elements,
-// and the editor revision note. Controller commands still call send.
+// and the editor revision note.
 
 // Stage asks for the cue to paint. An Actor supplies its local reading
 // position. Controller and Audience supply the shared live cue.
+// A Controller supplies sentence case. Actor and Audience keep the original text.
 // The socket opens only after both are ready to receive the first message.
+if (isController) {
+  let captionStorage = null;
+  try {
+    captionStorage = sessionStorage;
+  } catch (_) {
+    captionStorage = null;
+  }
+  PrompterController.init({
+    elements: {
+      btnPrev: dom.btnPrev,
+      btnNext: dom.btnNext,
+      btnPrevSlide: dom.btnPrevSlide,
+      btnNextSlide: dom.btnNextSlide,
+      btnCase: dom.btnCase,
+      slideSelect: dom.slideSelect,
+      zonePrev: dom.zonePrev,
+      zoneNext: dom.zoneNext,
+    },
+    storage: captionStorage,
+    canNavigate() {
+      return !isEditorOpen() && !isLibraryOpen();
+    },
+  });
+}
 if (isActor) {
   PrompterActor.init({
     stageElement: dom.stage,
@@ -363,7 +378,10 @@ if (isActor) {
   });
 }
 PrompterStage.init({
-  formatCue: shownCueText,
+  formatCue(text, type) {
+    if (isController) return PrompterController.formatCue(text, type);
+    return PrompterText.displayText(text, type);
+  },
   getPosition() {
     return isActor
       ? PrompterActor.effectivePosition()
@@ -382,19 +400,7 @@ PrompterConnection.connect();
 
 // Each line is now { text, speaker } from the server.
 // lineType and displayText live in public/text.js.
-
-function shownCueText(text, type) {
-  const plain = PrompterText.displayText(text, type);
-  if (!(isController && sentenceCase)) return plain;
-  return CaptionCase.toSentenceCase(plain);
-}
-
-function updateCaseButton() {
-  if (!dom.btnCase) return;
-  dom.btnCase.setAttribute('aria-pressed', sentenceCase ? 'true' : 'false');
-  dom.btnCase.textContent = sentenceCase ? 'Aa' : 'AA';
-  dom.btnCase.title = sentenceCase ? 'Switch to all caps' : 'Switch to sentence case';
-}
+// Controller sentence case lives in public/controller-view.js.
 
 // ── Script editor ─────────────────────────────────────────────────────
 const editorDom = {
@@ -2440,51 +2446,21 @@ function initScriptLibrary() {
 if (isController) {
   initScriptEditor();
   initScriptLibrary();
-  updateCaseButton();
-  dom.btnCase.onclick = () => {
-    sentenceCase = !sentenceCase;
-    try {
-      sessionStorage.setItem('prompter-caption-case', sentenceCase ? 'sentence' : 'caps');
-    } catch (_) {
-      // The toggle still applies for this page load.
-    }
-    updateCaseButton();
-    PrompterStage.render();
-  };
-
-  dom.btnNext.onclick      = () => PrompterConnection.send({ type: 'navigate', direction: 'next' });
-  dom.btnPrev.onclick      = () => PrompterConnection.send({ type: 'navigate', direction: 'prev' });
-  dom.btnNextSlide.onclick = () => PrompterConnection.send({ type: 'navigate', direction: 'nextSlide' });
-  dom.btnPrevSlide.onclick = () => PrompterConnection.send({ type: 'navigate', direction: 'prevSlide' });
-
-  dom.slideSelect.onchange = () => {
-    PrompterConnection.send({ type: 'goto', slideIndex: parseInt(dom.slideSelect.value), lineIndex: 0 });
-  };
-
-  dom.btnUploadToggle.onclick = () => {
-    dom.uploadArea.classList.toggle('open');
-    if (dom.uploadArea.classList.contains('open')) {
-      fetch('/script').then(r => r.text()).then(t => { dom.scriptTextarea.value = t; });
-    }
-  };
-  dom.btnUploadCancel.onclick = () => dom.uploadArea.classList.remove('open');
-  dom.btnUploadSubmit.onclick = async () => {
-    const text = dom.scriptTextarea.value.trim();
-    if (!text) return;
-    const res = await fetch('/script', {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: text,
-    });
-    if (res.ok) {
-      dom.uploadArea.classList.remove('open');
-    } else {
-      alert('Upload failed — check server.');
-    }
-  };
+  PrompterReplaceScript.init({
+    elements: {
+      toggle: dom.btnUploadToggle,
+      area: dom.uploadArea,
+      textarea: dom.scriptTextarea,
+      submit: dom.btnUploadSubmit,
+      cancel: dom.btnUploadCancel,
+    },
+  });
 }
 
 // ── Keyboard navigation ───────────────────────────────────────────────
+// One listener covers both roles. Actor keys stay on PrompterActor.
+// Controller keys stay on PrompterController. Focused controls still
+// swallow the key before either role runs.
 function isInteractiveTarget(target) {
   return target instanceof Element && Boolean(target.closest(
     'button, input, textarea, select, a[href], [contenteditable="true"], [role="button"]',
@@ -2502,55 +2478,27 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
-  if (!isController || isEditorOpen() || isLibraryOpen()) return;
-  if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') {
-    e.preventDefault();
-    PrompterConnection.send({ type: 'navigate', direction: 'next' });
-  } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
-    e.preventDefault();
-    PrompterConnection.send({ type: 'navigate', direction: 'prev' });
-  } else if (e.key === 'PageDown') {
-    e.preventDefault();
-    PrompterConnection.send({ type: 'navigate', direction: 'nextSlide' });
-  } else if (e.key === 'PageUp') {
-    e.preventDefault();
-    PrompterConnection.send({ type: 'navigate', direction: 'prevSlide' });
-  }
+  if (!isController) return;
+  if (PrompterController.handleKey(e.key)) e.preventDefault();
 });
 
 // ── Exit guard ────────────────────────────────────────────────────────
+// Escape is handled by the exit module, not the shared navigation listener.
+// An open editor or library keeps the key.
 if (isController) {
-  dom.btnExit.onclick = () => dom.exitGuard.classList.add('show');
-  dom.btnStay.onclick = () => dom.exitGuard.classList.remove('show');
-  dom.btnConfirmExit.onclick = () => { location.href = 'about:blank'; };
-
-  window.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      if (isEditorOpen() || isLibraryOpen()) return;
-      e.preventDefault();
-      if (dom.exitGuard.classList.contains('show')) {
-        dom.exitGuard.classList.remove('show');
-      } else {
-        dom.exitGuard.classList.add('show');
-      }
-    }
+  PrompterExitConfirmation.init({
+    elements: {
+      exit: dom.btnExit,
+      guard: dom.exitGuard,
+      stay: dom.btnStay,
+      confirm: dom.btnConfirmExit,
+    },
+    canHandleEscape() {
+      return !isEditorOpen() && !isLibraryOpen();
+    },
   });
 }
 
-// ── Touch swipe ───────────────────────────────────────────────────────
-let touchStartX = 0, touchStartY = 0;
-document.addEventListener('touchstart', e => {
-  touchStartX = e.touches[0].clientX;
-  touchStartY = e.touches[0].clientY;
-}, { passive: true });
-document.addEventListener('touchend', e => {
-  if (!isController || isEditorOpen() || isLibraryOpen()) return;
-  const dx = e.changedTouches[0].clientX - touchStartX;
-  const dy = e.changedTouches[0].clientY - touchStartY;
-  if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50) {
-    PrompterConnection.send({ type: 'navigate', direction: dx < 0 ? 'next' : 'prev' });
-  }
-}, { passive: true });
 </script>
 </body>
 </html>

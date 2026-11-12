@@ -36,10 +36,13 @@ test('leaves an empty cue empty', () => {
 test('the case toggle is controller-only and does not restyle character names', () => {
   assert.match(client, /<script src="caption-case\.js"><\/script>/);
   assert.match(client, /id="btn-case"/);
-  assert.match(client, /isController && sentenceCase/);
-  assert.match(client, /CaptionCase\.toSentenceCase/);
-  assert.match(client, /formatCue:\s*shownCueText/);
+  assert.match(client, /if \(isController\) return PrompterController\.formatCue\(text, type\)/);
+  assert.match(client, /return PrompterText\.displayText\(text, type\)/);
+  const controller = fs.readFileSync(path.join(__dirname, 'public/controller-view.js'), 'utf8');
+  assert.match(controller, /CaptionCase\.toSentenceCase/);
+  assert.match(controller, /prompter-caption-case/);
   assert.match(styles, /\.char-name\s*\{[^}]*text-transform:\s*uppercase/);
   assert.match(stage, /nameEl\.textContent = showName \? speaker : ''/);
   assert.doesNotMatch(stage, /sentenceCase/);
+  assert.doesNotMatch(stage, /prompter-caption-case/);
 });

@@ -60,6 +60,15 @@ test('each role shows only its own controls', async ({ browser, prompter }) => {
     const connectionScript = await controller.page.request.get(`${prompter.baseURL}/public/connection.js`);
     expect(connectionScript.status()).toBe(200);
     expect(connectionScript.headers()['content-type'] || '').toMatch(/javascript/);
+    const controllerScript = await controller.page.request.get(`${prompter.baseURL}/public/controller-view.js`);
+    expect(controllerScript.status()).toBe(200);
+    expect(controllerScript.headers()['content-type'] || '').toMatch(/javascript/);
+    const replaceScript = await controller.page.request.get(`${prompter.baseURL}/public/replace-script.js`);
+    expect(replaceScript.status()).toBe(200);
+    expect(replaceScript.headers()['content-type'] || '').toMatch(/javascript/);
+    const exitScript = await controller.page.request.get(`${prompter.baseURL}/public/exit-confirmation.js`);
+    expect(exitScript.status()).toBe(200);
+    expect(exitScript.headers()['content-type'] || '').toMatch(/javascript/);
 
     for (const entry of [controller, actor, audience]) {
       await expect(entry.page.locator('link[rel="stylesheet"]')).toHaveAttribute('href', '/styles.css');
@@ -69,6 +78,9 @@ test('each role shows only its own controls', async ({ browser, prompter }) => {
       await expect(entry.page.locator('script[src="public/stage.js"]')).toHaveCount(1);
       await expect(entry.page.locator('script[src="public/actor-view.js"]')).toHaveCount(1);
       await expect(entry.page.locator('script[src="public/connection.js"]')).toHaveCount(1);
+      await expect(entry.page.locator('script[src="public/controller-view.js"]')).toHaveCount(1);
+      await expect(entry.page.locator('script[src="public/replace-script.js"]')).toHaveCount(1);
+      await expect(entry.page.locator('script[src="public/exit-confirmation.js"]')).toHaveCount(1);
       const classified = await entry.page.evaluate(() => ({
         dialogue: PrompterText.lineType('HELLO THERE'),
         direction: PrompterText.lineType('  {She exits.}'),
@@ -126,6 +138,10 @@ test('each role shows only its own controls', async ({ browser, prompter }) => {
         status: 'connected',
         waitingForLiveState: false,
       });
+      const controllerEnabled = await entry.page.evaluate(() => PrompterController.isEnabled());
+      expect(controllerEnabled).toBe(entry.page === controller.page);
+      const exitEnabled = await entry.page.evaluate(() => PrompterExitConfirmation.isEnabled());
+      expect(exitEnabled).toBe(entry.page === controller.page);
       if (entry.page === actor.page) {
         const aligned = await entry.page.evaluate(() => {
           const live = PrompterLiveShow.getLiveState();

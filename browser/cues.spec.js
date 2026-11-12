@@ -60,3 +60,26 @@ test('title images, image-only scenes, and an empty scene keep the controller in
     await closeShows([controller]);
   }
 });
+
+test('the scene menu and a stage-edge tap move the audience with the controller', async ({ browser, prompter }) => {
+  const controller = await openShow(browser, prompter.baseURL, 'controller');
+  const audience = await openShow(browser, prompter.baseURL, 'audience');
+  const pages = [controller, audience];
+
+  try {
+    await expect(controller.page.locator('#ctrl-status')).toHaveText('Slide 1/5 · Title image');
+    await controller.page.locator('#zone-next').click();
+    await expect(controller.page.locator('#lines-current .script-line')).toHaveText(prompter.spoken);
+    await expect(audience.page.locator('#lines-current .script-line')).toHaveText(prompter.spoken);
+
+    await controller.page.locator('#slide-select').selectOption('1');
+    await expect(controller.page.locator('#slide-title')).toHaveText('Picture A');
+    await expect(controller.page.locator('#ctrl-status')).toHaveText('Slide 2/5 · Title image');
+    await expect(audience.page.locator('#slide-title')).toHaveText('Picture A');
+    await expect(audience.page.locator('#title-image-overlay')).toHaveClass(/show/);
+
+    assertQuiet(pages);
+  } finally {
+    await closeShows(pages);
+  }
+});
