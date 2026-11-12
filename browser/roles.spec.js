@@ -45,9 +45,34 @@ test('each role shows only its own controls', async ({ browser, prompter }) => {
       expect(asset.status(), assetUrl).toBe(200);
     }
 
+    const textScript = await controller.page.request.get(`${prompter.baseURL}/public/text.js`);
+    expect(textScript.status()).toBe(200);
+    expect(textScript.headers()['content-type'] || '').toMatch(/javascript/);
+
     for (const entry of [controller, actor, audience]) {
       await expect(entry.page.locator('link[rel="stylesheet"]')).toHaveAttribute('href', '/styles.css');
       await expect(entry.page.locator('style')).toHaveCount(0);
+      await expect(entry.page.locator('script[src="public/text.js"]')).toHaveCount(1);
+      const classified = await entry.page.evaluate(() => ({
+        dialogue: PrompterText.lineType('HELLO THERE'),
+        direction: PrompterText.lineType('  {She exits.}'),
+        lyric: PrompterText.lineType('## Somewhere'),
+        singalong: PrompterText.lineType('< Follow along >'),
+        plain: PrompterText.displayText('  HELLO  ', 'dialogue'),
+        directionText: PrompterText.displayText('  {She exits.}', 'direction'),
+        lyricText: PrompterText.displayText('## Somewhere ##', 'lyric'),
+        singalongText: PrompterText.displayText('< Follow along >', 'singalong'),
+      }));
+      expect(classified).toEqual({
+        dialogue: 'dialogue',
+        direction: 'direction',
+        lyric: 'lyric',
+        singalong: 'singalong',
+        plain: '  HELLO  ',
+        directionText: 'She exits.',
+        lyricText: 'Somewhere',
+        singalongText: 'Follow along',
+      });
       const applied = await entry.page.evaluate(() => {
         const root = getComputedStyle(document.documentElement);
         const body = getComputedStyle(document.body);
