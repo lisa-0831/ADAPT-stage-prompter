@@ -1,4 +1,5 @@
 const express = require('express');
+const fs = require('fs');
 const path = require('path');
 const { timingSafeEqual } = require('crypto');
 const {
@@ -8,8 +9,124 @@ const {
 } = require('../script-library');
 
 // HTTP routes only. Live state, the journal, and WebSocket clients stay in
-// server.js. Staff-token coverage is unchanged: it still applies only where
-// these routes already passed requireStaff. This is not a hosting lockdown.
+// server.js. Browser files are an allowlist. The project root is not served.
+// Staff-token coverage is unchanged. GET /script and POST /script stay open;
+// requiring a credential for those routes is a later change.
+
+const ROOT_PUBLIC_FILES = new Set([
+  'styles.css',
+  'background.jpg',
+  'role-model.js',
+  'navigation-model.js',
+  'actor-mode-model.js',
+  'actor-input-model.js',
+  'subtitle-layout.js',
+  'caption-case.js',
+  'script-format.js',
+  'script-editor-model.js',
+  'script-library-model.js',
+]);
+
+const PUBLIC_SCRIPTS = new Set([
+  'text.js',
+  'live-show.js',
+  'stage.js',
+  'actor-view.js',
+  'connection.js',
+  'controller-view.js',
+  'replace-script.js',
+  'exit-confirmation.js',
+  'editor-view.js',
+  'library-view.js',
+]);
+
+const PUBLIC_FONTS = new Set([
+  'Engravers-Gothic-Regular.otf',
+  'Netto-Regular.otf',
+  'Netto-Regular-Italic.otf',
+  'TTRoundsCondensed-Black.ttf',
+]);
+
+const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp']);
+
+function notFound(res) {
+  res.status(404).type('text/plain').send('Not found');
+}
+
+function containedFile(directory, name) {
+  if (!name || name.includes('/') || name.includes('\\') || name.includes('..') || name.startsWith('.')) {
+    return null;
+  }
+  const directoryPath = path.resolve(directory);
+  const candidate = path.resolve(directoryPath, name);
+  if (candidate !== path.join(directoryPath, name)) return null;
+  let realDirectory;
+  let realFile;
+  try {
+    realDirectory = fs.realpathSync(directoryPath);
+    realFile = fs.realpathSync(candidate);
+  } catch (err) {
+    return null;
+  }
+  if (realFile === realDirectory || !realFile.startsWith(`${realDirectory}${path.sep}`)) return null;
+  return realFile;
+}
+
+function sendPublicFile(res, filePath) {
+  res.sendFile(filePath, { dotfiles: 'deny' }, (err) => {
+    if (!err || res.headersSent) return;
+    if (err.status === 404 || err.status === 403 || err.code === 'ENOENT') {
+      notFound(res);
+      return;
+    }
+    console.error(err);
+    if (!res.headersSent) res.status(500).type('text/plain').send('The file could not be read.');
+  });
+}
+
+function createPublicAssets(staticRoot) {
+  const root = path.resolve(staticRoot);
+  const directories = {
+    '/public/': { dir: path.join(root, 'public'), names: PUBLIC_SCRIPTS },
+    '/fonts/': { dir: path.join(root, 'fonts'), names: PUBLIC_FONTS },
+    '/images/': { dir: path.join(root, 'images'), images: true },
+  };
+
+  return function publicAssets(req, res, next) {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+    let pathname = req.path || '/';
+    try {
+      pathname = decodeURIComponent(pathname);
+    } catch (err) {
+      res.status(400).type('text/plain').send('Bad request');
+      return;
+    }
+    if (pathname.includes('\0')) {
+      res.status(400).type('text/plain').send('Bad request');
+      return;
+    }
+    if (pathname === '/') return next();
+
+    const slash = pathname.indexOf('/', 1);
+    if (slash === -1) {
+      const name = pathname.slice(1);
+      if (!ROOT_PUBLIC_FILES.has(name)) return next();
+      const filePath = containedFile(root, name);
+      if (!filePath) return notFound(res);
+      return sendPublicFile(res, filePath);
+    }
+
+    const entry = directories[pathname.slice(0, slash + 1)];
+    if (!entry) return next();
+    const name = pathname.slice(slash + 1);
+    if (!name || name.endsWith('/')) return notFound(res);
+    if (entry.names && !entry.names.has(name)) return notFound(res);
+    if (entry.images && !IMAGE_EXTENSIONS.has(path.extname(name).toLowerCase())) return notFound(res);
+    const filePath = containedFile(entry.dir, name);
+    if (!filePath) return notFound(res);
+    return sendPublicFile(res, filePath);
+  };
+}
 
 function imageLimitMessage(limit) {
   const amount = limit >= 1024 * 1024 && limit % (1024 * 1024) === 0
@@ -113,10 +230,12 @@ function registerHttpRoutes(deps) {
   // only changes the browser. Script upload stays reachable by anyone who
   // can reach the server, matching the previous Replace Script behavior.
   // Library routes use PROMPTER_STAFF_TOKEN when that variable is set.
+  // Parsers, the library and journal guard, then the browser allowlist.
+  // API routes stay below this. Unmatched paths end at the final 404.
   app.use(express.text({ type: 'text/plain', limit: '5mb' }));
   app.use(express.json({ limit: '5mb' }));
   app.use(createPrivatePathGuard(deps.libraryDir, staticRoot, [deps.journalDir]));
-  app.use(express.static(staticRoot, { index: false }));
+  app.use(createPublicAssets(staticRoot));
 
   app.get('/', (req, res) => {
     res.sendFile(path.join(staticRoot, 'client.html'));
@@ -398,6 +517,10 @@ function registerHttpRoutes(deps) {
   app.get('/script', (req, res) => {
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     return res.send(deps.readLiveScript());
+  });
+
+  app.use((req, res) => {
+    notFound(res);
   });
 }
 
