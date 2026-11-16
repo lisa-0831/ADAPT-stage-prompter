@@ -86,6 +86,7 @@ const STATUS = {
   'missing-marker': 503,
   'invalid-live-state': 503,
   'corrupt-version': 503,
+  'orphan-version': 409,
   'corrupt-metadata': 503,
   'corrupt-asset': 503,
   'corrupt-production': 503,
@@ -482,6 +483,41 @@ function registerVersionedHttpRoutes(options) {
       script: toScript(updated.production),
       liveId: updated.production.liveProductionId || null,
     });
+  });
+
+  app.get('/api/library/:id/versions', requireStaff, async (req, res) => {
+    const productionId = canonicalRouteId(req.params.id);
+    if (!productionId) {
+      return res.status(400).json({ ok: false, code: 'invalid-id', error: 'That script id is not valid.' });
+    }
+    const listed = await invoke(res, () => service.listProductionVersions(productionId));
+    if (!listed) return undefined;
+    if (!listed.ok) return sendError(res, listed);
+    return res.json(listed);
+  });
+
+  app.get('/api/library/:id/versions/:versionId', requireStaff, async (req, res) => {
+    const productionId = canonicalRouteId(req.params.id);
+    const versionId = canonicalRouteId(req.params.versionId);
+    if (!productionId || !versionId) {
+      return res.status(400).json({ ok: false, code: 'invalid-id', error: 'That production or version id is not valid.' });
+    }
+    const detail = await invoke(res, () => service.readProductionVersion({ productionId, versionId }));
+    if (!detail) return undefined;
+    if (detail.code === 'orphan-version') {
+      return res.status(409).json({
+        ok: false,
+        code: 'orphan-version',
+        error: detail.error,
+        orphan: {
+          versionId: detail.versionId,
+          complete: detail.complete === true,
+          committed: false,
+        },
+      });
+    }
+    if (!detail.ok) return sendError(res, detail);
+    return res.json(detail);
   });
 
   app.get('/api/library/:id/assets', requireStaff, async (req, res) => {

@@ -44,6 +44,8 @@ const HTTP_ADAPTER_CONTRACT = Object.freeze({
     'GET /api/library': 'listProductions. live comes from live-state.json. Do not use index.json liveId. 200.',
     'POST /api/library': 'createProduction when trackIfCurrent is not true, then the existing separate image uploads. trackIfCurrent true returns the live production when its saved head is that live script. It does not create a duplicate or activate anything. 201 for a new production. An upload failure leaves the production in place.',
     'GET /api/library/:id': 'readProduction. 404 when missing. The saved-head content hash is the legacy revision.',
+    'GET /api/library/:id/versions': 'listProductionVersions. Staff only. Committed history is separate from orphans. Saved head comes from production metadata. Live and previous live come from verified live state. 200.',
+    'GET /api/library/:id/versions/:versionId': 'readProductionVersion. Staff only. Returns that version\'s stored text. It does not substitute the saved head or the live version, and it does not activate, broadcast, or write. 404 when missing. 409 when the directory is an orphan.',
     'PUT /api/library/:id': 'Split a title change and a text change. Rename uses metadata generation. Save uses the saved-head version id. If one succeeds and the other conflicts, return 409 partial with the field that was saved. Do not drop either field.',
     'GET /api/library/:id/assets': 'listAssets. Staff only. 200.',
     'POST /api/library/:id/assets': 'uploadAsset. 201. Same asset id and bytes is the stored asset. Different bytes is 409 conflict.',
@@ -907,6 +909,255 @@ function createVersionedLibraryService(options) {
     });
   }
 
+  function compareHistory(left, right) {
+    if (left.createdAt !== right.createdAt) {
+      if (!left.createdAt) return 1;
+      if (!right.createdAt) return -1;
+      return left.createdAt < right.createdAt ? -1 : 1;
+    }
+    if (left.versionId === right.versionId) return 0;
+    return left.versionId < right.versionId ? -1 : 1;
+  }
+
+  function liveLabels(productionId, versionId, contentHash, headId, liveRecord) {
+    const record = liveRecord && liveRecord.ok && liveRecord.present ? liveRecord : null;
+    const previous = record && record.previousActivation;
+    return {
+      savedHead: versionId === headId,
+      live: Boolean(
+        record
+        && record.productionId === productionId
+        && record.versionId === versionId
+        && record.contentHash === contentHash,
+      ),
+      previousLive: Boolean(
+        previous
+        && previous.productionId === productionId
+        && previous.versionId === versionId
+        && previous.contentHash === contentHash,
+      ),
+    };
+  }
+
+  function imageBytesImmutable(version, described, classified) {
+    const policy = version.version.legacyImagePolicy;
+    const shared = Boolean(classified && classified.legacyImages && classified.legacyImages.length)
+      || policy === 'shared-images';
+    if (shared) return false;
+    if (!described.ok) return false;
+    const assetIds = Array.isArray(version.version.assetIds) ? version.version.assetIds : [];
+    return assetIds.every((assetId) => described.assets.some((asset) => asset.assetId === assetId));
+  }
+
+  function historyImages(productionId, version) {
+    const manifest = readManifestAssets(productionId);
+    const classified = manifest.ok
+      ? classifyScriptImages(productionId, version.text, manifest.assets)
+      : null;
+    const described = store.describeImages(productionId, version.text);
+    const verified = new Map();
+    if (described.ok) {
+      described.assets.forEach((asset) => verified.set(asset.assetId, asset));
+    }
+    const unresolved = new Set(
+      (classified && classified.unresolvedAssets ? classified.unresolvedAssets : [])
+        .map((asset) => asset.assetId),
+    );
+    const ownedImages = (Array.isArray(version.version.assetIds) ? version.version.assetIds : [])
+      .map((assetId) => {
+        const asset = verified.get(assetId);
+        return {
+          assetId,
+          name: asset && asset.name ? asset.name : null,
+          available: Boolean(asset) && !unresolved.has(assetId),
+          immutable: Boolean(asset) && !unresolved.has(assetId),
+        };
+      });
+    const sharedImages = (classified && classified.legacyImages ? classified.legacyImages : [])
+      .map((image) => ({
+        reference: image.path,
+        shared: true,
+        immutable: false,
+      }));
+    const immutable = imageBytesImmutable(version, described, classified);
+    return {
+      imageStatus: classified
+        ? classified.imageStatus
+        : (described.ok ? 'ready' : (described.code || 'unresolved-library-images')),
+      legacyImagePolicy: version.version.legacyImagePolicy || null,
+      imageBytesImmutable: immutable,
+      replay: immutable ? 'stored-bytes' : 'not-guaranteed',
+      sharedImages,
+      ownedImages,
+      unassignedAssets: (classified && classified.unassignedAssets ? classified.unassignedAssets : [])
+        .map((asset) => ({ assetId: asset.assetId, referenced: false })),
+    };
+  }
+
+  function historySummary(productionId, version, headId, liveRecord) {
+    const images = historyImages(productionId, version);
+    return Object.assign({
+      productionId,
+      versionId: version.version.id,
+      createdAt: version.version.createdAt || null,
+      contentHash: version.version.contentHash,
+      parentVersionId: version.version.parentVersionId == null ? null : version.version.parentVersionId,
+      origin: version.version.origin || null,
+      role: version.version.role || null,
+      legacyImagePolicy: version.version.legacyImagePolicy || null,
+      imageBytesImmutable: images.imageBytesImmutable,
+      committed: true,
+    }, liveLabels(productionId, version.version.id, version.version.contentHash, headId, liveRecord));
+  }
+
+  function publicLiveState(record) {
+    if (!record || !record.ok) {
+      return {
+        ok: false,
+        code: record && record.code ? record.code : 'invalid-live-state',
+        error: record && record.error ? record.error : 'Live state could not be verified.',
+      };
+    }
+    return {
+      ok: true,
+      present: Boolean(record.present),
+      productionId: record.present ? record.productionId : null,
+      versionId: record.present ? record.versionId : null,
+      contentHash: record.present ? record.contentHash : null,
+      generation: record.present ? record.generation : null,
+      previousActivation: record.previousActivation
+        ? {
+          productionId: record.previousActivation.productionId,
+          versionId: record.previousActivation.versionId,
+          contentHash: record.previousActivation.contentHash,
+        }
+        : null,
+    };
+  }
+
+  function listProductionVersions(productionId) {
+    return exclusive(() => {
+      const id = canonicalId(productionId);
+      if (!id) return fail('invalid-id', 'That production id is not valid.');
+      const production = store.readProduction(id);
+      if (!production.ok) {
+        return fail(
+          production.code === 'missing-parent' ? 'missing-production' : (production.code || 'missing-production'),
+          production.error || 'That production could not be read.',
+        );
+      }
+      const liveRecord = readLiveRecord();
+      const headId = production.production.headVersionId;
+      const versions = [];
+      const diagnostics = [];
+      production.production.versions.forEach((entry) => {
+        const versionId = canonicalId(entry && entry.id);
+        if (!versionId) {
+          diagnostics.push({
+            versionId: null,
+            code: 'corrupt-metadata',
+            error: 'A recorded version id is not valid.',
+          });
+          return;
+        }
+        const version = store.readVersion(id, versionId);
+        if (!version.ok || version.version.productionId !== id) {
+          diagnostics.push({
+            versionId,
+            code: version.ok ? 'corrupt-version' : (version.code === 'missing-parent' ? 'missing-version' : (version.code || 'corrupt-version')),
+            error: version.ok ? 'That version names a different production.' : (version.error || 'That version could not be read.'),
+          });
+          return;
+        }
+        versions.push(historySummary(id, version, headId, liveRecord));
+      });
+      versions.sort(compareHistory);
+      const orphans = store.listOrphans(id);
+      const orphanRows = orphans.ok
+        ? orphans.orphans.map((orphan) => ({
+          versionId: orphan.id,
+          complete: orphan.complete === true,
+          committed: false,
+        })).sort((left, right) => (left.versionId < right.versionId ? -1 : 1))
+        : [];
+      if (!orphans.ok) {
+        diagnostics.push({
+          versionId: null,
+          code: orphans.code || 'unsafe-path',
+          error: orphans.error || 'Orphan versions could not be listed.',
+        });
+      }
+      return {
+        ok: true,
+        productionId: id,
+        savedHeadVersionId: headId,
+        order: 'createdAt,versionId',
+        versions,
+        orphans: orphanRows,
+        diagnostics,
+        liveState: publicLiveState(liveRecord),
+      };
+    });
+  }
+
+  function readProductionVersion(input) {
+    return exclusive(() => {
+      const body = input || {};
+      const id = canonicalId(body.productionId);
+      const versionId = canonicalId(body.versionId);
+      if (!id || !versionId) return fail('invalid-id', 'That production or version id is not valid.');
+      const production = store.readProduction(id);
+      if (!production.ok) {
+        return fail(
+          production.code === 'missing-parent' ? 'missing-production' : (production.code || 'missing-production'),
+          production.error || 'That production could not be read.',
+        );
+      }
+      const recorded = production.production.versions.some((entry) => canonicalId(entry && entry.id) === versionId);
+      if (!recorded) {
+        const orphans = store.listOrphans(id);
+        const orphan = orphans.ok && orphans.orphans.find((entry) => entry.id === versionId);
+        if (orphan) {
+          return fail('orphan-version', 'That version is not part of the saved history.', {
+            versionId,
+            complete: orphan.complete === true,
+          });
+        }
+        return fail('missing-version', 'That version could not be found.');
+      }
+      const version = store.readVersion(id, versionId);
+      if (!version.ok) {
+        return fail(
+          version.code === 'missing-parent' ? 'missing-version' : (version.code || 'corrupt-version'),
+          version.error || 'That version could not be read.',
+        );
+      }
+      if (version.version.productionId !== id || version.version.id !== versionId) {
+        return fail('corrupt-version', 'That version names a different production or version.');
+      }
+      const formatted = validate(version.text);
+      const liveRecord = readLiveRecord();
+      const summary = historySummary(id, version, production.production.headVersionId, liveRecord);
+      return {
+        ok: true,
+        productionId: id,
+        savedHeadVersionId: production.production.headVersionId,
+        version: Object.assign({}, summary, {
+          text: version.text,
+          scriptFormat: {
+            ok: formatted.ok === true,
+            errors: (formatted.errors || []).map((error) => ({
+              code: error.code || 'invalid-script',
+              message: error.message || 'The script could not be validated.',
+            })),
+          },
+        }),
+        images: historyImages(id, version),
+        liveState: publicLiveState(liveRecord),
+      };
+    });
+  }
+
   function restoreCurrent(input) {
     return exclusive(async () => {
       const body = input || {};
@@ -946,6 +1197,8 @@ function createVersionedLibraryService(options) {
     assessProduction,
     assessVersionForActivation,
     readProductionDetail,
+    listProductionVersions,
+    readProductionVersion,
     updateProduction,
     readLiveShow,
     resolveTrackCurrent,
