@@ -69,9 +69,28 @@ function registerLiveSocketHandlers(deps) {
           }
           deps.broadcast({ type: 'state', state: deps.getState() });
           break;
-        case 'reloadScript':
-          deps.loadScript();
+        case 'reloadScript': {
+          let result;
+          try {
+            result = deps.loadScript();
+          } catch (err) {
+            result = {
+              ok: false,
+              code: err && err.code ? err.code : 'reload-failed',
+              error: 'The live script could not be reloaded.',
+            };
+          }
+          if (result && result.ok === false) {
+            try {
+              ws.send(JSON.stringify({
+                type: 'error',
+                code: result.code || 'reload-failed',
+                error: result.error || 'The live script could not be reloaded.',
+              }));
+            } catch (err) { /* The client may already be gone. */ }
+          }
           break;
+        }
         default:
           break;
       }

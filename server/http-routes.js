@@ -182,9 +182,19 @@ function staffTokensMatch(provided, expected) {
   return timingSafeEqual(left, right);
 }
 
+function mountBrowserShell(app, options) {
+  const staticRoot = options.staticRoot;
+  app.use(express.text({ type: 'text/plain', limit: '5mb' }));
+  app.use(express.json({ limit: '5mb' }));
+  app.use(createPrivatePathGuard(options.libraryDir, staticRoot, [options.journalDir]));
+  app.use(createPublicAssets(staticRoot));
+  app.get('/', (req, res) => {
+    res.sendFile(path.join(staticRoot, 'client.html'));
+  });
+}
+
 function registerHttpRoutes(deps) {
   const app = deps.app;
-  const staticRoot = deps.staticRoot;
   const library = deps.library;
   const staffToken = deps.staffToken;
   const imageMaxBytes = deps.imageMaxBytes;
@@ -232,14 +242,7 @@ function registerHttpRoutes(deps) {
   // Library routes use PROMPTER_STAFF_TOKEN when that variable is set.
   // Parsers, the library and journal guard, then the browser allowlist.
   // API routes stay below this. Unmatched paths end at the final 404.
-  app.use(express.text({ type: 'text/plain', limit: '5mb' }));
-  app.use(express.json({ limit: '5mb' }));
-  app.use(createPrivatePathGuard(deps.libraryDir, staticRoot, [deps.journalDir]));
-  app.use(createPublicAssets(staticRoot));
-
-  app.get('/', (req, res) => {
-    res.sendFile(path.join(staticRoot, 'client.html'));
-  });
+  mountBrowserShell(app, deps);
 
   app.get('/api/library/access', (req, res) => {
     res.json({ ok: true, required: Boolean(staffToken) });
@@ -524,4 +527,4 @@ function registerHttpRoutes(deps) {
   });
 }
 
-module.exports = { registerHttpRoutes };
+module.exports = { registerHttpRoutes, mountBrowserShell };

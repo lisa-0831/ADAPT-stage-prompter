@@ -6,19 +6,18 @@ const { hashText, isValidScriptId } = require('../script-library');
 //
 // This module registers the existing library and script routes on a caller
 // supplied application. It does not listen, open the repository library, or
-// choose storage mode. createPrompterServer keeps the legacy routes.
+// choose storage mode. Marker-free startup keeps the legacy routes.
 //
 // Every storage read and write goes through the injected service. This file
 // does not construct a version store, production manager, asset manager, or
 // live-operation factory. Those queues are not a substitute for the service
 // queue. It does not fan out socket events or move the in-memory cue.
-// synchronized: false means this process did not load the active script
-// into memory and did not emit the existing script or state messages.
-// M7D3C3B may report synchronization only after the durable Live State
-// transition, loading that verified script into server memory, resetting
-// or preserving the cue for the operation, and emitting the existing
-// WebSocket script and state messages. Sending those socket messages still
-// does not prove that every connected client rendered them. A durable Live commit followed
+// synchronized is true only when the caller reports that the durable Live
+// State transition is in server memory, the cue was adjusted, and the
+// existing script and state messages were emitted. This adapter does not
+// emit those messages. Without that report the field is false. Sending
+// those socket messages still does not prove that every connected client
+// rendered them. A durable Live commit followed
 // by a synchronization failure is not a storage rollback. X-Version-Id
 // retries keep the same id for the same text. The server stamps createdAt
 // on each request, so a half-written version can still answer
@@ -589,7 +588,8 @@ function registerVersionedHttpRoutes(options) {
       generation: activated.generation,
       cue: activated.cue || null,
       missingImages: 0,
-      synchronized: false,
+      activated: true,
+      synchronized: activated.synchronized === true,
     });
   });
 
@@ -628,7 +628,8 @@ function registerVersionedHttpRoutes(options) {
         libraryConflict: false,
         cue: restored.cue || null,
         resetPosition: Boolean(restored.cue && restored.cue.action === 'reset'),
-        synchronized: false,
+        activated: true,
+        synchronized: restored.synchronized === true,
       });
     }
     if (typeof req.body !== 'string') {
@@ -666,7 +667,8 @@ function registerVersionedHttpRoutes(options) {
       libraryConflict: false,
       cue: published.cue || null,
       resetPosition: Boolean(published.cue && published.cue.action === 'reset'),
-      synchronized: false,
+      activated: true,
+      synchronized: published.synchronized === true,
     });
   });
 

@@ -819,6 +819,19 @@ function createVersionedLibraryService(options) {
     });
   }
 
+  async function deliverLive(result) {
+    if (!result || result.ok !== true) return result;
+    if (typeof settings.onLiveCommit !== 'function') {
+      return Object.assign({}, result, { synchronized: false });
+    }
+    try {
+      const sync = await settings.onLiveCommit(result);
+      return Object.assign({}, result, { synchronized: Boolean(sync && sync.synchronized) });
+    } catch (err) {
+      return Object.assign({}, result, { synchronized: false });
+    }
+  }
+
   function activateSavedHead(input) {
     return exclusive(async () => {
       const body = input || {};
@@ -852,7 +865,7 @@ function createVersionedLibraryService(options) {
         activated.title = head.title;
         activated.resetPosition = Boolean(activated.cue && activated.cue.action === 'reset');
       }
-      return activated;
+      return deliverLive(activated);
     });
   }
 
@@ -878,7 +891,7 @@ function createVersionedLibraryService(options) {
       const versionId = canonicalId(body.newVersionId) || freshId();
       const createdAt = typeof body.createdAt === 'string' ? body.createdAt : timestamp();
       if (!versionId || !createdAt) return fail('invalid-clock', 'A published version needs an id and a creation time.');
-      return live.publishLiveVersion({
+      const published = await live.publishLiveVersion({
         productionId: record.productionId,
         text: body.text,
         newVersionId: versionId,
@@ -890,6 +903,7 @@ function createVersionedLibraryService(options) {
         resetPosition: body.resetPosition === true,
         failAt: body.failAt || '',
       }).then(interpretLive);
+      return deliverLive(published);
     });
   }
 
@@ -907,12 +921,13 @@ function createVersionedLibraryService(options) {
       }
       const expected = liveExpectations(body, record);
       if (!expected.ok) return expected;
-      return live.restorePreviousLive({
+      const restored = await live.restorePreviousLive({
         expectedGeneration: expected.expectedGeneration,
         expectedVersionId: expected.expectedVersionId,
         expectedContentHash: expected.expectedContentHash,
         failAt: body.failAt || '',
       }).then(interpretLive);
+      return deliverLive(restored);
     });
   }
 

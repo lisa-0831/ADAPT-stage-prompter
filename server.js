@@ -56,14 +56,42 @@ function createPrompterServer(options = {}) {
   const libraryDir = options.libraryDir
     || process.env.SCRIPT_LIBRARY_DIR
     || path.join(path.dirname(scriptFile), 'data', 'library');
+  const journalDir = options.journalDir
+    || path.join(path.dirname(scriptFile), 'data', 'live-journal');
   // Decide the storage mode before opening the library, recovering the
   // journal, adopting script.txt, or creating a network server.
+  // A committed marker is not permission to start. Versioned startup is
+  // returned only when the caller passes a fixture authorization created
+  // for this exact temporary root. Headers, query parameters, and
+  // environment variables cannot create that authorization.
   const storageMode = detectStorageMode({ libraryDir });
   if (storageMode.mode !== 'legacy') {
-    throw new StorageModeError(
-      'unsupported-versioned-storage',
-      'Refusing to start. This library has a committed migration.json, and this server cannot load versioned storage yet. It will not read script.txt as the show, change the library, or listen for clients. Leave the marker in place.',
-    );
+    const runtime = require('./server/versioned-runtime');
+    if (!runtime.fixtureAuthorizationAccepted(options.versionedFixture, {
+      libraryDir,
+      scriptFile,
+      previousFile,
+      journalDir,
+    })) {
+      throw new StorageModeError(
+        'unsupported-versioned-storage',
+        'Refusing to start. This library has a committed migration.json, and this server cannot load versioned storage yet. It will not read script.txt as the show, change the library, or listen for clients. Leave the marker in place.',
+      );
+    }
+    return runtime.bootAuthorizedVersionedServer({
+      scriptFile,
+      previousFile,
+      libraryDir,
+      journalDir,
+      staffToken: options.staffToken,
+      imageMaxBytes: options.imageMaxBytes,
+      staticRoot: __dirname,
+      versionedFixture: options.versionedFixture,
+      now: options.now,
+      createId: options.createId,
+      failSynchronization: options.failSynchronization,
+      deferSynchronization: options.deferSynchronization === true,
+    });
   }
   const staffToken = options.staffToken !== undefined
     ? options.staffToken
@@ -74,8 +102,6 @@ function createPrompterServer(options = {}) {
     : (Number.isInteger(configuredLimit) && configuredLimit > 0 ? configuredLimit : 10 * 1024 * 1024);
   const library = createScriptLibrary({ dir: libraryDir, maxImageBytes: imageMaxBytes });
   const previousMetaFile = `${previousFile}.meta.json`;
-  const journalDir = options.journalDir
-    || path.join(path.dirname(scriptFile), 'data', 'live-journal');
   let libraryReady = false;
   const livePaths = {
     scriptFile,
