@@ -165,14 +165,46 @@
     <form id="library-add">
       <label for="library-new-title">Title</label>
       <input id="library-new-title" name="title" maxlength="120" autocomplete="off" autocapitalize="off" required>
-      <p class="library-note">Adding a script creates a new saved copy. It does not replace a script already in the list.</p>
+      <p class="library-note">This saves a copy of the script that is on stage now. It does not replace a script already in the list.</p>
       <div class="ctrl-row">
         <button type="submit" class="btn primary" id="library-save-live">Save current live script</button>
       </div>
-      <label for="library-file">Import a plain-text script</label>
-      <input id="library-file" type="file" accept=".txt,text/plain">
     </form>
-    <p id="library-empty" hidden>No saved scripts yet. Save the current live script, or import a plain-text file.</p>
+    <div class="ctrl-row">
+      <button type="button" class="btn" id="library-create-open">Create Production</button>
+    </div>
+    <form id="library-create" hidden aria-labelledby="library-create-heading">
+      <h3 id="library-create-heading">Create Production</h3>
+      <p class="library-note" id="library-create-note">Choosing files only prepares this form. Nothing is saved until you choose Create Production, and the live show does not change.</p>
+      <p id="library-create-status" role="status" aria-live="polite" data-tone="status"></p>
+      <label for="library-create-name">Production title</label>
+      <input id="library-create-name" maxlength="120" autocomplete="off" autocapitalize="off">
+      <label for="library-create-script">Script file (.txt)</label>
+      <input id="library-create-script" type="file" accept=".txt,text/plain">
+      <div id="library-create-script-picked" class="library-picked" hidden>
+        <p id="library-create-script-name"></p>
+        <button type="button" class="btn" id="library-create-script-clear">Remove script</button>
+      </div>
+      <label for="library-create-card">Title card (optional)</label>
+      <input id="library-create-card" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp">
+      <p class="library-note" id="library-create-card-hint">A title card is stored with this production. It is not assigned to a scene until you choose it in Edit.</p>
+      <div id="library-create-card-picked" class="library-picked" hidden>
+        <img id="library-create-card-preview" alt="">
+        <p id="library-create-card-name"></p>
+        <button type="button" class="btn" id="library-create-card-clear">Remove title card</button>
+      </div>
+      <label for="library-create-scenes">Additional scene images (optional)</label>
+      <input id="library-create-scenes" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" multiple>
+      <div id="library-create-scene-list"></div>
+      <p id="library-create-review" class="library-note"></p>
+      <div class="ctrl-row">
+        <button type="submit" class="btn primary" id="library-create-submit">Create Production</button>
+        <button type="button" class="btn" id="library-create-retry" hidden>Retry failed images</button>
+        <button type="button" class="btn" id="library-create-edit" hidden>Open in Editor</button>
+        <button type="button" class="btn" id="library-create-cancel">Cancel</button>
+      </div>
+    </form>
+    <p id="library-empty" hidden>No saved scripts yet. Save the current live script, or create a production.</p>
     <div id="library-list" aria-live="polite"></div>
     <div id="library-preview" hidden>
       <button type="button" class="btn" id="library-preview-back">Back to library</button>
