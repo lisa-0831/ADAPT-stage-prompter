@@ -57,6 +57,17 @@ function formElement() {
   el.append = function (...nodes) { this.children.push(...nodes); };
   el.replaceChildren = function (...nodes) { this.children = nodes; };
   el.focus = function () { this.focused = true; };
+  el.querySelector = function () {
+    let found = null;
+    (function visit(node) {
+      (node.children || []).forEach((child) => {
+        if (found) return;
+        if (child.type === 'text') found = child;
+        else visit(child);
+      });
+    }(el));
+    return found;
+  };
   return el;
 }
 
@@ -81,17 +92,31 @@ function capture(url, options) {
     method: (options && options.method) || 'GET',
     token: read('X-Staff-Token'),
     assetName: read('X-Asset-Name'),
+    creationId: read('X-Creation-Request-Id'),
+    assetId: read('X-Asset-Id'),
     json,
     body: options ? options.body : undefined,
   };
 }
 
-function file(name, text, type) {
+function file(name, text, type, lastModified) {
   return {
     name,
     type: type || 'text/plain',
     size: typeof text === 'string' ? text.length : 8,
+    lastModified: lastModified || 1,
     text: async () => text,
+  };
+}
+
+function idCrypto(ids) {
+  let index = 0;
+  return {
+    randomUUID() {
+      const id = ids[index] || ids[ids.length - 1];
+      index += 1;
+      return id;
+    },
   };
 }
 
@@ -118,13 +143,14 @@ function harness(onFetch, extras) {
     fetch(url, options) {
       const call = capture(url, options);
       calls.push(call);
-      if (onFetch) return onFetch(call);
-      return jsonResponse(200, { ok: true, scripts: [], liveId: LIVE });
+      const result = onFetch ? onFetch(call) : jsonResponse(200, { ok: true, scripts: [], liveId: LIVE });
+      return Promise.resolve(result);
     },
     liveShow: live,
     ScriptEditor,
     ScriptLibrary,
     ScriptFormat,
+    ...(Object.prototype.hasOwnProperty.call(settings, 'crypto') ? { crypto: settings.crypto } : {}),
     sessionStorage: settings.storage || memoryStorage(settings.token ? { 'prompter-staff-token': settings.token } : {}),
     objectUrls: {
       createObjectURL(blob) { return `blob:${blob.name}`; },
@@ -539,4 +565,284 @@ test('saving the current live script still saves that script and does not use th
   assert.equal(post.json.text, '# Scene\nHello from stage\n');
   assert.equal(ids['library-create'].hidden, true);
   assert.match(ids['library-status'].textContent, /Stage copy/);
+});
+
+test('saving the current live script reports an existing match instead of a new copy', async () => {
+  const existing = {
+    id: LIVE,
+    title: 'Stage copy',
+    revision: 'abc',
+    live: true,
+  };
+  const { ids } = harness((call) => {
+    if (call.url === '/script') return jsonResponse(200, '# Scene\nHello from stage\n');
+    if (call.method === 'POST' && call.url === '/api/library') {
+      return jsonResponse(200, {
+        ok: true,
+        unchanged: true,
+        tracked: true,
+        activated: false,
+        script: existing,
+        liveId: LIVE,
+      });
+    }
+    if (call.method === 'GET' && call.url === '/api/library') {
+      return jsonResponse(200, { ok: true, liveId: LIVE, scripts: [existing] });
+    }
+    return jsonResponse(200, { ok: true, liveId: LIVE, scripts: [] });
+  });
+  ids['library-new-title'].value = 'Stage copy';
+  await listen(ids['library-add'], 'submit')({ preventDefault() {} });
+  assert.match(ids['library-status'].textContent, /already matches the live show/);
+  assert.match(ids['library-status'].textContent, /second copy was not created/);
+  assert.match(ids['library-status'].textContent, /live show was not changed/);
+});
+
+const CREATE_A = '11111111-1111-4111-8111-111111111111';
+const CREATE_B = '22222222-2222-4222-8222-222222222222';
+const ASSET_A = '33333333-3333-4333-8333-333333333333';
+const ASSET_B = '44444444-4444-4444-8444-444444444444';
+const ASSET_C = '55555555-5555-4555-8555-555555555555';
+const ASSET_D = '66666666-6666-4666-8666-666666666666';
+
+function settle() {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
+function formWith(root, type) {
+  let found = null;
+  walk(root, (el) => {
+    if (!found && el.listeners && el.listeners.some((item) => item.type === type)) found = el;
+  });
+  return found;
+}
+
+test('create production reuses one request id until the content or the form changes', async () => {
+  let created = null;
+  const { ids, calls } = harness((call) => {
+    if (call.method === 'POST' && call.url === '/api/library') {
+      if (!created && call.json.title === 'Hamlet') return jsonResponse(500, { ok: false, error: 'lost' });
+      created = createdScript(call);
+      return jsonResponse(201, { ok: true, script: created, liveId: LIVE });
+    }
+    if (call.method === 'GET' && call.url === '/api/library') return jsonResponse(200, libraryList(created));
+    return jsonResponse(200, { ok: true, liveId: LIVE, scripts: [] });
+  }, { crypto: idCrypto([CREATE_A, CREATE_B, ASSET_A]) });
+  openForm(ids);
+  ids['library-create-name'].value = 'Hamlet';
+  await choose(ids, 'library-create-script', [file('hamlet.txt', '# Scene\nHello\n')]);
+  await submit(ids);
+  await submit(ids);
+  const firstTwo = postsTo(calls, '/api/library');
+  assert.equal(firstTwo.length, 2);
+  assert.equal(firstTwo[0].creationId, CREATE_A);
+  assert.equal(firstTwo[1].creationId, CREATE_A);
+  assert.equal(firstTwo[0].json.trackIfCurrent, false);
+  assert.notEqual(firstTwo[0].creationId, NEW_ID);
+
+  ids['library-create-name'].value = 'Macbeth';
+  await submit(ids);
+  const createdPosts = postsTo(calls, '/api/library');
+  assert.equal(createdPosts.length, 3);
+  assert.equal(createdPosts[2].creationId, CREATE_B);
+  assert.equal(createdPosts[2].json.title, 'Macbeth');
+  assert.match(ids['library-create-status'].textContent, /not the live show/);
+  await submit(ids);
+  assert.equal(postsTo(calls, '/api/library').length, 3);
+
+  listen(ids['library-create-cancel'], 'click')();
+  openForm(ids);
+  ids['library-create-name'].value = 'Hamlet';
+  await choose(ids, 'library-create-script', [file('hamlet.txt', '# Scene\nHello\n')]);
+  await submit(ids);
+  const again = postsTo(calls, '/api/library').at(-1);
+  assert.equal(again.creationId, ASSET_A);
+  assert.notEqual(again.creationId, CREATE_A);
+});
+
+test('a browser without request ids does not repeat a lost create', async () => {
+  const { ids, calls } = harness((call) => {
+    if (call.method === 'POST' && call.url === '/api/library') {
+      return jsonResponse(500, { ok: false, error: 'lost' });
+    }
+    return jsonResponse(200, { ok: true, liveId: LIVE, scripts: [] });
+  }, { crypto: null });
+  openForm(ids);
+  ids['library-create-name'].value = 'Hamlet';
+  await choose(ids, 'library-create-script', [file('hamlet.txt', '# Scene\nHello\n')]);
+  await submit(ids);
+  await submit(ids);
+  assert.equal(postsTo(calls, '/api/library').length, 1);
+  assert.equal(postsTo(calls, '/api/library')[0].creationId, null);
+  assert.match(ids['library-create-status'].textContent, /stable creation id/);
+});
+
+test('image retries keep their asset ids and a replaced file gets a new one', async () => {
+  let created = null;
+  let failCard = true;
+  const { ids, calls, revoked } = harness((call) => {
+    if (call.method === 'POST' && call.url === '/api/library') {
+      created = createdScript(call);
+      return jsonResponse(201, { ok: true, script: created, liveId: LIVE });
+    }
+    if (call.method === 'POST' && call.url === `/api/library/${NEW_ID}/assets`) {
+      if (decodeURIComponent(call.assetName) === 'card.png' && failCard) {
+        failCard = false;
+        return jsonResponse(400, { ok: false, error: 'not stored' });
+      }
+      return jsonResponse(201, { ok: true, asset: { id: call.assetId, name: decodeURIComponent(call.assetName) } });
+    }
+    if (call.method === 'GET' && call.url === '/api/library') return jsonResponse(200, libraryList(created));
+    return jsonResponse(200, { ok: true });
+  }, { crypto: idCrypto([ASSET_A, ASSET_B, ASSET_C, CREATE_A, ASSET_D]) });
+  openForm(ids);
+  ids['library-create-name'].value = 'Hamlet';
+  await choose(ids, 'library-create-script', [file('hamlet.txt', '# Scene\nHello\n')]);
+  await choose(ids, 'library-create-card', [file('card.png', '', 'image/png')]);
+  await choose(ids, 'library-create-scenes', [
+    file('same.png', '', 'image/png', 10),
+    file('same.png', '', 'image/png', 20),
+  ]);
+  await submit(ids);
+  const uploads = calls.filter((call) => call.url.endsWith('/assets'));
+  assert.deepEqual(uploads.map((call) => call.assetId), [ASSET_A, ASSET_B, ASSET_C]);
+  assert.deepEqual(uploads.map((call) => decodeURIComponent(call.assetName)), ['card.png', 'same.png', 'same.png']);
+  assert.equal(postsTo(calls, '/api/library').length, 1);
+  assert.equal(postsTo(calls, '/api/library')[0].creationId, CREATE_A);
+  assert.match(uploads[0].url, new RegExp(`/api/library/${NEW_ID}/assets`));
+
+  await choose(ids, 'library-create-card', [file('card.png', '', 'image/png', 99)]);
+  assert.deepEqual(revoked, ['blob:card.png']);
+  await listen(ids['library-create-retry'], 'click')();
+  const assets = calls.filter((call) => call.url.endsWith('/assets'));
+  assert.equal(postsTo(calls, '/api/library').length, 1);
+  assert.equal(assets.at(-1).assetId, ASSET_D);
+  assert.notEqual(assets.at(-1).assetId, ASSET_A);
+  assert.equal(assets.filter((call) => call.assetId === ASSET_B).length, 1);
+});
+
+test('manage images retries the same file and gives a new id to another file', async () => {
+  const script = { id: NEW_ID, title: 'Hamlet', revision: 'rev-1', updatedAt: '2026-01-02T15:04:00.000Z' };
+  let failOnce = true;
+  const { library, ids, calls } = harness((call) => {
+    if (call.url === '/api/library/access') return jsonResponse(200, { required: false });
+    if (call.url === '/api/library') return jsonResponse(200, libraryList(script));
+    if (call.url === `/api/library/${NEW_ID}/assets` && call.method === 'GET') {
+      return jsonResponse(200, { ok: true, assets: [] });
+    }
+    if (call.url === `/api/library/${NEW_ID}/assets` && call.method === 'POST') {
+      if (failOnce) {
+        failOnce = false;
+        return jsonResponse(400, { ok: false, error: 'not stored' });
+      }
+      return jsonResponse(201, { ok: true, asset: { id: call.assetId, name: 'card.png' } });
+    }
+    return jsonResponse(200, { ok: true });
+  }, {
+    crypto: idCrypto([ASSET_A, ASSET_B, ASSET_C]),
+    storage: memoryStorage({ 'prompter-staff-token': 'stage-staff' }),
+  });
+  await library.open();
+  listen(buttonLabeled(ids['library-list'], 'Manage Images'), 'click')();
+  await Promise.resolve();
+  ids['library-image-file'].files = [file('card.png', '', 'image/png', 5)];
+  listen(ids['library-image-file'], 'change')();
+  await settle();
+  ids['library-image-file'].files = [file('card.png', '', 'image/png', 5)];
+  listen(ids['library-image-file'], 'change')();
+  await settle();
+  ids['library-image-file'].files = [file('card.png', '', 'image/png', 6)];
+  listen(ids['library-image-file'], 'change')();
+  await settle();
+  const uploads = calls.filter((call) => call.method === 'POST' && call.url.endsWith('/assets'));
+  assert.deepEqual(uploads.map((call) => call.assetId), [ASSET_A, ASSET_A, ASSET_B]);
+  assert.equal(uploads.every((call) => call.token === 'stage-staff'), true);
+  assert.equal(uploads.every((call) => call.assetName === 'card.png'), true);
+  assert.equal(postsTo(calls, '/api/library').length, 0);
+});
+
+test('save current live script explains a different saved head without changing it', async () => {
+  const { ids, calls } = harness((call) => {
+    if (call.url === '/script') return jsonResponse(200, '# Scene\nHello from stage\n');
+    if (call.method === 'POST' && call.url === '/api/library') {
+      return jsonResponse(409, {
+        ok: false,
+        code: 'saved-head-differs',
+        error: 'short',
+      });
+    }
+    return jsonResponse(200, { ok: true, liveId: LIVE, scripts: [] });
+  });
+  ids['library-new-title'].value = 'Stage copy';
+  await listen(ids['library-add'], 'submit')({ preventDefault() {} });
+  assert.equal(postsTo(calls, '/api/library').length, 1);
+  assert.match(ids['library-status'].textContent, /saved copy and the live text are both still there/);
+  assert.match(ids['library-status'].textContent, /neither copy was changed/);
+  assert.equal(calls.some((call) => call.url.endsWith('/live')), false);
+});
+
+test('a partial title save refreshes the library title and names the failed script field', async () => {
+  const script = { id: NEW_ID, title: 'Old title', revision: 'rev-old', updatedAt: '2026-01-02T15:04:00.000Z' };
+  let renamed = false;
+  const { library, ids, calls } = harness((call) => {
+    if (call.url === '/api/library/access') return jsonResponse(200, { required: false });
+    if (call.method === 'PUT' && call.url === `/api/library/${NEW_ID}`) {
+      renamed = true;
+      return jsonResponse(409, {
+        ok: false,
+        partial: true,
+        code: 'partial',
+        saved: { title: true, text: false },
+        conflict: { field: 'text', code: 'conflict', error: 'The script text is newer.' },
+        script: { id: NEW_ID, title: 'Updated title', revision: 'rev-old', generation: 4 },
+      });
+    }
+    if (call.url === '/api/library') {
+      return jsonResponse(200, libraryList(renamed
+        ? { id: NEW_ID, title: 'Updated title', revision: 'rev-old' }
+        : script));
+    }
+    return jsonResponse(200, { ok: true });
+  });
+  await library.open();
+  listen(buttonLabeled(ids['library-list'], 'Rename'), 'click')();
+  const form = formWith(ids['library-list'], 'submit');
+  form.querySelector().value = 'Updated title';
+  listen(form, 'submit')({ preventDefault() {} });
+  await settle();
+  assert.equal(calls.filter((call) => call.method === 'PUT').length, 1);
+  assert.equal(buttonLabeled(ids['library-list'], 'Updated title').textContent, 'Updated title');
+  assert.match(ids['library-status'].textContent, /title was saved/);
+  assert.match(ids['library-status'].textContent, /script text was not saved/);
+  assert.match(ids['library-status'].textContent, /not rolled back/);
+  assert.match(ids['library-status'].textContent, /Saved generation 4/);
+  assert.match(ids['library-status'].textContent, /script text is newer/);
+});
+
+test('activation that is not ready explains image assignment and does not review another version', async () => {
+  const script = { id: NEW_ID, title: 'Imported', revision: 'rev-old', updatedAt: '2026-01-02T15:04:00.000Z' };
+  const { library, ids, calls } = harness((call) => {
+    if (call.url === '/api/library/access') return jsonResponse(200, { required: false });
+    if (call.url === `/api/library/${NEW_ID}/live`) {
+      return jsonResponse(409, {
+        ok: false,
+        code: 'activation-not-ready',
+        error: 'That version is not ready to go live.',
+        sharedLegacyImages: true,
+      });
+    }
+    if (call.url === '/api/library') return jsonResponse(200, libraryList(script));
+    return jsonResponse(200, { ok: true });
+  });
+  await library.open();
+  listen(buttonLabeled(ids['library-list'], 'Set as Live'), 'click')();
+  listen(ids['library-confirm-yes'], 'click')();
+  await settle();
+  assert.equal(calls.filter((call) => call.url.endsWith('/live')).length, 1);
+  assert.match(ids['library-confirm-status'].textContent, /cannot become live until its image references are resolved/);
+  assert.match(ids['library-confirm-status'].textContent, /assign those images to the scene lines/);
+  assert.match(ids['library-confirm-status'].textContent, /does not assign it to a scene/);
+  assert.match(ids['library-confirm-status'].textContent, /different version was not selected/);
+  assert.equal(ids['library-confirm-yes'].textContent, 'Set as Live');
+  assert.doesNotMatch(ids['library-confirm-status'].textContent, /saved copy changed/);
 });

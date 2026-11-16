@@ -42,7 +42,7 @@ const HTTP_ADAPTER_CONTRACT = Object.freeze({
   staffToken: 'Library routes keep the staff token. GET /api/live/assets stays public and may return bytes only from readLiveAsset.',
   routes: Object.freeze({
     'GET /api/library': 'listProductions. live comes from live-state.json. Do not use index.json liveId. 200.',
-    'POST /api/library': 'createProduction, then the existing separate image uploads. 201. An upload failure leaves the production in place.',
+    'POST /api/library': 'createProduction when trackIfCurrent is not true, then the existing separate image uploads. trackIfCurrent true returns the live production when its saved head is that live script. It does not create a duplicate or activate anything. 201 for a new production. An upload failure leaves the production in place.',
     'GET /api/library/:id': 'readProduction. 404 when missing. The saved-head content hash is the legacy revision.',
     'PUT /api/library/:id': 'Split a title change and a text change. Rename uses metadata generation. Save uses the saved-head version id. If one succeeds and the other conflicts, return 409 partial with the field that was saved. Do not drop either field.',
     'GET /api/library/:id/assets': 'listAssets. Staff only. 200.',
@@ -173,6 +173,7 @@ function refusedService(result) {
     readProductionDetail: method,
     updateProduction: method,
     readLiveShow: method,
+    resolveTrackCurrent: method,
     activateSavedHead: method,
     publishCurrent: method,
     restoreCurrent: method,
@@ -787,6 +788,37 @@ function createVersionedLibraryService(options) {
     return exclusive(() => readLiveRecord());
   }
 
+  function resolveTrackCurrent(input) {
+    return exclusive(() => {
+      const text = input && input.text;
+      if (typeof text !== 'string') return fail('invalid-script', 'The script could not be read.');
+      const record = readLiveRecord();
+      if (!record.ok) return record;
+      if (!record.present) {
+        return fail('not-installed', 'There is no live show to save. Nothing was created, and the live show was not changed.');
+      }
+      const digest = crypto.createHash('sha256').update(text, 'utf8').digest('hex');
+      if (digest !== record.contentHash) {
+        return fail('live-mismatch', 'That script is not the current live show. Nothing was created, and the live show was not changed.');
+      }
+      const head = snapshot(record.productionId);
+      if (!head.ok) return head;
+      if (head.contentHash !== record.contentHash) {
+        return fail('saved-head-differs', 'The live show is already stored on this production, and its saved copy is different. A second production was not created, and the live show was not changed.', {
+          productionId: record.productionId,
+          versionId: record.versionId,
+          headVersionId: head.headVersionId,
+        });
+      }
+      return {
+        ok: true,
+        tracked: true,
+        activated: false,
+        production: head,
+      };
+    });
+  }
+
   function activateSavedHead(input) {
     return exclusive(async () => {
       const body = input || {};
@@ -901,6 +933,7 @@ function createVersionedLibraryService(options) {
     readProductionDetail,
     updateProduction,
     readLiveShow,
+    resolveTrackCurrent,
     activateSavedHead,
     publishCurrent,
     restoreCurrent,

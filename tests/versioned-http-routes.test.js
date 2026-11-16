@@ -234,11 +234,11 @@ test('create, read, rename, and save keep the saved head distinct from live', as
       'Content-Type': 'application/json',
       'X-Creation-Request-Id': requestId,
     },
-    body: JSON.stringify({ title: 'Original', text: TEXT, trackIfCurrent: true }),
+    body: JSON.stringify({ title: 'Original', text: TEXT, trackIfCurrent: false }),
   });
   assert.equal(created.status, 201);
   assert.equal(created.body.activated, false);
-  assert.equal(created.body.trackIfCurrent, 'ignored');
+  assert.equal(created.body.trackIfCurrent, 'not-requested');
   assert.equal(created.body.liveId, null);
   const productionId = created.body.script.id;
   const versionId = created.body.script.versionId;
@@ -514,6 +514,7 @@ test('set live, publish, and restore use live state and report partial activatio
   assert.equal(activated.body.versionId, second.body.script.versionId);
   assert.equal(activated.body.resetPosition, true);
   assert.equal(activated.body.cue.action, 'reset');
+  assert.equal(activated.body.synchronized, false);
   assert.equal(liveState(fixture).versionId, second.body.script.versionId);
   assert.equal(fs.readFileSync(fixture.scriptFile, 'utf8'), TEXT_B);
 
@@ -532,6 +533,7 @@ test('set live, publish, and restore use live state and report partial activatio
   assert.equal(published.body.revision, sha256(TEXT_C));
   assert.equal(published.body.libraryUpdated, true);
   assert.equal(published.body.resetPosition, true);
+  assert.equal(published.body.synchronized, false);
   assert.equal(metadataOf(fixture, secondId).headVersionId, published.body.versionId);
   assert.equal(liveState(fixture).versionId, published.body.versionId);
   assert.equal(sha256(fs.readFileSync(versionFile(fixture, secondId, second.body.script.versionId, 'script.txt'))), sha256(TEXT_B));
@@ -624,6 +626,59 @@ test('a committed journal is recovered and a pending journal is not overwritten'
   assert.equal(fs.readFileSync(pendingPlan).equals(pendingBytes), true);
   assert.equal(liveState(fixture).versionId, second.body.script.versionId);
   assert.equal(planBytes.length > 0, true);
+});
+
+test('save current live script returns the existing production and does not activate', async (t) => {
+  const fixture = await start(t);
+  const missing = await send(fixture, 'POST', '/api/library', {
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: 'Stage copy', text: TEXT, trackIfCurrent: true }),
+  });
+  assert.equal(missing.status, 503);
+  assert.equal(missing.body.code, 'not-installed');
+  assert.equal(fs.existsSync(path.join(fixture.libraryDir, 'productions')), false);
+
+  const created = await send(fixture, 'POST', '/api/library', {
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: 'Original', text: TEXT, trackIfCurrent: false }),
+  });
+  assert.equal(created.status, 201);
+  installLive(fixture, created.body.script.id, created.body.script.versionId, 1);
+  const liveBytes = fs.readFileSync(path.join(fixture.libraryDir, 'live-state.json'));
+  const tracked = await send(fixture, 'POST', '/api/library', {
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: 'Stage copy', text: TEXT, trackIfCurrent: true }),
+  });
+  assert.equal(tracked.status, 200);
+  assert.equal(tracked.body.tracked, true);
+  assert.equal(tracked.body.activated, false);
+  assert.equal(tracked.body.unchanged, true);
+  assert.equal(tracked.body.script.id, created.body.script.id);
+  assert.equal(fs.readdirSync(path.join(fixture.libraryDir, 'productions')).length, 1);
+  assert.equal(fs.readFileSync(path.join(fixture.libraryDir, 'live-state.json')).equals(liveBytes), true);
+
+  const saved = await send(fixture, 'PUT', `/api/library/${created.body.script.id}`, {
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: TEXT_B, expectedRevision: created.body.script.revision }),
+  });
+  assert.equal(saved.status, 200);
+  const drifted = await send(fixture, 'POST', '/api/library', {
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: 'Stage copy', text: TEXT, trackIfCurrent: true }),
+  });
+  assert.equal(drifted.status, 409);
+  assert.equal(drifted.body.code, 'saved-head-differs');
+  assert.equal(fs.readdirSync(path.join(fixture.libraryDir, 'productions')).length, 1);
+  assert.equal(liveState(fixture).versionId, created.body.script.versionId);
+  assert.equal(metadataOf(fixture, created.body.script.id).headVersionId, saved.body.script.versionId);
+
+  const mismatch = await send(fixture, 'POST', '/api/library', {
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: 'Other', text: TEXT_C, trackIfCurrent: true }),
+  });
+  assert.equal(mismatch.status, 409);
+  assert.equal(mismatch.body.code, 'live-mismatch');
+  assert.equal(fs.readdirSync(path.join(fixture.libraryDir, 'productions')).length, 1);
 });
 
 test('staff authorization, startup refusal, and repository bytes stay in place', async (t) => {

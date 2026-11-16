@@ -680,21 +680,44 @@
   }
 
   function publicationStatus(httpOk, body) {
+    if (
+      body
+      && body.code === 'saved-not-live'
+      && body.saved === true
+      && body.activated === false
+      && body.rolledBack !== true
+    ) {
+      return {
+        success: false,
+        saved: true,
+        activated: false,
+        rolledBack: false,
+        versionId: typeof body.versionId === 'string' && body.versionId ? body.versionId : null,
+        revision: null,
+        message: 'The script was saved to the library. It did not go live. The audience is still seeing the previous live version. Resolve the problem, then set this saved version live. This draft was kept. A second version was not created.',
+      };
+    }
     if (!httpOk || !body || body.ok !== true) {
       return {
         success: false,
+        saved: false,
         message: 'The script was not published. The live show is unchanged.',
       };
     }
     const revision = typeof body.revision === 'string' && body.revision !== ''
       ? body.revision
       : null;
+    const synchronized = body.synchronized !== false;
     return {
       success: true,
+      saved: true,
+      synchronized,
       revision,
       message: body.unchanged
         ? 'The server kept the script that is already live. Connected screens were not given a new script.'
-        : 'Published. Connected screens now have this script.',
+        : (synchronized
+          ? 'Published. Connected screens now have this script.'
+          : 'The script was saved and recorded as live. Connected screens have not been updated.'),
     };
   }
 
@@ -734,12 +757,24 @@
   }
 
   function publishOutcome(status) {
+    if (status && status.saved === true && status.success !== true) {
+      return {
+        ok: false,
+        closeConfirm: false,
+        closeEditor: false,
+        clearDraft: false,
+        saved: true,
+        versionId: status.versionId || null,
+        message: status.message,
+      };
+    }
     if (!status || status.success !== true) {
       return {
         ok: false,
         closeConfirm: false,
         closeEditor: false,
         clearDraft: false,
+        saved: false,
         message: status && typeof status.message === 'string' && status.message
           ? status.message
           : 'The script was not published. The live show is unchanged.',
@@ -753,8 +788,11 @@
       closeConfirm: true,
       closeEditor: true,
       clearDraft: true,
+      saved: true,
       revision,
-      message: 'Script published successfully.',
+      message: status.synchronized === false
+        ? 'The script was saved and recorded as live. Connected screens have not been updated.'
+        : 'Script published successfully.',
     };
   }
 

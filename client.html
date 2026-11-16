@@ -50,7 +50,7 @@
       <button class="btn" id="btn-case" type="button" aria-pressed="false" title="Switch to sentence case">AA</button>
       <button class="btn" id="btn-edit-script" type="button" aria-haspopup="dialog" aria-controls="script-editor" title="Edit the current script one scene at a time. The show does not change until you publish.">Edit Script</button>
       <button class="btn" id="btn-script-library" type="button" aria-haspopup="dialog" aria-controls="script-library" title="Save, preview, and choose from more than one script. The live show changes only when you set a script live.">Script Library</button>
-      <button class="btn" id="btn-upload-toggle" type="button" title="Paste a whole script and send it live immediately.">📄 Replace Script</button>
+      <button class="btn" id="btn-upload-toggle" type="button" title="Replace Script publishes this text. On a versioned server it saves a new version of the live production and then activates that version. It is not a temporary live-only change.">📄 Replace Script</button>
       <button class="btn danger" id="btn-exit">Exit</button>
     </div>
     <p id="controller-notice" role="status" aria-live="polite" hidden></p>
@@ -62,7 +62,10 @@
         <strong>[NAME]</strong> on its own line = character name shown in sidebar &nbsp;·&nbsp;
         <strong>{…}</strong> = stage direction (italic brown) &nbsp;·&nbsp;
         <strong>##…##</strong> = lyrics (dark green)&nbsp;·&nbsp;
-        <strong>&lt;…&gt;</strong> = sing-along (pink)
+        <strong>&lt;…&gt;</strong> = sing-along (pink)<br>
+        Replace Script keeps this text as the published show. It is not a temporary live-only paste.
+        A versioned server saves a new version of the live production, activates that version, and resets the cue only when it says the cue was reset.
+        Connected screens change only when the server says they were synchronized.
       </p>
       <textarea id="script-textarea" placeholder="# Scene 1&#10;[DOROTHY]&#10;Line of dialogue...&#10;---&#10;# Scene 2&#10;..."></textarea>
       <div class="ctrl-row">
@@ -98,7 +101,7 @@
   <p id="script-editor-help" class="editor-help">
     Choose a scene and edit the lines. Save a draft to keep the work in this browser.
     The live show does not change until you publish.
-    Replace Script is different: it pastes a whole script and goes live immediately.
+    Replace Script is separate: it publishes the pasted text. On a versioned server that is a new version of the live production, then an activation. It is not a temporary live-only change.
   </p>
   <p id="editor-status" role="status" aria-live="polite"></p>
   <p id="editor-dirty" role="status" aria-live="polite"></p>

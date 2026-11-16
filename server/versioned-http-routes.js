@@ -12,6 +12,17 @@ const { hashText, isValidScriptId } = require('../script-library');
 // does not construct a version store, production manager, asset manager, or
 // live-operation factory. Those queues are not a substitute for the service
 // queue. It does not fan out socket events or move the in-memory cue.
+// synchronized: false means this process did not load the active script
+// into memory and did not emit the existing script or state messages.
+// M7D3C3B may report synchronization only after the durable Live State
+// transition, loading that verified script into server memory, resetting
+// or preserving the cue for the operation, and emitting the existing
+// WebSocket script and state messages. Sending those socket messages still
+// does not prove that every connected client rendered them. A durable Live commit followed
+// by a synchronization failure is not a storage rollback. X-Version-Id
+// retries keep the same id for the same text. The server stamps createdAt
+// on each request, so a half-written version can still answer
+// version-exists. The client must not mint a replacement id.
 //
 // Staff routes use the same X-Staff-Token comparison as server/http-routes.js.
 // A missing token and a wrong token are both 401. ?role=controller is not
@@ -61,6 +72,8 @@ const STATUS = {
   'wrong-production': 409,
   'saved-not-live': 409,
   'journal-conflict': 409,
+  'live-mismatch': 409,
+  'saved-head-differs': 409,
   'too-large': 413,
   'compatibility-issue': 503,
   'corrupt-journal': 503,
@@ -324,6 +337,20 @@ function registerVersionedHttpRoutes(options) {
 
   app.post('/api/library', requireStaff, async (req, res) => {
     const body = jsonBody(req);
+    if (body.trackIfCurrent === true) {
+      const tracked = await invoke(res, () => service.resolveTrackCurrent({ text: body.text }));
+      if (!tracked) return undefined;
+      if (!tracked.ok) return sendError(res, tracked);
+      return res.status(200).json({
+        ok: true,
+        unchanged: true,
+        activated: false,
+        tracked: true,
+        trackIfCurrent: 'existing',
+        script: toScript(tracked.production),
+        liveId: tracked.production.productionId,
+      });
+    }
     const requestHeader = headerId(req, 'X-Creation-Request-Id');
     if (requestHeader.present && !requestHeader.id) {
       return res.status(400).json({
@@ -562,6 +589,7 @@ function registerVersionedHttpRoutes(options) {
       generation: activated.generation,
       cue: activated.cue || null,
       missingImages: 0,
+      synchronized: false,
     });
   });
 
@@ -600,6 +628,7 @@ function registerVersionedHttpRoutes(options) {
         libraryConflict: false,
         cue: restored.cue || null,
         resetPosition: Boolean(restored.cue && restored.cue.action === 'reset'),
+        synchronized: false,
       });
     }
     if (typeof req.body !== 'string') {
@@ -637,6 +666,7 @@ function registerVersionedHttpRoutes(options) {
       libraryConflict: false,
       cue: published.cue || null,
       resetPosition: Boolean(published.cue && published.cue.action === 'reset'),
+      synchronized: false,
     });
   });
 

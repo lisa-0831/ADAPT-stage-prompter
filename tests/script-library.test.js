@@ -279,6 +279,46 @@ test('set-live confirmation names both scripts and waits for success', () => {
   const success = setLiveOutcome(true, { ok: true, resetPosition: true });
   assert.equal(success.closeConfirm, true);
   assert.match(success.message, /beginning/);
+  const recorded = setLiveOutcome(true, { ok: true, resetPosition: true, synchronized: false });
+  assert.match(recorded.message, /recorded as live/);
+  assert.match(recorded.message, /have not been updated/);
+  assert.equal(recorded.message.includes('beginning'), false);
+  const partial = require('../script-library-model').partialSaveOutcome({
+    partial: true,
+    saved: { title: true, text: false },
+    script: { id: 'red', title: 'Updated', revision: 'abc' },
+  });
+  assert.equal(partial.titleSaved, true);
+  assert.equal(partial.textSaved, false);
+  assert.match(partial.message, /title was saved/);
+  assert.match(partial.message, /script text was not saved/);
+  assert.match(partial.message, /not rolled back/);
+  assert.equal(partial.rolledBack, false);
+  const explained = require('../script-library-model');
+  const staleHead = explained.operationFailureMessage({
+    code: 'conflict',
+    error: 'This saved script changed after you reviewed it. It was not set live.',
+  });
+  const staleLive = explained.operationFailureMessage({ code: 'stale-live', error: 'The live generation changed.' });
+  const blocked = explained.setLiveOutcome(false, {
+    ok: false,
+    code: 'activation-not-ready',
+    error: 'That version is not ready to go live.',
+  });
+  const journal = explained.operationFailureMessage({ code: 'journal-conflict', error: 'pending' });
+  assert.match(staleHead, /was not set live|newer copy/);
+  assert.match(staleLive, /separate from a saved-copy conflict/);
+  assert.equal(staleLive.includes('newer copy'), false);
+  assert.equal(blocked.review, false);
+  assert.match(blocked.message, /assign those images/);
+  assert.match(blocked.message, /does not assign/);
+  assert.match(journal, /Recovery is required/);
+  assert.match(explained.operationFailureMessage({ code: 'invalid-script', error: 'Scene 1 is empty.' }), /Scene 1 is empty/);
+  assert.match(explained.operationFailureMessage({ code: 'legacy-image', error: 'images/Title_Card.jpeg' }), /image reference blocked/);
+  const retry = explained.nextVersionAttempt(null, 'same', { randomUUID: () => 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1' });
+  assert.equal(explained.nextVersionAttempt(retry, 'same', { randomUUID: () => 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' }).versionId, retry.versionId);
+  assert.notEqual(explained.nextVersionAttempt(retry, 'changed', { randomUUID: () => 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' }).versionId, retry.versionId);
+  assert.equal(explained.requestIdentity({}), null);
 });
 
 test('saving a library script does not change the live script or connected clients', async (t) => {

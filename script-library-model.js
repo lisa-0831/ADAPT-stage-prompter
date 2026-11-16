@@ -43,25 +43,86 @@
       : selected;
   }
 
+  const REQUEST_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+  function requestIdentity(cryptoApi) {
+    if (!cryptoApi || typeof cryptoApi.randomUUID !== 'function') return null;
+    let value = '';
+    try { value = cryptoApi.randomUUID(); }
+    catch (err) { return null; }
+    if (typeof value !== 'string' || !REQUEST_ID.test(value.toLowerCase())) return null;
+    return value.toLowerCase();
+  }
+
+  function nextVersionAttempt(previous, text, cryptoApi) {
+    if (
+      previous
+      && previous.text === text
+      && typeof previous.versionId === 'string'
+      && REQUEST_ID.test(previous.versionId)
+    ) {
+      return { text, versionId: previous.versionId };
+    }
+    return { text, versionId: requestIdentity(cryptoApi) };
+  }
+
+  function operationFailureMessage(body) {
+    const code = body && typeof body.code === 'string' ? body.code : '';
+    const detail = body && typeof body.error === 'string' ? body.error : '';
+    if (code === 'conflict') {
+      return detail || 'This saved copy changed after you opened it. Your edits were not saved over that newer copy. The draft was kept, and a newer script was not loaded over it.';
+    }
+    if (code === 'stale-live') {
+      return 'The live show changed after this action was prepared. This is separate from a saved-copy conflict. Nothing was rolled back. Review the current live show before trying again.';
+    }
+    if (code === 'activation-not-ready') {
+      return 'This production cannot become live until its image references are resolved. Open the production in the editor, upload or select production-owned images, assign those images to the scene lines, save the edited script as a new version, and then set that version live. Uploading an image does not assign it to a scene. A different version was not selected.';
+    }
+    if (code === 'journal-conflict' || code === 'compatibility-issue' || code === 'corrupt-journal' || code === 'indeterminate') {
+      return 'The server still has an unfinished live update. Recovery is required before trying again. Saved work was not discarded, and nothing was rolled back.';
+    }
+    if (code === 'invalid-script') {
+      return `The script was not accepted. ${detail || 'It is not valid.'} The live show was not changed.`;
+    }
+    if (code === 'legacy-image' || code === 'invalid-image-reference' || code === 'foreign-asset' || code === 'dangling-reference' || code === 'invalid-image') {
+      return `An image reference blocked this action. ${detail || 'The image is not valid for this production.'} The live show was not changed.`;
+    }
+    if (code === 'saved-head-differs') {
+      return 'The live show is already stored on this production, and the saved copy is a different version. The saved copy and the live text are both still there. A second production was not created, and neither copy was changed.';
+    }
+    if (code === 'version-exists') {
+      return 'That version id was already used and was not overwritten. A second version was not created. The draft was kept.';
+    }
+    return null;
+  }
+
   function setLiveOutcome(httpOk, body) {
     if (!httpOk || !body || body.ok !== true) {
-      const message = body && typeof body.error === 'string' && body.error
-        ? body.error
-        : 'The live script was not changed.';
-      const review = Boolean(body && (body.code === 'conflict' || body.code === 'revision-required'));
+      const code = body && typeof body.code === 'string' ? body.code : '';
+      const review = code === 'conflict' || code === 'revision-required';
+      const specific = code === 'conflict' ? null : operationFailureMessage(body);
+      const message = specific
+        || (body && typeof body.error === 'string' && body.error ? body.error : '')
+        || (code === 'conflict'
+          ? 'This saved copy changed after you reviewed it. It was not set live. A newer script was not loaded over the open draft.'
+          : 'The live script was not changed.');
       return {
         ok: false,
         closeConfirm: false,
-        conflict: Boolean(body && body.code === 'conflict'),
+        conflict: code === 'conflict',
         review,
+        code: code || null,
         message,
       };
     }
     const resetPosition = body.resetPosition === true;
+    const synchronized = body.synchronized !== false;
     let message = body.unchanged
       ? 'That script is already the live script. Connected screens were not given a new script.'
-      : 'This script is now live. Connected screens have it.';
-    if (resetPosition) {
+      : (synchronized
+        ? 'This script is now live. Connected screens have it.'
+        : 'This script is recorded as live. Connected screens have not been updated.');
+    if (resetPosition && synchronized) {
       message += ' The cue is at the beginning.';
     }
     if (Number(body.missingImages) > 0) {
@@ -72,6 +133,46 @@
       closeConfirm: true,
       resetPosition,
       message,
+    };
+  }
+
+  function partialSaveOutcome(body) {
+    if (!body || body.partial !== true || !body.saved || typeof body.saved !== 'object') return null;
+    const titleSaved = body.saved.title === true;
+    const textSaved = body.saved.text === true;
+    const conflict = body.conflict && typeof body.conflict === 'object' ? body.conflict : null;
+    const failedField = conflict && (conflict.field === 'title' || conflict.field === 'text')
+      ? conflict.field
+      : (titleSaved && !textSaved ? 'text' : (!titleSaved && textSaved ? 'title' : null));
+    const reason = conflict && typeof conflict.error === 'string' ? conflict.error.trim() : '';
+    const generation = body.script && Number.isInteger(body.script.generation)
+      ? body.script.generation
+      : null;
+    let message = 'Nothing was saved. The live show was not changed.';
+    if (titleSaved && textSaved) {
+      message = 'The title and script were saved. The live show was not changed.';
+    } else if (titleSaved) {
+      message = 'The title was saved. The script text was not saved.';
+    } else if (textSaved) {
+      message = 'The script text was saved. The title was not saved.';
+    }
+    if ((titleSaved || textSaved) && !(titleSaved && textSaved)) {
+      if (reason) message += ` ${reason}`;
+      message += ' This update was not rolled back. The live show was not changed.';
+    }
+    if (generation != null && (titleSaved || textSaved)) {
+      message += ` Saved generation ${generation}.`;
+    }
+    return {
+      partial: true,
+      titleSaved,
+      textSaved,
+      rolledBack: false,
+      failedField,
+      conflict,
+      generation,
+      message,
+      script: body.script || null,
     };
   }
 
@@ -114,7 +215,11 @@
     liveSwitchConfirmContent,
     reviewedLiveRevision,
     setLiveRequestState,
+    requestIdentity,
+    nextVersionAttempt,
+    operationFailureMessage,
     setLiveOutcome,
+    partialSaveOutcome,
     imageReference,
     parseImageReference,
     liveAssetUrl,

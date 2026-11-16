@@ -304,6 +304,35 @@ test('publication waits for server confirmation and ignores a repeated publish',
   assert.equal(success.success, true);
   assert.equal(success.revision, 'abc');
   assert.match(success.message, /Published/);
+  assert.match(ScriptEditor.publishOutcome(success).message, /Script published successfully/);
+  const unsynced = ScriptEditor.publicationStatus(true, {
+    ok: true,
+    revision: 'abc',
+    synchronized: false,
+  });
+  assert.match(unsynced.message, /have not been updated/);
+  assert.match(ScriptEditor.publishOutcome(unsynced).message, /have not been updated/);
+  const kept = ScriptEditor.publicationStatus(false, {
+    ok: false,
+    code: 'saved-not-live',
+    saved: true,
+    activated: false,
+    rolledBack: false,
+    versionId: 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1',
+  });
+  assert.equal(kept.success, false);
+  assert.equal(kept.saved, true);
+  assert.equal(kept.versionId, 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1');
+  assert.match(kept.message, /saved to the library/);
+  assert.match(kept.message, /did not go live/);
+  assert.match(kept.message, /draft was kept/);
+  const keptOutcome = ScriptEditor.publishOutcome(kept);
+  assert.equal(keptOutcome.clearDraft, false);
+  assert.equal(keptOutcome.closeEditor, false);
+  assert.equal(keptOutcome.versionId, kept.versionId);
+  const legacyFailure = ScriptEditor.publicationStatus(false, { ok: false, error: 'Upload failed' });
+  assert.equal(legacyFailure.saved, false);
+  assert.match(legacyFailure.message, /not published/);
 
   const first = ScriptEditor.stagePublishedScript('old', 'new', '');
   assert.equal(first.changed, true);

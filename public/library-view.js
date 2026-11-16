@@ -32,6 +32,9 @@
     const objectUrls = Object.prototype.hasOwnProperty.call(options, 'objectUrls')
       ? options.objectUrls
       : (typeof globalThis !== 'undefined' ? globalThis.URL : null);
+    const cryptoApi = Object.prototype.hasOwnProperty.call(options, 'crypto')
+      ? options.crypto
+      : (typeof globalThis !== 'undefined' ? globalThis.crypto : null);
 
     let enabled = false;
     let listenersBound = false;
@@ -57,6 +60,16 @@ let createSession = null;
 let createScriptToken = 0;
 let createSceneKey = 0;
 let libraryHighlightId = null;
+let manageAsset = null;
+
+function manageFileSignature(file) {
+  return [
+    file && file.name || '',
+    file && file.size || 0,
+    file && file.lastModified || 0,
+    file && file.type || '',
+  ].join('\0');
+}
 
 function rememberLibraryEntries(scripts, liveId) {
   libraryEntries = Array.isArray(scripts) ? scripts.slice() : [];
@@ -154,8 +167,17 @@ function formatModified(iso) {
 
 function libraryErrorMessage(response, body, fallback) {
   if (response && response.status === 401) return 'The staff access code was not accepted.';
+  const specific = ScriptLibrary && typeof ScriptLibrary.operationFailureMessage === 'function'
+    ? ScriptLibrary.operationFailureMessage(body)
+    : null;
+  if (specific) return specific;
   if (body && typeof body.error === 'string' && body.error) return body.error;
   return fallback;
+}
+
+function newRequestId() {
+  if (!ScriptLibrary || typeof ScriptLibrary.requestIdentity !== 'function') return null;
+  return ScriptLibrary.requestIdentity(cryptoApi);
 }
 
 async function readLibraryJson(response) {
@@ -193,6 +215,7 @@ function hideLibraryImages() {
   ui.images.hidden = true;
   ui.imagesList.replaceChildren();
   libraryImagesScriptId = null;
+  manageAsset = null;
   revokePreviewUrls();
   revealLibraryHome();
 }
@@ -454,6 +477,10 @@ async function createLibraryScript(title, text, trackIfCurrent) {
       setLibraryStatus(libraryErrorMessage(response, body, 'The script was not added. Nothing already saved was replaced.'), 'alert');
       return null;
     }
+    if (body.tracked === true && body.unchanged === true) {
+      await refreshLibrary(`“${body.script.title}” already matches the live show. A second copy was not created. The live show was not changed.`);
+      return body.script;
+    }
     await refreshLibrary(`Saved “${body.script.title}” as a new library script. Scripts already in the library were not replaced.`);
     return body.script;
   } catch (err) {
@@ -494,7 +521,17 @@ function blankCreateSession() {
     created: null,
     results: [],
     submitting: false,
+    creationAttempts: {},
   };
+}
+
+function creationAttempt(session, title, text) {
+  const key = `${String(title)}\n${String(text)}`;
+  if (!session.creationAttempts) session.creationAttempts = {};
+  if (!Object.prototype.hasOwnProperty.call(session.creationAttempts, key)) {
+    session.creationAttempts[key] = { id: newRequestId(), sent: false };
+  }
+  return session.creationAttempts[key];
 }
 
 function objectUrlApi() {
@@ -571,11 +608,17 @@ function createUploadQueue(session) {
       key: 'card',
       name: session.card.name,
       file: session.card.file,
+      assetId: session.card.assetId,
     });
   }
   session.scenes.forEach((scene) => {
     if (uploadSucceeded(session, scene.key)) return;
-    queue.push({ key: scene.key, name: scene.name, file: scene.file });
+    queue.push({
+      key: scene.key,
+      name: scene.name,
+      file: scene.file,
+      assetId: scene.assetId,
+    });
   });
   return queue;
 }
@@ -830,6 +873,7 @@ function onCreateCardChosen() {
     name: file.name || 'Image',
     file,
     url: makeObjectUrl(file),
+    assetId: newRequestId(),
   };
   createSession.results = createSession.results.filter((item) => item.key !== 'card');
   renderCreateForm();
@@ -848,6 +892,7 @@ function onCreateScenesChosen() {
       name: file.name || 'Image',
       file,
       url: makeObjectUrl(file),
+      assetId: newRequestId(),
     });
   });
   renderCreateForm();
@@ -885,9 +930,17 @@ function removeCreateScene(key) {
 }
 
 async function postCreateProduction(title, text) {
+  const attempt = creationAttempt(createSession, title, text);
+  if (attempt.sent && !attempt.id) {
+    setCreateStatus('This browser could not keep a stable creation id, so the production was not submitted again.', 'alert');
+    return { identityBlocked: true };
+  }
+  const headers = { 'Content-Type': 'application/json' };
+  if (attempt.id) headers['X-Creation-Request-Id'] = attempt.id;
+  attempt.sent = true;
   const response = await libraryFetch('/api/library', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({ title, text, trackIfCurrent: false }),
   });
   const body = await readLibraryJson(response);
@@ -905,6 +958,7 @@ async function postCreateProduction(title, text) {
     setCreateStatus(libraryErrorMessage(response, body, 'The production was not created. The live show was not changed.'), 'alert');
     return null;
   }
+  if (createSession) createSession.creationAttempts = {};
   return {
     id: body.script.id,
     title: body.script.title,
@@ -912,13 +966,15 @@ async function postCreateProduction(title, text) {
   };
 }
 
-async function postCreateAsset(scriptId, file) {
+async function postCreateAsset(scriptId, file, assetId) {
+  const headers = {
+    'Content-Type': file.type || 'application/octet-stream',
+    'X-Asset-Name': encodeURIComponent(file.name || 'Image'),
+  };
+  if (assetId) headers['X-Asset-Id'] = assetId;
   const response = await libraryFetch(`/api/library/${scriptId}/assets`, {
     method: 'POST',
-    headers: {
-      'Content-Type': file.type || 'application/octet-stream',
-      'X-Asset-Name': encodeURIComponent(file.name || 'Image'),
-    },
+    headers,
     body: file,
   });
   const body = await readLibraryJson(response);
@@ -935,14 +991,23 @@ async function postCreateAsset(scriptId, file) {
   return { ok: true, status: response.status, name: body.asset.name || file.name || 'Image' };
 }
 
-async function uploadQueuedAssets(session) {
+async function uploadQueuedAssets(session, retry) {
   pruneUploadResults(session);
   const queue = createUploadQueue(session);
   for (let index = 0; index < queue.length; index += 1) {
     const item = queue[index];
+    if (retry && !item.assetId) {
+      rememberUpload(session, {
+        key: item.key,
+        name: item.name,
+        status: 'failed',
+        error: 'This browser could not keep a stable image id, so that image was not uploaded again.',
+      });
+      continue;
+    }
     setCreateStatus(`Uploading ${index + 1} of ${queue.length}: ${item.name}`, 'status');
     try {
-      const outcome = await postCreateAsset(session.created.id, item.file);
+      const outcome = await postCreateAsset(session.created.id, item.file, item.assetId);
       if (outcome.status === 401) {
         rememberUpload(session, {
           key: item.key,
@@ -1018,14 +1083,14 @@ async function runCreateSubmission(retry) {
     if (!createSession.created) {
       setCreateStatus('Creating the production…', 'status');
       const created = await postCreateProduction(ui.createTitle.value, createSession.script.text);
-      if (!created || created.staffRejected) {
+      if (!created || created.staffRejected || created.identityBlocked) {
         staffRejected = Boolean(created && created.staffRejected);
         return;
       }
       createSession.created = created;
       libraryHighlightId = created.id;
     }
-    await uploadQueuedAssets(createSession);
+    await uploadQueuedAssets(createSession, retry);
     const failures = createSession.results.filter((item) => item.status === 'failed');
     const short = failures.length
       ? `Created “${createSession.created.title}”, but ${failures.length} image ${failures.length === 1 ? 'upload' : 'uploads'} failed. The production was kept and is not live.`
@@ -1104,6 +1169,15 @@ async function renameLibraryScript(entry, title) {
       body: JSON.stringify({ title, expectedRevision: entry.revision }),
     });
     const body = await readLibraryJson(response);
+    const partial = ScriptLibrary.partialSaveOutcome(body);
+    if (partial) {
+      if (partial.titleSaved && body.script) {
+        await refreshLibrary(partial.message);
+        return;
+      }
+      setLibraryStatus(partial.message, 'alert');
+      return;
+    }
     if (!response.ok || !body || !body.script) {
       setLibraryStatus(libraryErrorMessage(response, body, 'The title was not changed.'), 'alert');
       return;
@@ -1290,24 +1364,37 @@ async function uploadLibraryImage() {
   ui.imageFile.value = '';
   if (!file || !libraryImagesScriptId) return;
   if (!libraryGuard.tryStart()) return;
+  const signature = manageFileSignature(file);
+  let assetId = null;
+  if (manageAsset && manageAsset.failed && manageAsset.signature === signature && manageAsset.id) {
+    assetId = manageAsset.id;
+  } else {
+    assetId = newRequestId();
+  }
+  manageAsset = { id: assetId, signature, failed: false };
   setImageStatus('Uploading image…', 'status');
   try {
+    const headers = {
+      'Content-Type': file.type || 'application/octet-stream',
+      'X-Asset-Name': encodeURIComponent(file.name || 'Image'),
+    };
+    if (assetId) headers['X-Asset-Id'] = assetId;
     const response = await libraryFetch(`/api/library/${libraryImagesScriptId}/assets`, {
       method: 'POST',
-      headers: {
-        'Content-Type': file.type || 'application/octet-stream',
-        'X-Asset-Name': encodeURIComponent(file.name || 'Image'),
-      },
+      headers,
       body: file,
     });
     const body = await readLibraryJson(response);
     if (!response.ok || !body || !body.asset) {
+      if (manageAsset) manageAsset.failed = true;
       setImageStatus(libraryErrorMessage(response, body, 'That image was not uploaded.'), 'alert');
       return;
     }
+    manageAsset = null;
     setImageStatus(`Uploaded “${body.asset.name}”. The live show was not changed.`, 'status');
     await refreshLibraryImages();
   } catch (err) {
+    if (manageAsset) manageAsset.failed = true;
     setImageStatus('That image was not uploaded. The live show was not changed.', 'alert');
   } finally {
     libraryGuard.finish();
