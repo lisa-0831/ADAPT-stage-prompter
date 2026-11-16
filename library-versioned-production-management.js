@@ -12,8 +12,9 @@ const { createVersionStore } = require('./library-version-store');
 //
 // One factory serializes its own create and rename calls. It does not share
 // that queue with another factory, with M5 saveVersion, or with M7D2 live
-// operations, and it does not lock another process. M7D3C has to call those
-// writers through one coordinator before they share a library.
+// operations, and it does not lock another process. The versioned library
+// service is the coordinator that must be used before those writers share a
+// library. Direct factory calls can still race with the service.
 //
 // The published name is <library>/productions/<uuid>. Files are written in a
 // .creating-* directory this call created, verified, and then renamed. A

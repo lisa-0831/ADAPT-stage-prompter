@@ -21,6 +21,14 @@ const { recoverVersionedInstall } = require('./versioned-live-install');
 // head in place and Live unchanged (saved-not-live). A committed journal
 // finishes that exact activation. Recovery does not consult the saved head,
 // the Library liveId, or script.previous.txt.
+//
+// An optional reviewActivation hook runs after the target bytes check and
+// before a journal is applied. The versioned library service uses it to
+// refuse a new activation of a shared-image or unresolved version. Recovery
+// of a committed journal uses the same hook: a refusal leaves that journal
+// in place and does not select a different version. Callers that omit the
+// hook keep the previous M7D2 behavior. The HTTP adapter must go through the
+// service so it cannot skip the hook.
 
 const LIVE_STAGES = Object.freeze([
   'before-save',
@@ -289,7 +297,7 @@ function sharedImage(scriptFile, legacyPath) {
   return { ok: true };
 }
 
-function verifyTarget(store, libraryReal, scriptFile, productionId, versionId) {
+function verifyTarget(store, libraryReal, scriptFile, productionId, versionId, reviewActivation) {
   const version = store.readVersion(productionId, versionId);
   if (!version.ok) {
     return fail(version.code === 'missing-parent' ? 'missing-version' : (version.code || 'corrupt-version'), version.error || 'The selected version could not be read.');
@@ -303,6 +311,21 @@ function verifyTarget(store, libraryReal, scriptFile, productionId, versionId) {
   const bytes = versionBytes(libraryReal, productionId, versionId);
   if (!bytes.ok) return bytes;
   if (bytes.hash !== version.version.contentHash) return fail('hash-mismatch', 'The selected version does not match its recorded bytes.');
+  if (typeof reviewActivation === 'function') {
+    const review = reviewActivation({
+      productionId,
+      versionId,
+      contentHash: bytes.hash,
+      version: version.version,
+      legacyImages: images.legacyImages,
+      assets: images.assets,
+    });
+    if (!review || review.ok !== true) {
+      return review && review.ok === false
+        ? review
+        : fail('activation-not-ready', 'That version is not ready to go live.');
+    }
+  }
   return { ok: true, version: version.version, hash: bytes.hash, bytes: bytes.bytes };
 }
 
@@ -357,6 +380,7 @@ function createVersionedLiveOperations(options) {
       rootReal: root.rootReal,
       failAt: failAt || defaultFailAt,
       now,
+      reviewActivation: options && options.reviewActivation,
     };
   }
 
@@ -404,7 +428,7 @@ function createVersionedLiveOperations(options) {
 
   function applyLiveJournal(ctx, journalRecord) {
     const plan = journalRecord.plan;
-    const target = verifyTarget(ctx.store, ctx.library.real, ctx.script.lexical, plan.target.productionId, plan.target.versionId);
+    const target = verifyTarget(ctx.store, ctx.library.real, ctx.script.lexical, plan.target.productionId, plan.target.versionId, ctx.reviewActivation);
     if (!target.ok) return target;
     if (!target.bytes.equals(journalRecord.mirrorBytes)) {
       return fail('hash-mismatch', 'The selected version does not match the live journal.');
@@ -597,7 +621,7 @@ function createVersionedLiveOperations(options) {
         }
         versionId = head.production.headVersionId;
       }
-      const target = verifyTarget(ctx.store, ctx.library.real, ctx.script.lexical, body.productionId, versionId);
+      const target = verifyTarget(ctx.store, ctx.library.real, ctx.script.lexical, body.productionId, versionId, ctx.reviewActivation);
       if (!target.ok) return target;
       if (loaded.productionId === body.productionId && loaded.versionId === target.version.id && loaded.contentHash === target.hash) {
         return {
@@ -656,7 +680,7 @@ function createVersionedLiveOperations(options) {
       if (!saved.ok) return saved;
       checkpoint(ctx.failAt, 'after-save');
       const versionId = saved.currentVersionId;
-      const target = verifyTarget(ctx.store, ctx.library.real, ctx.script.lexical, body.productionId, versionId);
+      const target = verifyTarget(ctx.store, ctx.library.real, ctx.script.lexical, body.productionId, versionId, ctx.reviewActivation);
       if (!target.ok) {
         return Object.assign(target, { status: 'saved-not-live', versionId });
       }
@@ -693,7 +717,7 @@ function createVersionedLiveOperations(options) {
       if (!expected.ok) return expected;
       if (!loaded.previousActivation) return fail('no-previous-activation', 'There is no previous live activation to restore.');
       const previous = loaded.previousActivation;
-      const target = verifyTarget(ctx.store, ctx.library.real, ctx.script.lexical, previous.productionId, previous.versionId);
+      const target = verifyTarget(ctx.store, ctx.library.real, ctx.script.lexical, previous.productionId, previous.versionId, ctx.reviewActivation);
       if (!target.ok) return target;
       if (target.hash !== previous.contentHash) return fail('hash-mismatch', 'The previous activation does not match its stored version.');
       const heads = [loaded.productionId, previous.productionId].filter((id, index, list) => list.indexOf(id) === index)

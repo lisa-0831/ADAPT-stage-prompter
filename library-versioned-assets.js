@@ -14,9 +14,9 @@ const { loadVersionedShow } = require('./server/versioned-show');
 //
 // One factory serializes its own uploads, deletions, lists, reads, readiness
 // checks, and live reads. It does not share that queue with another factory,
-// with M5 saveVersion, with M7D2, or with M7D3A. M7D3C has to put Create,
-// Rename, Save, Publish, Upload, and Delete on one coordinator for a library
-// root before any HTTP write is enabled. There is no cross-process lock.
+// with M5 saveVersion, with M7D2, or with M7D3A. The versioned library
+// service is the coordinator for one library root. Direct factory calls can
+// still race with it. There is no cross-process lock.
 //
 // An asset id is immutable. The same id with different bytes is a conflict.
 // A display filename is metadata and may be reused under a new id. The
@@ -27,10 +27,11 @@ const { loadVersionedShow } = require('./server/versioned-show');
 // reference. That old version keeps its unresolved preview: the loader will
 // not treat it as a verified image.
 //
-// assessProduction is the readiness check for a future Set as Live. A legacy
-// images/ line stays unresolved even when the shared file exists. M7D2 still
-// activates that original version when the shared file is present; M7D3C
-// must refuse activation when assessProduction reports activationReady false.
+// assessProduction checks the saved head. A legacy images/ line stays
+// unresolved even when the shared file exists. The versioned library service
+// checks the exact target version and refuses a new activation when that
+// check is not ready. Direct M7D2 calls that omit reviewActivation can still
+// activate a shared-image version.
 // readLiveAsset serves bytes only when the trusted loader's active script
 // contains that exact production and asset id.
 
