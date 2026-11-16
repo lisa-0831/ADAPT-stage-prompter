@@ -90,6 +90,14 @@ function assertInside(rootReal, candidate) {
 }
 
 function createVersionStore(options) {
+  return openVersionStore(options, false);
+}
+
+function openReadOnlyVersionStore(options) {
+  return openVersionStore(options, true);
+}
+
+function openVersionStore(options, readOnly) {
   const settings = options || {};
   if (!settings.root || typeof settings.root !== 'string') {
     throw new VersionStoreError('unsafe-path', 'A version store needs an explicit root directory.');
@@ -100,7 +108,7 @@ function createVersionStore(options) {
   }
   const rootReal = fs.realpathSync(settings.root);
   const repoReal = fs.realpathSync(REPO_ROOT);
-  if (contained(repoReal, rootReal)) {
+  if (!readOnly && contained(repoReal, rootReal)) {
     throw new VersionStoreError('unsafe-path', 'The version store root must be outside this repository.');
   }
   const failAt = settings.failAt || '';
@@ -189,7 +197,10 @@ function createVersionStore(options) {
     const metaPath = path.join(dir, 'version.json');
     const scriptStat = lstatIfExists(scriptPath);
     const metaParsed = readJson(metaPath);
-    if (!scriptStat || scriptStat.isSymbolicLink() || !scriptStat.isFile() || metaParsed.missing || metaParsed.invalid || metaParsed.unsafe) {
+    if ((scriptStat && scriptStat.isSymbolicLink()) || metaParsed.unsafe) {
+      return fail('unsafe-path', 'That version file is a symlink.');
+    }
+    if (!scriptStat || !scriptStat.isFile() || metaParsed.missing || metaParsed.invalid) {
       return fail('corrupt-version', 'That version could not be read.', { dir, id });
     }
     let scriptBytes;
@@ -369,7 +380,8 @@ function createVersionStore(options) {
     const filePath = assertInside(rootReal, path.join(assetsDir, fileName));
     if (!contained(assetsDir, filePath)) return fail('corrupt-asset', 'That image path is not valid.');
     const stat = lstatIfExists(filePath);
-    if (!stat || stat.isSymbolicLink() || !stat.isFile()) {
+    if (stat && stat.isSymbolicLink()) return fail('unsafe-path', 'That image file is a symlink.');
+    if (!stat || !stat.isFile()) {
       return fail('missing-asset', 'That image is not part of this production.');
     }
     let bytes;
@@ -390,7 +402,51 @@ function createVersionStore(options) {
     if (Number.isInteger(entry.byteLength) && entry.byteLength !== bytes.length) {
       return fail('corrupt-asset', 'That image file does not match its manifest.');
     }
-    return { ok: true, assetId };
+    return {
+      ok: true,
+      assetId,
+      productionId,
+      ext: detected.ext,
+      byteLength: bytes.length,
+      contentHash: digest,
+    };
+  }
+
+  function describeImages(productionId, text) {
+    const id = canonicalId(productionId);
+    if (!id) return fail('invalid-id', 'That production id is not valid.');
+    const loaded = loadMetadata(id);
+    if (!loaded.ok) return loaded;
+    const manifest = loadManifest(loaded.dir, id);
+    if (!manifest.ok) return manifest;
+    const assets = [];
+    const legacyImages = [];
+    const directives = imageDirectives(text);
+    for (let index = 0; index < directives.length; index += 1) {
+      const parsed = directives[index];
+      if (parsed.kind === 'empty') continue;
+      if (parsed.kind === 'legacy') {
+        legacyImages.push({
+          path: parsed.path,
+          shared: true,
+          immutable: false,
+        });
+        continue;
+      }
+      if (parsed.kind !== 'library') {
+        return fail('invalid-image-reference', 'An image line is not a supported reference.');
+      }
+      if (parsed.scriptId !== id) {
+        return fail('foreign-asset', 'An image belongs to a different production.');
+      }
+      const verified = verifyAsset(loaded.dir, id, parsed.assetId, manifest.assets);
+      if (!verified.ok) return verified;
+      if (!assets.some((asset) => asset.assetId === verified.assetId)) assets.push(verified);
+    }
+    let legacyImagePolicy = 'none';
+    if (legacyImages.length) legacyImagePolicy = 'shared-images';
+    else if (assets.length) legacyImagePolicy = 'production-assets';
+    return { ok: true, assets, legacyImages, legacyImagePolicy };
   }
 
   function referencesFor(text, prodDir, productionId) {
@@ -663,19 +719,23 @@ function createVersionStore(options) {
     return exclusive(() => saveVersionLocked(input));
   }
 
-  return {
+  const api = {
     root: rootReal,
+    readOnly: Boolean(readOnly),
     readProduction,
     readVersion,
     readHead,
     listVersions,
     listOrphans,
-    saveVersion,
+    describeImages,
   };
+  if (!readOnly) api.saveVersion = saveVersion;
+  return api;
 }
 
 module.exports = {
   SCHEMA,
   VersionStoreError,
   createVersionStore,
+  openReadOnlyVersionStore,
 };
