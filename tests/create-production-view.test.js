@@ -846,3 +846,84 @@ test('activation that is not ready explains image assignment and does not review
   assert.equal(ids['library-confirm-yes'].textContent, 'Set as Live');
   assert.doesNotMatch(ids['library-confirm-status'].textContent, /saved copy changed/);
 });
+
+test('version history lists committed versions and a missing endpoint stays off the live show', async () => {
+  const head = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+  const older = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+  const script = { id: NEW_ID, title: 'Hamlet', revision: 'rev-1', updatedAt: '2026-01-02T15:04:00.000Z' };
+  const { library, ids, calls } = harness((call) => {
+    if (call.url === '/api/library/access') return jsonResponse(200, { required: false });
+    if (call.url === '/api/library') return jsonResponse(200, libraryList(script));
+    if (call.url === `/api/library/${NEW_ID}/versions` && call.method === 'GET') {
+      return jsonResponse(200, {
+        ok: true,
+        productionId: NEW_ID,
+        savedHeadVersionId: head,
+        order: 'createdAt,versionId',
+        versions: [
+          {
+            versionId: older,
+            createdAt: '2026-01-01T00:00:00.000Z',
+            origin: 'original',
+            committed: true,
+            savedHead: false,
+            live: true,
+            previousLive: false,
+            imageBytesImmutable: false,
+            legacyImagePolicy: 'shared-images',
+          },
+          {
+            versionId: head,
+            createdAt: null,
+            origin: 'edited',
+            committed: true,
+            savedHead: true,
+            live: false,
+            previousLive: true,
+            imageBytesImmutable: true,
+          },
+        ],
+        orphans: [{ versionId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', complete: false, committed: false }],
+        diagnostics: [{ versionId: null, code: 'corrupt-version', error: '/tmp/secret should stay hidden' }],
+      });
+    }
+    return jsonResponse(200, { ok: true });
+  });
+  await library.open();
+  listen(buttonLabeled(ids['library-list'], 'Version History'), 'click')();
+  await settle();
+  const parts = [];
+  walk(ids['library-history-list'], (el) => { if (el.textContent) parts.push(el.textContent); });
+  const list = parts.join('\n');
+  assert.match(list, /Saved head/);
+  assert.match(list, /Live now/);
+  assert.match(list, /Previous live/);
+  assert.match(list, /Original/);
+  assert.match(list, /Edited/);
+  assert.match(list, /Creation time was not recorded/);
+  assert.match(list, /shared image/i);
+  assert.match(ids['library-history-warning'].textContent, /excluded from history/);
+  assert.equal(list.includes('/tmp/secret'), false);
+  assert.equal(list.includes('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'), false);
+  listen(buttonLabeled(ids['library-history-list'], 'Restore as New Saved Version'), 'click')();
+  assert.match(ids['library-confirm-heading'].textContent, /Restore this saved version/);
+  const confirmText = [];
+  walk(ids['library-confirm-body'], (el) => { if (el.textContent) confirmText.push(el.textContent); });
+  assert.match(confirmText.join('\n'), /will not switch/);
+  listen(ids['library-confirm-no'], 'click')();
+  assert.equal(calls.some((call) => call.method === 'POST' && call.url.includes('/restore')), false);
+
+  ids['library-history-list'].textContent = '';
+  const missing = harness((call) => {
+    if (call.url === '/api/library/access') return jsonResponse(200, { required: false });
+    if (call.url === '/api/library') return jsonResponse(200, libraryList(script));
+    if (call.url.endsWith('/versions')) return jsonResponse(404, 'Not found');
+    return jsonResponse(200, { ok: true });
+  });
+  await missing.library.open();
+  listen(buttonLabeled(missing.ids['library-list'], 'Version History'), 'click')();
+  await settle();
+  assert.match(missing.ids['library-history-status'].textContent, /not available on this library/);
+  assert.doesNotMatch(missing.ids['library-history-status'].textContent, /corrupt/);
+  assert.equal(missing.live.id, LIVE);
+});

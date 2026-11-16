@@ -41,6 +41,7 @@
     let openEditor = function () {};
     let isEditorOpen = function () { return false; };
     let showControllerNotice = function () {};
+    let noteSavedHead = function () {};
     let revokePreviewUrls = function () {};
     let showResolvedImage = function () {};
     let appendSlidePreview = function () {};
@@ -61,6 +62,14 @@ let createScriptToken = 0;
 let createSceneKey = 0;
 let libraryHighlightId = null;
 let manageAsset = null;
+let historyProductionId = null;
+let historyTitle = '';
+let historyListing = null;
+let historyDetail = null;
+let historyRestoreId = null;
+let historyRestoreSource = null;
+let historyBusy = false;
+const historyObjectUrls = [];
 
 function manageFileSignature(file) {
   return [
@@ -142,6 +151,17 @@ function libraryDom() {
     imagesList: doc.getElementById('library-images-list'),
     imagesEmpty: doc.getElementById('library-images-empty'),
     imagesStatus: doc.getElementById('library-images-status'),
+    history: doc.getElementById('library-history'),
+    historyTitle: doc.getElementById('library-history-title'),
+    historyStatus: doc.getElementById('library-history-status'),
+    historyWarning: doc.getElementById('library-history-warning'),
+    historyList: doc.getElementById('library-history-list'),
+    historyPreview: doc.getElementById('library-history-preview'),
+    historyPreviewTitle: doc.getElementById('library-history-preview-title'),
+    historyPreviewMeta: doc.getElementById('library-history-preview-meta'),
+    historyPreviewImages: doc.getElementById('library-history-preview-images'),
+    historyPreviewText: doc.getElementById('library-history-preview-text'),
+    historyRestore: doc.getElementById('library-history-restore'),
     imageFile: doc.getElementById('library-image-file'),
     confirm: doc.getElementById('library-confirm'),
     confirmHeading: doc.getElementById('library-confirm-heading'),
@@ -299,6 +319,7 @@ function renderLibraryList() {
     action('Preview', () => previewLibraryScript(entry.id));
     action('Edit', () => editLibraryScript(entry));
     action('Manage Images', () => openLibraryImages(entry));
+    action('Version History', () => openVersionHistory(entry.id, entry.title));
     action('Rename', () => showLibraryRename(item, entry));
     const liveButton = action('Set as Live', () => beginLibrarySetLive(entry));
     if (headIsLive) {
@@ -364,6 +385,7 @@ async function openLibrary(options) {
   const ui = libraryDom();
   if (!ui.dialog.open) ui.dialog.showModal();
   ui.images.hidden = true;
+  ui.history.hidden = true;
   ui.confirm.hidden = true;
   ui.workspace.inert = false;
   const kept = options && options.status ? options.status : '';
@@ -433,7 +455,7 @@ async function refreshLibrary(keptStatus) {
     if (body.liveId) liveShow.setLiveScriptId(body.liveId);
     else if (body.liveId === null) liveShow.setLiveScriptId(null);
     renderLibraryList();
-    if (!createSession && ui.preview.hidden && ui.images.hidden) {
+    if (!createSession && ui.preview.hidden && ui.images.hidden && ui.history.hidden) {
       ui.access.hidden = true;
       ui.add.hidden = false;
       ui.create.hidden = true;
@@ -1223,6 +1245,7 @@ function beginLibrarySetLive(entry) {
     notes.append(item);
   });
   ui.confirmBody.append(message, notes);
+  ui.confirm.dataset.mode = '';
   ui.confirmYes.textContent = ScriptLibrary.setLiveRequestState(false).label;
   ui.confirmYes.disabled = false;
   ui.confirmNo.disabled = false;
@@ -1237,6 +1260,9 @@ function hideLibraryConfirm() {
   libraryPendingRevision = '';
   libraryPendingReview = false;
   libraryPendingAsset = null;
+  ui.confirm.dataset.mode = '';
+  ui.confirm.dataset.sourceVersionId = '';
+  ui.confirm.dataset.expectedVersionId = '';
   ui.confirm.hidden = true;
   ui.confirmStatus.textContent = '';
   ui.confirmStatus.classList.remove('editor-error');
@@ -1254,6 +1280,7 @@ function beginRemoveLibraryImage(asset) {
   ui.confirmBody.replaceChildren();
   ui.confirmStatus.textContent = '';
   ui.confirmStatus.classList.remove('editor-error');
+  ui.confirm.dataset.mode = '';
   ui.confirmHeading.textContent = 'Remove this image?';
   const message = doc.createElement('p');
   message.className = 'editor-confirm-message';
@@ -1466,6 +1493,434 @@ async function reviewLatestBeforeSetLive() {
   }
 }
 
+function shortVersionId(id) {
+  if (typeof id !== 'string' || id.length < 13) return 'Unknown version';
+  return `${id.slice(0, 8)}…${id.slice(-4)}`;
+}
+
+function originLabel(origin) {
+  if (origin === 'original') return 'Original';
+  if (origin === 'migrated') return 'Migrated';
+  if (origin === 'edited') return 'Edited';
+  return '';
+}
+
+function historyOrder(versions) {
+  return versions.slice().sort((left, right) => {
+    if (left.createdAt !== right.createdAt) {
+      if (!left.createdAt) return 1;
+      if (!right.createdAt) return -1;
+      return left.createdAt < right.createdAt ? 1 : -1;
+    }
+    if (left.versionId === right.versionId) return 0;
+    return left.versionId < right.versionId ? 1 : -1;
+  });
+}
+
+function revokeHistoryUrls() {
+  if (!objectUrls) {
+    historyObjectUrls.length = 0;
+    return;
+  }
+  historyObjectUrls.splice(0).forEach((url) => {
+    try { objectUrls.revokeObjectURL(url); } catch (err) { /* The preview is already gone. */ }
+  });
+}
+
+function setHistoryStatus(message, tone) {
+  const status = libraryDom().historyStatus;
+  status.dataset.tone = tone || 'status';
+  status.textContent = message || '';
+  status.setAttribute('role', tone === 'alert' ? 'alert' : 'status');
+}
+
+function hideVersionHistory() {
+  const ui = libraryDom();
+  revokeHistoryUrls();
+  historyProductionId = null;
+  historyDetail = null;
+  ui.history.hidden = true;
+  ui.historyPreview.hidden = true;
+  ui.historyList.replaceChildren();
+  ui.historyWarning.hidden = true;
+  ui.historyWarning.textContent = '';
+  if (ui.historyPreviewText) ui.historyPreviewText.textContent = '';
+  if (ui.historyPreviewImages) ui.historyPreviewImages.replaceChildren();
+}
+
+function versionMarks(version) {
+  const marks = [];
+  if (version.savedHead) marks.push('Saved head');
+  if (version.live) marks.push('Live now');
+  if (version.previousLive) marks.push('Previous live');
+  const origin = originLabel(version.origin);
+  if (origin) marks.push(origin);
+  return marks;
+}
+
+function versionImageNote(version) {
+  if (!version || version.imageBytesImmutable !== false) return '';
+  if (version.legacyImagePolicy === 'shared-images') {
+    return 'Uses a shared image. Historical replay is not guaranteed.';
+  }
+  return 'Image bytes are not an immutable snapshot.';
+}
+
+function renderHistoryList() {
+  const ui = libraryDom();
+  const listing = historyListing;
+  ui.historyList.replaceChildren();
+  ui.historyPreview.hidden = true;
+  revokeHistoryUrls();
+  if (!listing || !Array.isArray(listing.versions)) return;
+  const excluded = (Array.isArray(listing.orphans) && listing.orphans.length)
+    || (Array.isArray(listing.diagnostics) && listing.diagnostics.length);
+  ui.historyWarning.hidden = !excluded;
+  ui.historyWarning.textContent = excluded
+    ? 'Some incomplete or damaged versions were excluded from history.'
+    : '';
+  historyOrder(listing.versions.filter((version) => version && version.committed !== false)).forEach((version) => {
+    const card = doc.createElement('article');
+    card.className = 'history-version';
+    const title = doc.createElement('h4');
+    title.className = 'library-title';
+    title.textContent = shortVersionId(version.versionId);
+    title.title = version.versionId || '';
+    const when = doc.createElement('p');
+    when.className = 'library-meta';
+    when.textContent = version.createdAt
+      ? `Created ${formatModified(version.createdAt)}`
+      : 'Creation time was not recorded';
+    const marks = doc.createElement('p');
+    marks.className = 'history-marks';
+    versionMarks(version).forEach((label) => {
+      const mark = doc.createElement('span');
+      mark.className = 'history-mark';
+      mark.textContent = label;
+      marks.append(mark);
+    });
+    const identity = doc.createElement('p');
+    identity.className = 'library-note';
+    identity.textContent = `Version id ${version.versionId}`;
+    card.append(title, when, marks, identity);
+    const imageNote = versionImageNote(version);
+    if (imageNote) {
+      const warning = doc.createElement('p');
+      warning.className = 'library-note';
+      warning.textContent = imageNote;
+      card.append(warning);
+    }
+    const actions = doc.createElement('div');
+    actions.className = 'library-actions';
+    const preview = doc.createElement('button');
+    preview.type = 'button';
+    preview.className = 'btn';
+    preview.textContent = 'Preview';
+    preview.setAttribute('aria-label', `Preview version ${shortVersionId(version.versionId)} of ${historyTitle || 'this production'}`);
+    preview.disabled = historyBusy;
+    preview.addEventListener('click', () => previewHistoricalVersion(version.versionId));
+    const restore = doc.createElement('button');
+    restore.type = 'button';
+    restore.className = 'btn';
+    restore.textContent = 'Restore as New Saved Version';
+    restore.setAttribute('aria-label', `Restore version ${shortVersionId(version.versionId)} of ${historyTitle || 'this production'} as a new saved version`);
+    restore.disabled = historyBusy;
+    restore.addEventListener('click', () => beginHistoryRestore(version.versionId));
+    actions.append(preview, restore);
+    card.append(actions);
+    ui.historyList.append(card);
+  });
+}
+
+async function loadVersionHistory(keptStatus) {
+  const ui = libraryDom();
+  const productionId = historyProductionId;
+  if (!productionId) return;
+  setHistoryStatus(keptStatus || 'Loading version history…', 'status');
+  let response;
+  let body;
+  try {
+    response = await libraryFetch(`/api/library/${productionId}/versions`);
+    body = await readLibraryJson(response);
+  } catch (err) {
+    setHistoryStatus('Version history could not be loaded. The live show was not changed.', 'alert');
+    return;
+  }
+  if (historyProductionId !== productionId) return;
+  if (response.status === 404) {
+    historyListing = null;
+    ui.historyList.replaceChildren();
+    ui.historyWarning.hidden = true;
+    setHistoryStatus('Version history is not available on this library. The saved scripts and the live show were not changed.', 'status');
+    return;
+  }
+  if (!response.ok || !body || body.ok !== true || !Array.isArray(body.versions)) {
+    setHistoryStatus(libraryErrorMessage(response, body, 'Version history could not be loaded. The live show was not changed.'), 'alert');
+    return;
+  }
+  historyListing = body;
+  renderHistoryList();
+  if (!keptStatus) setHistoryStatus('', 'status');
+}
+
+async function openVersionHistory(productionId, title) {
+  if (!enabled || !productionId) return;
+  const ui = libraryDom();
+  if (!ui.dialog.open) ui.dialog.showModal();
+  ui.confirm.hidden = true;
+  ui.workspace.inert = false;
+  ui.preview.hidden = true;
+  ui.images.hidden = true;
+  ui.add.hidden = true;
+  ui.list.hidden = true;
+  ui.empty.hidden = true;
+  ui.create.hidden = true;
+  ui.createOpen.hidden = true;
+  historyProductionId = productionId;
+  historyTitle = title || 'this production';
+  historyDetail = null;
+  ui.history.hidden = false;
+  ui.historyTitle.textContent = `Version History: ${historyTitle}`;
+  ui.historyPreview.hidden = true;
+  const back = doc.getElementById('library-history-back');
+  if (back) back.focus();
+  await loadVersionHistory('');
+}
+
+function hideHistoricalPreview() {
+  const ui = libraryDom();
+  revokeHistoryUrls();
+  historyDetail = null;
+  ui.historyPreview.hidden = true;
+  ui.historyPreviewText.textContent = '';
+  ui.historyPreviewImages.replaceChildren();
+  ui.historyPreviewMeta.textContent = '';
+  renderHistoryList();
+  const back = doc.getElementById('library-history-back');
+  if (back) back.focus();
+}
+
+function previewImageStatus(images) {
+  if (!images) return 'Image status was not reported.';
+  const lines = [];
+  if (images.imageBytesImmutable === false) {
+    lines.push('Historical image replay is not guaranteed.');
+  }
+  (images.sharedImages || []).forEach((image) => {
+    lines.push(`Shared image ${image.reference || 'reference'}: the file can still change, and it was not copied into this version.`);
+  });
+  (images.ownedImages || []).forEach((image) => {
+    lines.push(image.available
+      ? `Owned image ${shortVersionId(image.assetId)} is available from this production.`
+      : `Owned image ${shortVersionId(image.assetId)} is missing or damaged.`);
+  });
+  if (!lines.length) lines.push('This version does not add an image warning.');
+  return lines.join(' ');
+}
+
+async function previewHistoricalVersion(versionId) {
+  const ui = libraryDom();
+  const productionId = historyProductionId;
+  if (!productionId || !versionId || historyBusy) return;
+  setHistoryStatus('Loading the historical preview…', 'status');
+  let response;
+  let body;
+  try {
+    response = await libraryFetch(`/api/library/${productionId}/versions/${versionId}`);
+    body = await readLibraryJson(response);
+  } catch (err) {
+    setHistoryStatus('The historical version could not be previewed. The live show was not changed.', 'alert');
+    return;
+  }
+  if (historyProductionId !== productionId) return;
+  if (!response.ok || !body || !body.version || typeof body.version.text !== 'string') {
+    setHistoryStatus(libraryErrorMessage(response, body, 'The historical version could not be previewed. The live show was not changed.'), 'alert');
+    return;
+  }
+  historyDetail = body;
+  revokeHistoryUrls();
+  ui.historyPreview.hidden = false;
+  ui.historyPreviewTitle.textContent = `Historical preview: ${shortVersionId(versionId)}`;
+  ui.historyPreviewMeta.textContent = [
+    historyTitle,
+    versionMarks(body.version).join(', ') || 'Saved version',
+    `Version id ${versionId}`,
+    previewImageStatus(body.images),
+  ].join('. ') + '.';
+  ui.historyPreviewText.textContent = body.version.text;
+  ui.historyPreviewImages.replaceChildren();
+  const owned = body.images && Array.isArray(body.images.ownedImages) ? body.images.ownedImages : [];
+  for (let index = 0; index < owned.length; index += 1) {
+    const image = owned[index];
+    if (!image || !image.available || !image.assetId) continue;
+    try {
+      const asset = await libraryFetch(`/api/library/${productionId}/assets/${image.assetId}`);
+      if (!asset.ok || historyProductionId !== productionId) continue;
+      const blob = await asset.blob();
+      const url = objectUrls.createObjectURL(blob);
+      historyObjectUrls.push(url);
+      const picture = doc.createElement('img');
+      picture.alt = `Owned image ${shortVersionId(image.assetId)} for this historical version`;
+      picture.src = url;
+      ui.historyPreviewImages.append(picture);
+    } catch (err) {
+      const missing = doc.createElement('p');
+      missing.className = 'library-note';
+      missing.textContent = `Owned image ${shortVersionId(image.assetId)} could not be shown.`;
+      ui.historyPreviewImages.append(missing);
+    }
+  }
+  setHistoryStatus('This preview is read only. The saved head and the live show were not changed.', 'status');
+  ui.historyPreviewText.focus();
+}
+
+function beginHistoryRestore(versionId) {
+  const listing = historyListing;
+  const source = listing && listing.versions && listing.versions.find((version) => version.versionId === versionId);
+  if (!source || !historyProductionId || !listing || !listing.savedHeadVersionId) {
+    setHistoryStatus('That saved version could not be selected. The live show was not changed.', 'alert');
+    return;
+  }
+  if (!libraryGuard.tryStart()) return;
+  libraryGuard.finish();
+  libraryPendingId = null;
+  libraryPendingAsset = null;
+  libraryPendingReview = false;
+  historyDetail = historyDetail && historyDetail.version && historyDetail.version.versionId === versionId
+    ? historyDetail
+    : { version: source };
+  const ui = libraryDom();
+  ui.confirmBody.replaceChildren();
+  ui.confirmStatus.textContent = '';
+  ui.confirmStatus.classList.remove('editor-error');
+  ui.confirmHeading.textContent = 'Restore this saved version?';
+  const message = doc.createElement('p');
+  message.className = 'editor-confirm-message';
+  message.textContent = `Restore ${shortVersionId(versionId)} into ${historyTitle}.`;
+  const notes = doc.createElement('ul');
+  notes.className = 'editor-confirm-notes';
+  [
+    'A new saved version is created when the text differs. If it already matches the saved head, another version is not created.',
+    'The selected version and the other saved versions stay as they are.',
+    'The saved head of this production can change.',
+    'The live show stays as it is. Actor and Audience screens will not switch to the restored version.',
+  ].forEach((note) => {
+    const item = doc.createElement('li');
+    item.textContent = note;
+    notes.append(item);
+  });
+  ui.confirmBody.append(message, notes);
+  ui.confirmYes.textContent = 'Restore as New Saved Version';
+  ui.confirmYes.disabled = false;
+  ui.confirmNo.disabled = false;
+  ui.workspace.inert = true;
+  ui.confirm.hidden = false;
+  ui.confirmYes.focus();
+  ui.confirm.dataset.mode = 'restore-saved';
+  ui.confirm.dataset.sourceVersionId = versionId;
+  ui.confirm.dataset.expectedVersionId = listing.savedHeadVersionId;
+}
+
+function restoreFailureMessage(response, body) {
+  const code = body && body.code;
+  if (response && response.status === 404 && (!body || !body.code)) {
+    return 'Version history is not available on this library. The saved scripts and the live show were not changed.';
+  }
+  if (code === 'conflict') {
+    return 'Another save changed the saved head after you opened this history. This restore was not repeated. Review the updated head, then confirm again if you still want to restore the same version. The live show was not changed.';
+  }
+  if (code === 'legacy-image') {
+    return 'This version can be previewed, but it still uses a shared images/ file. Restore did not copy that image or rewrite the script. The saved head and the live show were not changed.';
+  }
+  if (code === 'orphan-version') {
+    return 'That version is incomplete and is not part of saved history. It was not restored, and the live show was not changed.';
+  }
+  if (code === 'missing-version' || code === 'missing-production') {
+    return 'That saved version could not be found. Nothing was restored, and the live show was not changed.';
+  }
+  if (code === 'missing-asset' || code === 'corrupt-asset') {
+    return `${body.error || 'A required image could not be verified.'} The saved head and the live show were not changed.`;
+  }
+  if (code === 'foreign-asset') {
+    return 'An image in that version belongs to another production. It was not copied, and the live show was not changed.';
+  }
+  if (code === 'invalid-script') {
+    return `${body.error || 'That historical script is not valid.'} Nothing was restored, and the live show was not changed.`;
+  }
+  if (code === 'version-exists') {
+    return 'That new version id was already used and was not overwritten. Another copy was not created. The live show was not changed.';
+  }
+  if (code === 'indeterminate' || code === 'unconfirmed-head' || code === 'storage-failure') {
+    return 'The server did not confirm the result. This restore was not reported as rolled back. The same new version id will be kept if you try this restoration again. The live show was not changed.';
+  }
+  if (response && response.status === 401) return 'The staff access code was not accepted.';
+  return libraryErrorMessage(response, body, 'The saved version was not restored. The live show was not changed.');
+}
+
+async function runHistoryRestore() {
+  const ui = libraryDom();
+  if (ui.confirm.dataset.mode !== 'restore-saved' || historyBusy) return;
+  const productionId = historyProductionId;
+  const sourceVersionId = ui.confirm.dataset.sourceVersionId;
+  const expectedVersionId = ui.confirm.dataset.expectedVersionId;
+  if (!productionId || !sourceVersionId || !expectedVersionId) return;
+  if (historyRestoreSource !== sourceVersionId || !historyRestoreId) {
+    historyRestoreId = newRequestId();
+    historyRestoreSource = sourceVersionId;
+  }
+  if (!historyRestoreId) {
+    ui.confirmStatus.classList.add('editor-error');
+    ui.confirmStatus.textContent = 'A new version id could not be created. Nothing was restored, and the live show was not changed.';
+    return;
+  }
+  if (!libraryGuard.tryStart()) return;
+  historyBusy = true;
+  ui.confirmYes.disabled = true;
+  ui.confirmNo.disabled = true;
+  ui.confirm.setAttribute('aria-busy', 'true');
+  ui.confirmYes.textContent = 'Restoring…';
+  const attemptId = historyRestoreId;
+  try {
+    const response = await libraryFetch(`/api/library/${productionId}/versions/${sourceVersionId}/restore`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Version-Id': attemptId,
+      },
+      body: JSON.stringify({ expectedVersionId }),
+    });
+    const body = await readLibraryJson(response);
+    if (!response.ok || !body || body.ok !== true) {
+      ui.confirmStatus.classList.add('editor-error');
+      ui.confirmStatus.textContent = restoreFailureMessage(response, body);
+      ui.confirmYes.disabled = true;
+      ui.confirmNo.disabled = false;
+      ui.confirmNo.focus();
+      if (body && body.code === 'conflict') await loadVersionHistory('');
+      return;
+    }
+    historyRestoreId = null;
+    historyRestoreSource = null;
+    const unchanged = body.unchanged === true;
+    const message = unchanged
+      ? 'This text is already the saved head. Another version was not created. The live show was not changed.'
+      : `Saved a new version from ${shortVersionId(sourceVersionId)}. It is the saved head now and it is not live. Actor and Audience screens were not changed.`;
+    hideLibraryConfirm();
+    await refreshLibrary(message);
+    if (historyProductionId === productionId) await loadVersionHistory(message);
+    noteSavedHead(productionId, { unchanged, message, savedHeadVersionId: body.savedHeadVersionId });
+  } catch (err) {
+    ui.confirmStatus.classList.add('editor-error');
+    ui.confirmStatus.textContent = 'The server did not confirm the result. This restore was not reported as rolled back. The same new version id will be kept if you try this restoration again. The live show was not changed.';
+    ui.confirmYes.disabled = true;
+    ui.confirmNo.disabled = false;
+  } finally {
+    historyBusy = false;
+    libraryGuard.finish();
+    ui.confirm.setAttribute('aria-busy', 'false');
+  }
+}
+
 function closeLibrary() {
   const ui = libraryDom();
   if (!ui.confirm.hidden) {
@@ -1480,7 +1935,13 @@ function closeLibrary() {
   }
   hideLibraryPreview();
   hideLibraryImages();
+  hideVersionHistory();
   if (ui.dialog.open) ui.dialog.close();
+  if (isEditorOpen()) {
+    const historyButton = doc.getElementById('editor-version-history');
+    if (historyButton) historyButton.focus();
+    return;
+  }
   doc.getElementById('btn-script-library').focus();
 }
 
@@ -1519,9 +1980,21 @@ function bindLibrary() {
     hideLibraryConfirm();
   });
   ui.confirmYes.addEventListener('click', () => {
-    if (libraryPendingAsset) runRemoveLibraryImage();
+    if (ui.confirm.dataset.mode === 'restore-saved') runHistoryRestore();
+    else if (libraryPendingAsset) runRemoveLibraryImage();
     else if (libraryPendingReview) reviewLatestBeforeSetLive();
     else runLibrarySetLive();
+  });
+  doc.getElementById('library-history-back').addEventListener('click', () => {
+    hideVersionHistory();
+    revealLibraryHome();
+    setLibraryStatus('', 'status');
+    doc.getElementById('library-close').focus();
+  });
+  doc.getElementById('library-history-preview-back').addEventListener('click', hideHistoricalPreview);
+  ui.historyRestore.addEventListener('click', () => {
+    const version = historyDetail && historyDetail.version;
+    if (version) beginHistoryRestore(version.versionId);
   });
   ui.confirm.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
@@ -1556,6 +2029,7 @@ function bindLibrary() {
       if (config.openEditor) openEditor = config.openEditor;
       if (config.editorIsOpen) isEditorOpen = config.editorIsOpen;
       if (config.showControllerNotice) showControllerNotice = config.showControllerNotice;
+      if (config.noteSavedHead) noteSavedHead = config.noteSavedHead;
       if (config.revokePreviewUrls) revokePreviewUrls = config.revokePreviewUrls;
       if (config.showResolvedImage) showResolvedImage = config.showResolvedImage;
       if (config.appendSlidePreview) appendSlidePreview = config.appendSlidePreview;
@@ -1567,6 +2041,7 @@ function bindLibrary() {
     return {
       init,
       open: openLibrary,
+      openHistory: openVersionHistory,
       isOpen,
       isEnabled,
       fetch: libraryFetch,

@@ -1037,6 +1037,7 @@
   #library-create .btn,
   #library-access .btn,
   #library-images .btn,
+  #library-history .btn,
   #library-preview-back,
   #library-create-open {
     min-height: 44px;
@@ -1096,3 +1097,43 @@
     overflow: auto;
   }
   #library-preview { margin-top: 0.5rem; }
+  #library-history { margin-top: 0.5rem; }
+  .history-version {
+    border-top: 1px solid var(--border);
+    padding: 0.75rem 0;
+  }
+  .history-marks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 0.75rem;
+    margin: 0.35rem 0;
+  }
+  .history-mark {
+    font-family: var(--font-ui);
+    font-size: 0.85rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--cream);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.15rem 0.55rem;
+  }
+  #library-history-preview-text {
+    white-space: pre-wrap;
+    overflow: auto;
+    max-height: 40vh;
+    margin: 0.75rem 0;
+    padding: 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-family: var(--font-mono);
+    line-height: 1.45;
+  }
+  #library-history-preview-images img {
+    width: 7rem;
+    height: 5rem;
+    object-fit: contain;
+    background: #111;
+    border-radius: 4px;
+    margin: 0.35rem 0.75rem 0.35rem 0;
+  }

@@ -38,6 +38,7 @@
     let showResolvedImage;
     let appendSlidePreview;
     let getLibraryEntries;
+    let openVersionHistory = function () {};
     let enabled = false;
 
     let editorMode = 'live';
@@ -103,6 +104,7 @@ function captureEditorDom() {
   setLive: doc.getElementById('editor-set-live'),
   publish: doc.getElementById('editor-publish'),
   restore: doc.getElementById('editor-restore'),
+  versionHistory: doc.getElementById('editor-version-history'),
   closeTop: doc.getElementById('editor-close-top'),
   close: doc.getElementById('editor-close'),
 };
@@ -246,6 +248,7 @@ function refreshEditorChrome() {
   const libraryEditing = editorMode === 'library';
   editorDom.saveLibrary.hidden = !libraryEditing;
   editorDom.setLive.hidden = !libraryEditing;
+  if (editorDom.versionHistory) editorDom.versionHistory.hidden = !libraryEditing;
   editorDom.publish.hidden = libraryEditing;
   if (libraryEditing) editorDom.restore.hidden = true;
   editorDom.publish.disabled = libraryEditing || !(editorBaseRevision && result.ok && !editorAwaitingRevision);
@@ -1228,7 +1231,21 @@ async function runEditorSetLive() {
   }
 }
 
-async function loadLatestSavedScript() {
+function noteSavedHead(productionId, detail) {
+  if (!editorModel || editorLibraryId !== productionId) return;
+  const message = detail && detail.message
+    ? detail.message
+    : 'The library saved a new version. The live show was not changed.';
+  if (editorIsDirty()) {
+    editorDom.status.textContent = `${message} Your unsaved edits are still in this editor and were not replaced. They are not based on the new saved version.`;
+    editorDom.conflict.hidden = false;
+    editorDom.conflict.textContent = 'The saved version changed while this draft was open. Load the latest saved script only after you save or discard these edits.';
+    return;
+  }
+  loadLatestSavedScript(`${message} The editor now shows that saved version. It is not live.`);
+}
+
+async function loadLatestSavedScript(statusMessage) {
   if (!editorLibraryId) return;
   if (editorIsDirty()) {
     showConfirmFailure('Save or discard the open edits before loading the latest saved script. The live show was not changed.');
@@ -1257,7 +1274,7 @@ async function loadLatestSavedScript() {
     renderEditor();
     showStaleDrafts();
     hideEditorConfirm();
-    editorDom.status.textContent = 'Loaded the latest saved script. The live show was not changed. Review it, then set it live.';
+    editorDom.status.textContent = statusMessage || 'Loaded the latest saved script. The live show was not changed. Review it, then set it live.';
   } catch (err) {
     showConfirmFailure('The latest saved script could not be loaded. The live show was not changed.');
   } finally {
@@ -1280,6 +1297,7 @@ function init(settings) {
   showResolvedImage = given.showResolvedImage;
   appendSlidePreview = given.appendSlidePreview;
   getLibraryEntries = given.getLibraryEntries;
+  if (given.openVersionHistory) openVersionHistory = given.openVersionHistory;
   enabled = true;
   captureEditorDom();
   doc.getElementById('btn-edit-script').addEventListener('click', () => open());
@@ -1290,6 +1308,12 @@ function init(settings) {
   editorDom.setLive.addEventListener('click', beginSetLiveFromEditor);
   editorDom.publish.addEventListener('click', beginPublish);
   editorDom.restore.addEventListener('click', beginRestore);
+  if (editorDom.versionHistory) {
+    editorDom.versionHistory.addEventListener('click', () => {
+      if (!editorLibraryId) return;
+      openVersionHistory(editorLibraryId, editorLibraryTitle);
+    });
+  }
   editorDom.confirmNo.addEventListener('click', cancelEditorConfirm);
   editorDom.confirm.addEventListener('click', (event) => {
     if (event.target !== editorDom.confirm || editorAwaitingRevision) return;
@@ -1358,6 +1382,7 @@ function init(settings) {
       isEnabled,
       noteScriptRevision,
       showNotice,
+      noteSavedHead,
     };
   }
 
