@@ -26,6 +26,7 @@
     let connDot = null;
     let connecting = null;
     let onScriptApplied = function () {};
+    let onAwaitingLive = function () {};
 
     function getStatus() {
       return {
@@ -40,6 +41,7 @@
       connDot = settings.connDot || null;
       connecting = settings.connecting || null;
       if (settings.onScriptApplied) onScriptApplied = settings.onScriptApplied;
+      if (settings.onAwaitingLive) onAwaitingLive = settings.onAwaitingLive;
     }
 
     function connect() {
@@ -77,6 +79,9 @@
     // existing actor revision path, and it does not send navigation.
     function applyServerMessage(msg) {
       if (msg.type === 'script') {
+        const awaiting = msg.awaitingLive === true;
+        if (typeof liveShow.setAwaitingLive === 'function') liveShow.setAwaitingLive(awaiting);
+        onAwaitingLive(awaiting);
         const scriptChanged = liveShow.applyScript(msg).scriptChanged;
         if (isActor && scriptChanged) {
           actor.onScriptChanged();
@@ -88,6 +93,12 @@
         actor.updateStatus();
         onScriptApplied();
       } else if (msg.type === 'state') {
+        if (msg.awaitingLive === true || (typeof liveShow.isAwaitingLive === 'function' && liveShow.isAwaitingLive())) {
+          liveShow.applyState(null);
+          waitingForLiveState = true;
+          actor.updateStatus();
+          return;
+        }
         liveShow.applyState(msg.state);
         waitingForLiveState = false;
         if (!isActor) {

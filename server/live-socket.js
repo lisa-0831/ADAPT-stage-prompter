@@ -32,16 +32,26 @@ function registerLiveSocketHandlers(deps) {
 
   deps.wss.on('connection', (ws) => {
     console.log('[ws] Client connected');
-    ws.send(JSON.stringify({
+    const awaitingLive = typeof deps.getAwaitingLive === 'function' && deps.getAwaitingLive() === true;
+    const scriptMessage = {
       type: 'script',
       slides: deps.getSlides(),
       revision: deps.getScriptRevision(),
       liveScriptId: deps.getLiveScriptId(),
-    }));
-    ws.send(JSON.stringify({
+    };
+    const stateMessage = {
       type: 'state',
       state: deps.getState(),
-    }));
+    };
+    if (awaitingLive) {
+      scriptMessage.awaitingLive = true;
+      scriptMessage.slides = [];
+      scriptMessage.revision = null;
+      scriptMessage.liveScriptId = null;
+      stateMessage.awaitingLive = true;
+    }
+    ws.send(JSON.stringify(scriptMessage));
+    ws.send(JSON.stringify(stateMessage));
 
     ws.on('message', (raw) => {
       let msg;

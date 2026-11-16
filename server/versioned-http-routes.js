@@ -86,6 +86,10 @@ const STATUS = {
   'mirror-conflict': 503,
   'marker-conflict': 503,
   'not-installed': 503,
+  'no-live-show': 404,
+  'no-previous-activation': 404,
+  'missing-live-state': 503,
+  'live-state-conflict': 409,
   'not-loadable': 503,
   'missing-marker': 503,
   'invalid-live-state': 503,
@@ -334,6 +338,7 @@ function registerVersionedHttpRoutes(options) {
       ok: true,
       order: listed.order,
       liveId,
+      awaitingLive: Boolean(listed.liveState && listed.liveState.awaitingLive),
       scripts: listed.productions.map(toScript),
       invalid: listed.invalid,
       liveState: listed.liveState,
@@ -777,6 +782,9 @@ function registerVersionedHttpRoutes(options) {
   app.get('/script', async (req, res) => {
     const show = await invoke(res, () => service.readLiveShow());
     if (!show) return undefined;
+    if (show.ok && show.awaitingLive) {
+      return res.status(404).json({ ok: false, code: 'no-live-show', error: 'No script is currently live.' });
+    }
     if (!show.ok || !show.present) {
       return sendError(res, show.ok ? { code: 'not-installed', error: 'The versioned show has not finished initial installation.' } : show);
     }

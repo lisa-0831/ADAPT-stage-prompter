@@ -11,6 +11,10 @@
 <div id="app">
   <div id="stage">
     <div id="connecting"><p>Connecting…</p></div>
+    <div id="waiting-show" hidden>
+      <p id="waiting-show-title">The performance script has not been loaded yet.</p>
+      <p id="waiting-show-setup" hidden>No script is live. Open Script Library to create a production. Saving it does not put it on stage. Set as Live does.</p>
+    </div>
     <div id="role-label"></div>
     <div id="slide-title"></div>
     <div id="title-image-overlay">
@@ -424,6 +428,26 @@ PrompterStage.init({
       : PrompterLiveShow.getLiveState();
   },
 });
+function showWaitingState(awaiting) {
+  const panel = document.getElementById('waiting-show');
+  const setup = document.getElementById('waiting-show-setup');
+  if (panel) panel.hidden = !awaiting;
+  if (setup) setup.hidden = !awaiting || !isController;
+  if (!isController) return;
+  ['btn-edit-script', 'btn-upload-toggle', 'btn-prev', 'btn-next', 'btn-prev-slide', 'btn-next-slide', 'slide-select', 'btn-case'].forEach((id) => {
+    const control = document.getElementById(id);
+    if (control) control.disabled = awaiting;
+  });
+  const notice = document.getElementById('controller-notice');
+  if (!notice) return;
+  if (awaiting) {
+    notice.hidden = false;
+    notice.textContent = 'No script is live. Create a production in Script Library, then choose Set as Live. Saving a production does not activate it.';
+  } else if (notice.textContent.indexOf('No script is live') === 0) {
+    notice.textContent = '';
+    notice.hidden = true;
+  }
+}
 PrompterConnection.init({
   isActor,
   connDot: dom.connDot,
@@ -431,6 +455,7 @@ PrompterConnection.init({
   onScriptApplied() {
     PrompterEditor.noteScriptRevision();
   },
+  onAwaitingLive: showWaitingState,
 });
 PrompterConnection.connect();
 

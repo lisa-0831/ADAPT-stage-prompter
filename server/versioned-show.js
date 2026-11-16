@@ -355,7 +355,44 @@ function loadVersionedShow(options) {
     if (!parsed.ok) return refused(parsed.code, parsed.error);
     liveState = parsed.liveState;
   }
-  if (marker.mirrorInstalled && !liveState) {
+  if (marker.schema === 3) {
+    if (!marker.liveInstalled && liveState) {
+      return refused('live-state-conflict', 'A fresh installation has a live pointer before it was activated.', { marker });
+    }
+    if (marker.liveInstalled && !liveState) {
+      return refused('missing-live-state', 'This installation was activated, but the live pointer is missing.', { marker });
+    }
+    if (!marker.liveInstalled) {
+      return {
+        ok: true,
+        status: 'awaiting-live',
+        code: 'no-live-show',
+        error: 'No script is currently live.',
+        recoveryRequirements: [],
+        initializationPending: false,
+        activationReady: false,
+        awaitingLive: true,
+        marker,
+        matchesInitialActivation: false,
+        productionId: null,
+        versionId: null,
+        contentHash: null,
+        text: null,
+        title: null,
+        headVersionId: null,
+        savedHeadDiffers: false,
+        generation: null,
+        liveState: null,
+        previousActivation: null,
+        parentVersionId: null,
+        legacyImagePolicy: null,
+        historicalImagesImmutable: null,
+        assets: [],
+        legacyImages: [],
+      };
+    }
+  }
+  if (marker.schema !== 3 && marker.mirrorInstalled && !liveState) {
     return refused('missing-live-state', 'The migration is installed, but the live pointer is missing.', {
       marker,
     });
@@ -389,8 +426,8 @@ function loadVersionedShow(options) {
   const mirror = inspectMirror(settings.scriptFile, loaded.version.version.contentHash);
   if (!mirror.ok) return refused(mirror.code, mirror.error, { marker });
   const recoveryRequirements = [];
-  const initializationPending = Boolean(!marker.mirrorInstalled && !liveState);
-  if (!initializationPending && !marker.mirrorInstalled && liveState) {
+  const initializationPending = marker.schema !== 3 && Boolean(!marker.mirrorInstalled && !liveState);
+  if (marker.schema !== 3 && !initializationPending && !marker.mirrorInstalled && liveState) {
     recoveryRequirements.push('mirror-installation-incomplete');
   }
   if (mirror.requirement) recoveryRequirements.push(mirror.requirement);

@@ -287,6 +287,7 @@ async function bootAuthorizedVersionedServer(options) {
     let revision = '';
     let liveRaw = '';
     let productionId = null;
+    let awaitingLive = false;
     let state = {
       slideIndex: 0,
       lineIndex: 0,
@@ -340,6 +341,7 @@ async function bootAuthorizedVersionedServer(options) {
       revision = show.contentHash;
       liveRaw = show.text;
       productionId = show.productionId;
+      awaitingLive = false;
       if (restart || (cue && cue.action === 'reset')) {
         state.slideIndex = 0;
         state.lineIndex = 0;
@@ -441,7 +443,9 @@ async function bootAuthorizedVersionedServer(options) {
       }
       show = readVerifiedShow();
     }
-    if (!show || show.ok !== true || show.status !== 'loadable' || typeof show.text !== 'string') {
+    if (show && show.ok === true && show.status === 'awaiting-live') {
+      awaitingLive = true;
+    } else if (!show || show.ok !== true || show.status !== 'loadable' || typeof show.text !== 'string') {
       throw startupError(
         (show && show.code) || 'not-loadable',
         (show && show.error) || 'The versioned live show is not ready to start.',
@@ -451,13 +455,22 @@ async function bootAuthorizedVersionedServer(options) {
     const app = express();
     const server = http.createServer(app);
     wss = new WebSocket.Server({ server });
-    const installedMemory = applyShow(show, null, true);
-    if (!installedMemory.synchronized) {
-      await new Promise((resolve) => wss.close(() => server.close(() => resolve())));
-      throw startupError(installedMemory.code || 'invalid-script', installedMemory.error || 'The active script could not be parsed.');
+    if (!awaitingLive) {
+      const installedMemory = applyShow(show, null, true);
+      if (!installedMemory.synchronized) {
+        await new Promise((resolve) => wss.close(() => server.close(() => resolve())));
+        throw startupError(installedMemory.code || 'invalid-script', installedMemory.error || 'The active script could not be parsed.');
+      }
     }
 
     function reloadVerified() {
+      if (awaitingLive) {
+        return {
+          ok: false,
+          code: 'no-live-show',
+          error: 'No script is currently live. The compatibility mirror was not adopted.',
+        };
+      }
       const current = readVerifiedShow();
       if (!current || current.ok !== true || current.status !== 'loadable' || typeof current.text !== 'string') {
         return {
@@ -506,16 +519,18 @@ async function bootAuthorizedVersionedServer(options) {
       imageMaxBytes: maxImageBytes,
       createId: settings.createId,
       now: settings.now,
+      allowFaults: settings.allowFaults === true,
     });
     app.use((req, res) => {
       res.status(404).type('text/plain').send('Not found');
     });
     registerLiveSocketHandlers({
       wss,
-      getSlides() { return slides; },
+      getSlides() { return awaitingLive ? [] : slides; },
       getState() { return state; },
-      getScriptRevision() { return revision; },
-      getLiveScriptId() { return productionId; },
+      getScriptRevision() { return awaitingLive ? null : revision; },
+      getLiveScriptId() { return awaitingLive ? null : productionId; },
+      getAwaitingLive() { return awaitingLive; },
       updateCue,
       broadcast,
       loadScript: reloadVerified,
@@ -545,11 +560,12 @@ async function bootAuthorizedVersionedServer(options) {
         const indexes = Array.isArray(order) ? order : jobs.map((job, index) => index);
         return indexes.map((index) => jobs[index]());
       },
-      getSlides() { return slides; },
+      getSlides() { return awaitingLive ? [] : slides; },
       getState() { return state; },
-      getScriptRevision() { return revision; },
-      getLiveScriptId() { return productionId; },
-      getLiveRaw() { return liveRaw; },
+      getScriptRevision() { return awaitingLive ? null : revision; },
+      getLiveScriptId() { return awaitingLive ? null : productionId; },
+      getAwaitingLive() { return awaitingLive; },
+      getLiveRaw() { return awaitingLive ? '' : liveRaw; },
     };
   } catch (err) {
     await release();

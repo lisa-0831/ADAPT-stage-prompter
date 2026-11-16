@@ -24,6 +24,7 @@ function markerMessage(code, field) {
   const messages = {
     'invalid-json': `migration.json is not valid JSON. ${suffix}`,
     'unsupported-schema': `migration.json uses a schema this server does not recognize. ${suffix}`,
+    'invalid-installation-id': `migration.json has an invalid installation id. ${suffix}`,
     'missing-field': `migration.json is missing ${field}. ${suffix}`,
     'invalid-production-id': `migration.json has an invalid production id. ${suffix}`,
     'invalid-version-id': `migration.json has an invalid version id. ${suffix}`,
@@ -97,7 +98,55 @@ function sharedMarker(marker) {
   };
 }
 
+const FRESH_FIELDS = ['schema', 'state', 'kind', 'installationId', 'liveInstalled', 'previousActivation'];
+
+function validateFreshMarker(marker) {
+  if (!marker || typeof marker !== 'object' || Array.isArray(marker)) fail('invalid-json');
+  requireMarkerField(marker, 'schema');
+  if (marker.schema !== 3) fail('unsupported-schema', 'schema');
+  requireMarkerField(marker, 'state');
+  if (marker.state !== 'committed') fail('unsupported-marker-state', 'state');
+  requireMarkerField(marker, 'kind');
+  if (marker.kind !== 'fresh') fail('invalid-field', 'kind');
+  requireMarkerField(marker, 'installationId');
+  const installationId = canonicalId(marker.installationId);
+  if (!installationId) fail('invalid-installation-id', 'installationId');
+  requireMarkerField(marker, 'liveInstalled');
+  if (typeof marker.liveInstalled !== 'boolean') fail('invalid-field', 'liveInstalled');
+  if (!Object.prototype.hasOwnProperty.call(marker, 'previousActivation') || marker.previousActivation !== null) {
+    fail('invalid-field', 'previousActivation');
+  }
+  const extra = Object.keys(marker).filter((key) => !FRESH_FIELDS.includes(key));
+  if (extra.length) fail('invalid-field', extra[0]);
+  return {
+    schema: 3,
+    state: 'committed',
+    kind: 'fresh',
+    installationId,
+    liveInstalled: marker.liveInstalled,
+    previousActivation: null,
+  };
+}
+
+function freshInstallationMarker(installationId, liveInstalled) {
+  return validateFreshMarker({
+    schema: 3,
+    state: 'committed',
+    kind: 'fresh',
+    installationId,
+    liveInstalled,
+    previousActivation: null,
+  });
+}
+
+function freshInstallationBytes(installationId, liveInstalled) {
+  return Buffer.from(`${JSON.stringify(freshInstallationMarker(installationId, liveInstalled), null, 2)}\n`, 'utf8');
+}
+
 function validateMarker(marker) {
+  if (marker && typeof marker === 'object' && !Array.isArray(marker) && marker.schema === 3) {
+    return validateFreshMarker(marker);
+  }
   const shared = sharedMarker(marker);
   if (marker.schema === 1) {
     requireMarkerField(marker, 'previousVersionId');
@@ -197,9 +246,18 @@ function detectStorageMode({ libraryDir } = {}) {
   };
 }
 
+function markerRecordsInstalledShow(marker) {
+  if (!marker) return false;
+  if (marker.schema === 3) return marker.liveInstalled === true;
+  return marker.mirrorInstalled === true;
+}
+
 module.exports = {
   MARKER_NAME,
   MAX_MARKER_BYTES,
   StorageModeError,
   detectStorageMode,
+  freshInstallationMarker,
+  freshInstallationBytes,
+  markerRecordsInstalledShow,
 };

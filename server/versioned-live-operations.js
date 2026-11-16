@@ -5,7 +5,12 @@ const path = require('path');
 const { createVersionStore } = require('../library-version-store');
 const { detectImage } = require('../script-library');
 const { loadVersionedShow } = require('./versioned-show');
-const { detectStorageMode, StorageModeError } = require('./storage-mode');
+const {
+  detectStorageMode,
+  StorageModeError,
+  markerRecordsInstalledShow,
+  freshInstallationBytes,
+} = require('./storage-mode');
 const { recoverVersionedInstall } = require('./versioned-live-install');
 
 // Fixture-only live operations. One factory owns one in-process queue.
@@ -42,8 +47,9 @@ const LIVE_STAGES = Object.freeze([
   'after-mirror',
   'before-cleanup',
 ]);
-const LIVE_OPERATIONS = Object.freeze(['set-live', 'publish-live', 'restore-previous']);
+const LIVE_OPERATIONS = Object.freeze(['set-live', 'publish-live', 'restore-previous', 'initial-activation']);
 const JOURNAL_FILES = Object.freeze(['plan.json', 'live-state.json', 'mirror.txt']);
+const INITIAL_JOURNAL_FILES = Object.freeze(['plan.json', 'live-state.json', 'mirror.txt', 'marker.json']);
 const MAX_BYTES = 8 * 1024 * 1024;
 const REPO_ROOT = path.resolve(__dirname, '..');
 
@@ -219,6 +225,78 @@ function cueFor(operation, fromProduction, targetProduction, resetPosition) {
   return { action: 'preserve', reason: operation === 'restore-previous' ? 'restore-same-production' : 'same-production' };
 }
 
+function readNamedJournal(dir, names) {
+  const files = {};
+  const present = fs.readdirSync(dir);
+  if (present.some((name) => !names.includes(name) && !/^\..+\.tmp$/.test(name))) {
+    return fail('corrupt-journal', 'The live journal contains an unexpected file.');
+  }
+  for (let index = 0; index < names.length; index += 1) {
+    const read = readNoFollow(path.join(dir, names[index]));
+    if (!read.bytes) return fail('corrupt-journal', 'The live journal is incomplete.');
+    files[names[index]] = read.bytes;
+  }
+  return { ok: true, files };
+}
+
+function readInitialActivationJournal(dir, plan) {
+  if (
+    plan.from !== null
+    || plan.previousActivation !== null
+    || plan.expectedGeneration !== 0
+    || plan.nextGeneration !== 1
+    || !validPair(plan.target)
+    || typeof plan.installationId !== 'string'
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(plan.installationId)
+    || typeof plan.markerBeforeHash !== 'string'
+    || typeof plan.markerAfterHash !== 'string'
+  ) {
+    return fail('corrupt-journal', 'The initial activation journal is not valid.');
+  }
+  const named = readNamedJournal(dir, INITIAL_JOURNAL_FILES);
+  if (!named.ok) return named;
+  const files = named.files;
+  if (
+    hashBuffer(files['live-state.json']) !== plan.liveStateHash
+    || hashBuffer(files['mirror.txt']) !== plan.mirrorHash
+    || plan.mirrorHash !== plan.target.contentHash
+    || hashBuffer(files['marker.json']) !== plan.markerAfterHash
+  ) {
+    return fail('corrupt-journal', 'The initial activation journal does not match its recorded bytes.');
+  }
+  let recorded;
+  try {
+    recorded = JSON.parse(files['live-state.json'].toString('utf8'));
+  } catch (err) {
+    return fail('corrupt-journal', 'The initial activation journal does not match its live state.');
+  }
+  if (
+    !recorded
+    || recorded.generation !== 1
+    || recorded.previousActivation !== null
+    || !samePair(recorded, plan.target)
+  ) {
+    return fail('corrupt-journal', 'The initial activation journal does not match its live state.');
+  }
+  let marker;
+  try {
+    marker = JSON.parse(files['marker.json'].toString('utf8'));
+  } catch (err) {
+    return fail('corrupt-journal', 'The initial activation journal does not match its marker.');
+  }
+  if (!marker || marker.schema !== 3 || marker.kind !== 'fresh' || marker.liveInstalled !== true || marker.installationId !== plan.installationId) {
+    return fail('corrupt-journal', 'The initial activation journal does not match its marker.');
+  }
+  return {
+    ok: true,
+    kind: 'initial',
+    plan,
+    liveBytes: files['live-state.json'],
+    mirrorBytes: files['mirror.txt'],
+    markerBytes: files['marker.json'],
+  };
+}
+
 function readLiveJournal(dir) {
   const stat = lstatIfExists(dir);
   if (!stat) return { missing: true };
@@ -233,6 +311,9 @@ function readLiveJournal(dir) {
   }
   if (plan && plan.schema === 2 && plan.operation === 'initial-live-install') {
     return { ok: true, kind: 'install' };
+  }
+  if (plan && plan.schema === 2 && plan.operation === 'initial-activation') {
+    return readInitialActivationJournal(dir, plan);
   }
   if (!plan || plan.schema !== 2 || !LIVE_OPERATIONS.includes(plan.operation)) {
     return fail('corrupt-journal', 'The live journal could not be read.');
@@ -337,6 +418,7 @@ function createVersionedLiveOperations(options) {
       ok: false,
       saveLibraryVersion: rejected,
       setLiveVersion: rejected,
+      activateInitialVersion: rejected,
       publishLiveVersion: rejected,
       restorePreviousLive: rejected,
       recoverLiveOperations: rejected,
@@ -396,7 +478,10 @@ function createVersionedLiveOperations(options) {
       scriptFile: ctx.script.lexical,
     });
     if (!loaded.ok) return fail(loaded.code || 'refused', loaded.error || 'The versioned show could not be loaded.');
-    if (!loaded.marker || loaded.marker.mirrorInstalled !== true) {
+    if (!loaded.marker || !markerRecordsInstalledShow(loaded.marker)) {
+      if (loaded.status === 'awaiting-live') {
+        return fail('no-live-show', 'No script is currently live.');
+      }
       return fail('not-installed', 'The versioned show has not finished initial installation.');
     }
     if (loaded.status !== 'loadable') {
@@ -426,7 +511,65 @@ function createVersionedLiveOperations(options) {
     return { ok: true };
   }
 
+  function applyInitialJournal(ctx, journalRecord) {
+    const plan = journalRecord.plan;
+    const target = verifyTarget(ctx.store, ctx.library.real, ctx.script.lexical, plan.target.productionId, plan.target.versionId, ctx.reviewActivation);
+    if (!target.ok) return target;
+    if (!target.bytes.equals(journalRecord.mirrorBytes)) {
+      return fail('hash-mismatch', 'The selected version does not match the live journal.');
+    }
+    let detected;
+    try {
+      detected = detectStorageMode({ libraryDir: ctx.library.lexical });
+    } catch (err) {
+      if (err instanceof StorageModeError) return fail(err.code, 'The installation marker cannot be used.');
+      throw err;
+    }
+    const markerPath = path.join(ctx.library.lexical, 'migration.json');
+    const markerNow = readNoFollow(markerPath);
+    if (!markerNow.bytes || !detected || !detected.marker || detected.marker.schema !== 3 || detected.marker.installationId !== plan.installationId) {
+      return fail('marker-conflict', 'The fresh installation marker changed during the first activation.');
+    }
+    const alreadyMarked = markerNow.bytes.equals(journalRecord.markerBytes);
+    if (hashBuffer(markerNow.bytes) !== plan.markerBeforeHash && !alreadyMarked) {
+      return fail('marker-conflict', 'The fresh installation marker changed during the first activation.');
+    }
+    const stateFile = path.join(ctx.library.lexical, 'live-state.json');
+    const stateNow = readNoFollow(stateFile);
+    if (stateNow.unsafe || stateNow.invalid) return fail('invalid-live-state', 'live-state.json could not be read.');
+    if (stateNow.bytes && !stateNow.bytes.equals(journalRecord.liveBytes)) {
+      return fail('stale-live', 'A newer live activation is already recorded.');
+    }
+    const mirrorNow = readNoFollow(ctx.script.lexical);
+    if (!mirrorNow.bytes) return fail('mirror-conflict', 'The compatibility mirror could not be read.');
+    checkpoint(ctx.failAt, 'journal-committed');
+    checkpoint(ctx.failAt, 'before-live-state');
+    if (!stateNow.bytes) writeAtomic(stateFile, journalRecord.liveBytes);
+    checkpoint(ctx.failAt, 'after-live-state');
+    checkpoint(ctx.failAt, 'before-mirror');
+    if (hashBuffer(mirrorNow.bytes) !== plan.target.contentHash) writeAtomic(ctx.script.lexical, journalRecord.mirrorBytes);
+    checkpoint(ctx.failAt, 'after-mirror');
+    if (!alreadyMarked) writeAtomic(markerPath, journalRecord.markerBytes);
+    checkpoint(ctx.failAt, 'before-cleanup');
+    INITIAL_JOURNAL_FILES.forEach((name) => fs.unlinkSync(path.join(ctx.dirs.committed, name)));
+    if (fs.readdirSync(ctx.dirs.committed).length === 0) fs.rmdirSync(ctx.dirs.committed);
+    return {
+      ok: true,
+      unchanged: false,
+      status: 'activated',
+      operation: 'initial-activation',
+      productionId: plan.target.productionId,
+      versionId: plan.target.versionId,
+      contentHash: plan.target.contentHash,
+      previousActivation: null,
+      generation: 1,
+      updatedAt: plan.updatedAt,
+      cue: plan.cue,
+    };
+  }
+
   function applyLiveJournal(ctx, journalRecord) {
+    if (journalRecord.kind === 'initial') return applyInitialJournal(ctx, journalRecord);
     const plan = journalRecord.plan;
     const target = verifyTarget(ctx.store, ctx.library.real, ctx.script.lexical, plan.target.productionId, plan.target.versionId, ctx.reviewActivation);
     if (!target.ok) return target;
@@ -441,7 +584,7 @@ function createVersionedLiveOperations(options) {
       throw err;
     }
     const markerBytes = readNoFollow(path.join(ctx.library.lexical, 'migration.json'));
-    if (!markerBytes.bytes || !marker || !marker.marker || marker.marker.mirrorInstalled !== true) {
+    if (!markerBytes.bytes || !marker || !marker.marker || !markerRecordsInstalledShow(marker.marker)) {
       return fail('marker-conflict', 'The migration marker changed during the live operation.');
     }
     const stateFile = path.join(ctx.library.lexical, 'live-state.json');
@@ -516,6 +659,17 @@ function createVersionedLiveOperations(options) {
     const record = readLiveJournal(ctx.dirs.pending);
     if (!record.ok) return record;
     if (record.kind === 'install') return fail('journal-conflict', 'An initial installation journal is still pending.');
+    if (record.kind === 'initial') {
+      const plan = record.plan;
+      const matches = requestPlan
+        && requestPlan.operation === 'initial-activation'
+        && plan.installationId === requestPlan.installationId
+        && samePair(plan.target, requestPlan.target);
+      if (!matches) return fail('journal-conflict', 'A pending live journal targets a different activation.');
+      fs.renameSync(ctx.dirs.pending, ctx.dirs.committed);
+      fsyncDirectory(path.dirname(ctx.dirs.committed));
+      return applyInitialJournal(ctx, record);
+    }
     const plan = record.plan;
     const matches = requestPlan
       && plan.operation === requestPlan.operation
@@ -597,6 +751,93 @@ function createVersionedLiveOperations(options) {
         text: body.text,
         createdAt: body.createdAt,
       });
+    });
+  }
+
+  async function activateInitial(ctx, target) {
+    const updatedAt = timestamp(ctx);
+    if (!updatedAt) return fail('invalid-clock', 'The live operation timestamp is not valid.');
+    let detected;
+    try {
+      detected = detectStorageMode({ libraryDir: ctx.library.lexical });
+    } catch (err) {
+      if (err instanceof StorageModeError) return fail(err.code, 'The installation marker cannot be used.');
+      throw err;
+    }
+    if (!detected || !detected.marker || detected.marker.schema !== 3 || detected.marker.liveInstalled !== false) {
+      return fail('not-installed', 'The first live show can be activated only while this installation is waiting.');
+    }
+    const markerPath = path.join(ctx.library.lexical, 'migration.json');
+    const markerNow = readNoFollow(markerPath);
+    if (!markerNow.bytes) return fail('marker-conflict', 'The fresh installation marker could not be read.');
+    const targetPair = activation(target.version.productionId, target.version.id, target.hash);
+    const liveState = {
+      schema: 1,
+      productionId: targetPair.productionId,
+      versionId: targetPair.versionId,
+      contentHash: targetPair.contentHash,
+      previousActivation: null,
+      updatedAt,
+      generation: 1,
+    };
+    const liveBytes = stableBytes(liveState);
+    const markerAfter = freshInstallationBytes(detected.marker.installationId, true);
+    const plan = {
+      schema: 2,
+      operation: 'initial-activation',
+      expectedGeneration: 0,
+      nextGeneration: 1,
+      updatedAt,
+      from: null,
+      target: targetPair,
+      previousActivation: null,
+      installationId: detected.marker.installationId,
+      liveStateHash: hashBuffer(liveBytes),
+      mirrorHash: target.hash,
+      markerBeforeHash: hashBuffer(markerNow.bytes),
+      markerAfterHash: hashBuffer(markerAfter),
+      cue: { action: 'reset', reason: 'initial-activation' },
+    };
+    const guarded = guardPending(ctx, plan);
+    if (!guarded.ok || guarded.status === 'activated') return guarded;
+    checkpoint(ctx.failAt, 'before-journal');
+    fs.mkdirSync(ctx.dirs.pending, { recursive: true });
+    writeAtomic(path.join(ctx.dirs.pending, 'plan.json'), stableBytes(plan));
+    writeAtomic(path.join(ctx.dirs.pending, 'live-state.json'), liveBytes);
+    writeAtomic(path.join(ctx.dirs.pending, 'mirror.txt'), target.bytes);
+    writeAtomic(path.join(ctx.dirs.pending, 'marker.json'), markerAfter);
+    fsyncDirectory(ctx.dirs.pending);
+    checkpoint(ctx.failAt, 'pending-written');
+    fs.renameSync(ctx.dirs.pending, ctx.dirs.committed);
+    fsyncDirectory(path.dirname(ctx.dirs.committed));
+    const written = readLiveJournal(ctx.dirs.committed);
+    if (!written.ok) return written;
+    return applyInitialJournal(ctx, written);
+  }
+
+  function activateInitialVersion(input) {
+    return exclusive(async () => {
+      const ctx = context(input && input.failAt);
+      if (!ctx.ok) return ctx;
+      const settled = settle(ctx);
+      if (!settled.ok) return settled;
+      const loaded = loadVersionedShow({
+        libraryDir: ctx.library.lexical,
+        scriptFile: ctx.script.lexical,
+      });
+      if (!loaded.ok) return fail(loaded.code || 'refused', loaded.error || 'The versioned show could not be loaded.');
+      if (loaded.status !== 'awaiting-live') {
+        return fail('not-installed', 'The first live show can be activated only while this installation is waiting.');
+      }
+      const body = input || {};
+      const head = ctx.store.readProduction(body.productionId);
+      if (!head.ok) return fail(head.code || 'missing-production', head.error || 'The production could not be read.');
+      if (body.versionId !== head.production.headVersionId) {
+        return fail('conflict', 'The saved head changed after this version was selected.');
+      }
+      const target = verifyTarget(ctx.store, ctx.library.real, ctx.script.lexical, body.productionId, body.versionId, ctx.reviewActivation);
+      if (!target.ok) return target;
+      return activateInitial(ctx, target);
     });
   }
 
@@ -756,6 +997,7 @@ function createVersionedLiveOperations(options) {
     ok: Boolean(opened && store),
     saveLibraryVersion,
     setLiveVersion,
+    activateInitialVersion,
     publishLiveVersion,
     restorePreviousLive,
     recoverLiveOperations,

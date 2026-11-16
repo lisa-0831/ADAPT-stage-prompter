@@ -12,6 +12,7 @@ const {
 } = require('../library-versioned-production-management');
 const { createVersionedAssetManager } = require('../library-versioned-assets');
 const { createVersionedLiveOperations } = require('./versioned-live-operations');
+const { detectStorageMode, StorageModeError } = require('./storage-mode');
 
 // Application-facing coordinator for one versioned library root.
 //
@@ -400,6 +401,24 @@ function createVersionedLibraryService(options) {
     return result;
   }
 
+  function readInstallation() {
+    let detected;
+    try {
+      detected = detectStorageMode({ libraryDir: library.lexical });
+    } catch (err) {
+      if (err instanceof StorageModeError) return fail(err.code, 'The installation marker cannot be used.');
+      throw err;
+    }
+    if (!detected || detected.mode !== 'versioned' || !detected.marker) {
+      return { ok: true, kind: 'unmarked' };
+    }
+    const marker = detected.marker;
+    if (marker.schema === 3 && marker.liveInstalled === false) return { ok: true, kind: 'awaiting', marker };
+    if (marker.schema === 3 && marker.liveInstalled === true) return { ok: true, kind: 'installed', marker };
+    if (marker.mirrorInstalled === true) return { ok: true, kind: 'installed', marker };
+    return { ok: true, kind: 'pending-install', marker };
+  }
+
   function readLivePointer() {
     const filePath = path.join(library.real, 'live-state.json');
     const read = readNoFollow(filePath, 1024 * 1024);
@@ -434,7 +453,23 @@ function createVersionedLibraryService(options) {
     return exclusive(() => {
       const dir = path.join(library.real, 'productions');
       const stat = lstatIfExists(dir);
-      if (!stat) return { ok: true, order: 'production-id', productions: [], invalid: [], liveState: { ok: true, present: false } };
+      if (!stat) {
+        const installation = readInstallation();
+        if (!installation.ok) return installation;
+        return {
+          ok: true,
+          order: 'production-id',
+          productions: [],
+          invalid: [],
+          liveState: {
+            ok: true,
+            present: false,
+            awaitingLive: installation.kind === 'awaiting',
+            productionId: null,
+            versionId: null,
+          },
+        };
+      }
       if (stat.isSymbolicLink() || !stat.isDirectory()) {
         return fail('unsafe-path', 'The production directory is not a real directory.');
       }
@@ -500,6 +535,11 @@ function createVersionedLibraryService(options) {
       productions.sort((left, right) => (left.productionId < right.productionId ? -1 : 1));
       invalid.sort((left, right) => (left.name < right.name ? -1 : 1));
       const pointer = readLivePointer();
+      const installation = readInstallation();
+      if (!installation.ok) return installation;
+      if (installation.kind === 'installed' && pointer.ok && !pointer.present) {
+        return fail('missing-live-state', 'This installation was activated, but the live pointer is missing.');
+      }
       const liveId = pointer.ok && pointer.present ? pointer.productionId : null;
       return {
         ok: true,
@@ -511,7 +551,13 @@ function createVersionedLibraryService(options) {
         })),
         invalid,
         liveState: pointer.ok
-          ? { ok: true, present: pointer.present, productionId: pointer.productionId || null, versionId: pointer.versionId || null }
+          ? {
+            ok: true,
+            present: pointer.present,
+            awaitingLive: installation.kind === 'awaiting',
+            productionId: pointer.productionId || null,
+            versionId: pointer.versionId || null,
+          }
           : { ok: false, code: pointer.code, error: pointer.error },
       };
     });
@@ -579,9 +625,17 @@ function createVersionedLibraryService(options) {
   }
 
   function readLiveRecord() {
+    const installation = readInstallation();
+    if (!installation.ok) return installation;
     const filePath = path.join(library.real, 'live-state.json');
     const read = readNoFollow(filePath, 1024 * 1024);
-    if (read.missing) return { ok: true, present: false };
+    if (read.missing) {
+      if (installation.kind === 'awaiting') return { ok: true, present: false, awaitingLive: true };
+      if (installation.kind === 'installed') {
+        return fail('missing-live-state', 'This installation was activated, but the live pointer is missing.');
+      }
+      return { ok: true, present: false };
+    }
     if (!read.bytes) return fail('invalid-live-state', 'live-state.json could not be read.');
     let state;
     try {
@@ -850,7 +904,22 @@ function createVersionedLibraryService(options) {
       }
       const record = readLiveRecord();
       if (!record.ok) return record;
-      if (!record.present) return fail('not-installed', 'The versioned show has not finished initial installation.');
+      if (!record.present) {
+        if (!record.awaitingLive) {
+          return fail('not-installed', 'The versioned show has not finished initial installation.');
+        }
+        const activated = await live.activateInitialVersion({
+          productionId,
+          versionId: head.headVersionId,
+          failAt: body.failAt || '',
+        }).then(interpretLive);
+        if (activated && activated.ok) {
+          activated.previousTitle = '';
+          activated.title = head.title;
+          activated.resetPosition = true;
+        }
+        return deliverLive(activated);
+      }
       const expected = liveExpectations(body, record);
       if (!expected.ok) return expected;
       const activated = await live.setLiveVersion({
@@ -877,7 +946,14 @@ function createVersionedLibraryService(options) {
       const body = input || {};
       const record = readLiveRecord();
       if (!record.ok) return record;
-      if (!record.present) return fail('not-installed', 'The versioned show has not finished initial installation.');
+      if (!record.present) {
+        return fail(
+          record.awaitingLive ? 'no-live-show' : 'not-installed',
+          record.awaitingLive
+            ? 'No script is currently live. Publish was not used to create one.'
+            : 'The versioned show has not finished initial installation.',
+        );
+      }
       const requested = body.productionId ? canonicalId(body.productionId) : null;
       if (body.productionId && !requested) return fail('invalid-id', 'That production id is not valid.');
       if (requested && requested !== record.productionId) {
@@ -1026,6 +1102,7 @@ function createVersionedLibraryService(options) {
       versionId: record.present ? record.versionId : null,
       contentHash: record.present ? record.contentHash : null,
       generation: record.present ? record.generation : null,
+      awaitingLive: Boolean(record.awaitingLive),
       previousActivation: record.previousActivation
         ? {
           productionId: record.previousActivation.productionId,
@@ -1253,7 +1330,14 @@ function createVersionedLibraryService(options) {
       const body = input || {};
       const record = readLiveRecord();
       if (!record.ok) return record;
-      if (!record.present) return fail('not-installed', 'The versioned show has not finished initial installation.');
+      if (!record.present) {
+        return fail(
+          record.awaitingLive ? 'no-previous-activation' : 'not-installed',
+          record.awaitingLive
+            ? 'There is no previous live activation to restore.'
+            : 'The versioned show has not finished initial installation.',
+        );
+      }
       if (!record.previousActivation) {
         return fail('no-previous-activation', 'There is no previous live activation to restore.');
       }

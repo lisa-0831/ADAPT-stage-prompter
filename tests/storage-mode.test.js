@@ -197,7 +197,7 @@ test('invalid JSON refuses startup', (t) => {
 test('an unsupported schema refuses startup', (t) => {
   const root = makeRoot(t);
   const paths = layout(root);
-  writeMarker(paths.libraryDir, marker({ schema: 3 }));
+  writeMarker(paths.libraryDir, marker({ schema: 4 }));
   const before = fingerprint(tracked(paths));
   const err = refusalCode(paths);
   assert.equal(err.code, 'unsupported-schema');

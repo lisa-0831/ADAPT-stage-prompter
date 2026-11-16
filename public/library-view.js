@@ -1229,7 +1229,8 @@ function beginLibrarySetLive(entry) {
   libraryPendingRevision = ScriptLibrary.reviewedLiveRevision(entry, libraryReviewed);
   libraryPendingReview = false;
   const ui = libraryDom();
-  const content = ScriptLibrary.liveSwitchConfirmContent(libraryCurrentTitle(), entry.title);
+  const noLiveYet = !liveShow.getLiveScriptId() && !libraryLiveIdCached;
+  const content = ScriptLibrary.liveSwitchConfirmContent(noLiveYet ? 'No script is live yet' : libraryCurrentTitle(), entry.title);
   ui.confirmBody.replaceChildren();
   ui.confirmStatus.textContent = '';
   ui.confirmStatus.classList.remove('editor-error');

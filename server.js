@@ -91,6 +91,7 @@ function createPrompterServer(options = {}) {
       createId: options.createId,
       failSynchronization: options.failSynchronization,
       deferSynchronization: options.deferSynchronization === true,
+      allowFaults: options.allowFaults === true,
     });
   }
   const staffToken = options.staffToken !== undefined
