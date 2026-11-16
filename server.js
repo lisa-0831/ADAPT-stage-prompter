@@ -12,6 +12,7 @@ const {
 } = require('./script-library');
 const { registerHttpRoutes } = require('./server/http-routes');
 const { registerLiveSocketHandlers } = require('./server/live-socket');
+const { detectStorageMode, StorageModeError } = require('./server/storage-mode');
 const {
   commitLiveFiles,
   recoverLiveFiles,
@@ -55,6 +56,15 @@ function createPrompterServer(options = {}) {
   const libraryDir = options.libraryDir
     || process.env.SCRIPT_LIBRARY_DIR
     || path.join(path.dirname(scriptFile), 'data', 'library');
+  // Decide the storage mode before opening the library, recovering the
+  // journal, adopting script.txt, or creating a network server.
+  const storageMode = detectStorageMode({ libraryDir });
+  if (storageMode.mode !== 'legacy') {
+    throw new StorageModeError(
+      'unsupported-versioned-storage',
+      'Refusing to start. This library has a committed migration.json, and this server cannot load versioned storage yet. It will not read script.txt as the show, change the library, or listen for clients. Leave the marker in place.',
+    );
+  }
   const staffToken = options.staffToken !== undefined
     ? options.staffToken
     : (process.env.PROMPTER_STAFF_TOKEN || '');
@@ -312,7 +322,17 @@ function createPrompterServer(options = {}) {
 
 if (require.main === module) {
   const PORT = process.env.PORT || 3000;
-  const { server } = createPrompterServer();
+  let created;
+  try {
+    created = createPrompterServer();
+  } catch (err) {
+    if (err && err.name === 'StorageModeError') {
+      console.error(`[server] ${err.message}`);
+      process.exit(1);
+    }
+    throw err;
+  }
+  const { server } = created;
   server.listen(PORT, '0.0.0.0', () => {
     const { networkInterfaces } = require('os');
     const nets = networkInterfaces();
