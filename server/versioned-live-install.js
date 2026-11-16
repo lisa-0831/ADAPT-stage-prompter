@@ -221,6 +221,18 @@ function readJournal(dir) {
   const stat = lstatIfExists(dir);
   if (!stat) return { missing: true };
   if (stat.isSymbolicLink() || !stat.isDirectory()) return fail('corrupt-journal', 'The installation journal is not a real directory.');
+  const planPeek = readNoFollow(path.join(dir, PLAN_NAME));
+  if (planPeek.bytes) {
+    let peeked = null;
+    try {
+      peeked = JSON.parse(planPeek.bytes.toString('utf8'));
+    } catch (err) {
+      return fail('corrupt-journal', 'The installation journal could not be read.');
+    }
+    if (peeked && peeked.schema === 2 && typeof peeked.operation === 'string' && peeked.operation !== 'initial-live-install') {
+      return fail('journal-conflict', 'The installation journal belongs to another operation.');
+    }
+  }
   let names;
   try {
     names = fs.readdirSync(dir);
