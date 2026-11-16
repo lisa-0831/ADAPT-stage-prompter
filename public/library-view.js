@@ -262,6 +262,7 @@ function renderLibraryList() {
     title.textContent = entry.title || 'Untitled script';
     head.append(title);
     const isLive = entry.live || entry.id === liveShow.getLiveScriptId();
+    const headIsLive = savedHeadIsLive(entry, isLive);
     if (isLive) {
       const badge = doc.createElement('p');
       badge.className = 'library-live';
@@ -300,7 +301,7 @@ function renderLibraryList() {
     action('Manage Images', () => openLibraryImages(entry));
     action('Rename', () => showLibraryRename(item, entry));
     const liveButton = action('Set as Live', () => beginLibrarySetLive(entry));
-    if (isLive) {
+    if (headIsLive) {
       liveButton.disabled = true;
       liveButton.textContent = 'Already live';
       liveButton.setAttribute('aria-label', `Already live: ${entry.title || 'saved script'}`);
@@ -1190,8 +1191,16 @@ async function renameLibraryScript(entry, title) {
   }
 }
 
+function savedHeadIsLive(entry, productionIsLive) {
+  if (entry && entry.liveVersionId && entry.versionId) {
+    return entry.liveVersionId === entry.versionId;
+  }
+  return Boolean(productionIsLive);
+}
+
 function beginLibrarySetLive(entry) {
-  if (entry.live || entry.id === liveShow.getLiveScriptId()) return;
+  const productionIsLive = Boolean(entry && (entry.live || entry.id === liveShow.getLiveScriptId()));
+  if (savedHeadIsLive(entry, productionIsLive)) return;
   if (!libraryGuard.tryStart()) return;
   libraryGuard.finish();
   libraryPendingId = entry.id;

@@ -11,6 +11,7 @@ const { StorageModeError } = require('../server/storage-mode');
 const { runMigration } = require('../library-migration-cli');
 const { createVersionedLibraryService } = require('../server/versioned-library-service');
 const { createVersionedLiveOperations } = require('../server/versioned-live-operations');
+const { createVersionStore } = require('../library-version-store');
 const { installVersionedLive } = require('../server/versioned-live-install');
 const {
   VersionedStartupError,
@@ -803,4 +804,149 @@ test('the repository scripts, library, images, and journals stay unchanged', () 
   assert.equal(adapter.includes('broadcast'), false);
   const routes = fs.readFileSync(path.join(REPO, 'server', 'http-routes.js'), 'utf8');
   assert.equal(routes.includes('versioned-http-routes'), false);
+});
+
+test('install journals recover after the live state or mirror is written', async (t) => {
+  for (const stage of ['after-live-state', 'before-cleanup']) {
+    const paths = commitFixture(t);
+    assert.throws(
+      () => installVersionedLive(Object.assign({ failAt: stage, now: () => '2026-06-06T00:00:00.000Z' }, paths)),
+      (err) => err && err.code === 'injected-failure',
+    );
+    assert.equal(fs.existsSync(path.join(paths.journalDir, 'versioned-live', 'committed', 'plan.json')), true);
+    const started = await boot(t, paths);
+    assert.equal(started.getLiveRaw(), LIVE_TEXT);
+    assert.equal(liveState(paths).productionId, LIVE);
+    assert.equal(fs.existsSync(path.join(paths.journalDir, 'versioned-live', 'committed')), false);
+    await started.close();
+  }
+});
+
+test('committed publish and restore journals select their recorded version', async (t) => {
+  const publishPaths = commitFixture(t);
+  const installed = await boot(t, publishPaths);
+  const original = liveState(publishPaths);
+  await installed.close();
+  const publishing = createVersionedLiveOperations({
+    root: publishPaths.root,
+    libraryDir: publishPaths.libraryDir,
+    scriptFile: publishPaths.scriptFile,
+    journalDir: publishPaths.journalDir,
+    now: () => '2026-06-06T00:00:02.000Z',
+  });
+  const head = JSON.parse(fs.readFileSync(path.join(publishPaths.libraryDir, 'productions', LIVE, 'metadata.json'), 'utf8')).headVersionId;
+  const published = '# Live Show\nOne\nTwo\nPublished\n';
+  const publishedId = '33333333-3333-4333-8333-333333333333';
+  await assert.rejects(
+    () => publishing.publishLiveVersion({
+      productionId: LIVE,
+      expectedHeadVersionId: head,
+      newVersionId: publishedId,
+      text: published,
+      createdAt: '2026-06-06T00:00:02.000Z',
+      expectedGeneration: original.generation,
+      expectedVersionId: original.versionId,
+      expectedContentHash: original.contentHash,
+      failAt: 'journal-committed',
+    }),
+    (err) => err && err.code === 'injected-failure',
+  );
+  const recoveredPublish = await boot(t, publishPaths);
+  assert.equal(liveState(publishPaths).versionId, publishedId);
+  assert.equal(recoveredPublish.getLiveRaw(), published);
+  await recoveredPublish.close();
+
+  const restorePaths = commitFixture(t);
+  const first = await boot(t, restorePaths);
+  const initial = liveState(restorePaths);
+  await first.close();
+  const restoring = createVersionedLiveOperations({
+    root: restorePaths.root,
+    libraryDir: restorePaths.libraryDir,
+    scriptFile: restorePaths.scriptFile,
+    journalDir: restorePaths.journalDir,
+    now: () => '2026-06-06T00:00:03.000Z',
+  });
+  const otherHead = JSON.parse(fs.readFileSync(path.join(restorePaths.libraryDir, 'productions', OTHER, 'metadata.json'), 'utf8')).headVersionId;
+  const switched = await restoring.setLiveVersion({
+    productionId: OTHER,
+    versionId: otherHead,
+    expectedGeneration: initial.generation,
+    expectedVersionId: initial.versionId,
+    expectedContentHash: initial.contentHash,
+  });
+  assert.equal(switched.ok, true, switched.code);
+  const switchedState = liveState(restorePaths);
+  await assert.rejects(
+    () => restoring.restorePreviousLive({
+      expectedGeneration: switchedState.generation,
+      expectedVersionId: switchedState.versionId,
+      expectedContentHash: switchedState.contentHash,
+      failAt: 'journal-committed',
+    }),
+    (err) => err && err.code === 'injected-failure',
+  );
+  const recoveredRestore = await boot(t, restorePaths);
+  assert.equal(liveState(restorePaths).productionId, LIVE);
+  assert.equal(liveState(restorePaths).versionId, initial.versionId);
+  assert.equal(recoveredRestore.getLiveRaw(), LIVE_TEXT);
+  await recoveredRestore.close();
+});
+
+test('an interrupted version finishes from its stored timestamp and is not rewritten', async (t) => {
+  const paths = commitFixture(t);
+  const versionId = '44444444-4444-4444-8444-444444444444';
+  const text = '# Live Show\nOne\nTwo\nInterrupted\n';
+  const head = JSON.parse(fs.readFileSync(path.join(paths.libraryDir, 'productions', LIVE, 'metadata.json'), 'utf8')).headVersionId;
+  const interrupted = createVersionStore({ root: paths.libraryDir, failAt: 'before-metadata' });
+  const first = await interrupted.saveVersion({
+    productionId: LIVE,
+    expectedVersionId: head,
+    newVersionId: versionId,
+    text,
+    createdAt: '2026-06-06T00:00:04.000Z',
+  });
+  assert.equal(first.ok, false);
+  assert.equal(first.code, 'incomplete');
+  const versionFile = path.join(paths.libraryDir, 'productions', LIVE, 'versions', versionId, 'version.json');
+  const stored = fs.readFileSync(versionFile);
+  const versionsBefore = fs.readdirSync(path.join(paths.libraryDir, 'productions', LIVE, 'versions'));
+  const retry = createVersionStore({ root: paths.libraryDir });
+  const second = await retry.saveVersion({
+    productionId: LIVE,
+    expectedVersionId: head,
+    newVersionId: versionId,
+    text,
+    createdAt: '2026-06-06T00:00:05.000Z',
+  });
+  assert.equal(second.ok, true, second.code);
+  assert.equal(second.currentVersionId, versionId);
+  assert.equal(fs.readFileSync(versionFile).equals(stored), true);
+  assert.equal(JSON.parse(stored.toString('utf8')).createdAt, '2026-06-06T00:00:04.000Z');
+  assert.deepEqual(fs.readdirSync(path.join(paths.libraryDir, 'productions', LIVE, 'versions')), versionsBefore);
+  const metadata = JSON.parse(fs.readFileSync(path.join(paths.libraryDir, 'productions', LIVE, 'metadata.json'), 'utf8'));
+  assert.equal(metadata.headVersionId, versionId);
+
+  const otherId = '55555555-5555-4555-8555-555555555555';
+  const parkedFile = path.join(paths.libraryDir, 'productions', LIVE, 'versions', otherId, 'version.json');
+  const parked = createVersionStore({ root: paths.libraryDir, failAt: 'before-metadata' });
+  const parkedResult = await parked.saveVersion({
+    productionId: LIVE,
+    expectedVersionId: versionId,
+    newVersionId: otherId,
+    text: '# Live Show\nParked\n',
+    createdAt: '2026-06-06T00:00:06.000Z',
+  });
+  assert.equal(parkedResult.code, 'incomplete');
+  const parkedBytes = fs.readFileSync(parkedFile);
+  const mismatch = await createVersionStore({ root: paths.libraryDir }).saveVersion({
+    productionId: LIVE,
+    expectedVersionId: versionId,
+    newVersionId: otherId,
+    text: '# Live Show\nDifferent\n',
+    createdAt: '2026-06-06T00:00:06.000Z',
+  });
+  assert.equal(mismatch.code, 'version-exists');
+  assert.equal(fs.readFileSync(parkedFile).equals(parkedBytes), true);
+  assert.equal(fs.readdirSync(path.join(paths.libraryDir, 'productions', LIVE, 'versions')).includes(otherId), true);
 });

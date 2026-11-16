@@ -646,13 +646,21 @@ function openVersionStore(options, readOnly) {
     const targetDir = versionDir(again.dir, newVersionId);
     const existing = lstatIfExists(targetDir);
     let alreadyWritten = false;
+    let recordedAt = body.createdAt;
     if (existing) {
       if (existing.isSymbolicLink() || !existing.isDirectory()) {
         return fail('version-exists', 'That version id already exists and was not overwritten.');
       }
       const prior = loadVersion(again.dir, again.id, newVersionId);
-      if (!prior.ok || !prior.scriptBytes.equals(textBytes) || !sameDocument(prior.doc, document)) {
+      if (!prior.ok || !prior.scriptBytes.equals(textBytes)) {
         return fail('version-exists', 'That version id already exists and was not overwritten.');
+      }
+      if (!sameDocument(prior.doc, document)) {
+        const storedDocument = Object.assign({}, document, { createdAt: prior.doc.createdAt });
+        if (!sameDocument(prior.doc, storedDocument)) {
+          return fail('version-exists', 'That version id already exists and was not overwritten.');
+        }
+        recordedAt = prior.doc.createdAt;
       }
       alreadyWritten = true;
     }
@@ -682,9 +690,9 @@ function openVersionStore(options, readOnly) {
         origin: 'edited',
         parentVersionId: again.headId,
         contentHash,
-        createdAt: body.createdAt,
+        createdAt: recordedAt,
       };
-      const metadata = nextMetadata(again.metadata, summary, body.createdAt);
+      const metadata = nextMetadata(again.metadata, summary, recordedAt);
       replaceMetadata(again.dir, metadata);
       const committed = loadMetadata(productionId);
       if (!committed.ok || committed.headId !== newVersionId) {

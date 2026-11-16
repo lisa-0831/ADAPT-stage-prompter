@@ -73,6 +73,19 @@
         }
         els.area.classList.remove('open');
       } else {
+        let body = null;
+        if (typeof response.json === 'function') {
+          try { body = await response.json(); } catch (err) { body = null; }
+        }
+        if (body && body.code === 'saved-not-live' && body.saved === true && body.activated === false) {
+          if (body.versionId) versionAttempt = { text, versionId: body.versionId };
+          notify('The script was saved to the library. It did not go live. The audience is still seeing the previous live version. Resolve the problem, then set this saved version live. This draft was kept. A second version was not created.');
+          return;
+        }
+        if (body && body.code && typeof body.error === 'string' && body.error) {
+          notify(body.error);
+          return;
+        }
         notify('Upload failed — check server.');
       }
     }

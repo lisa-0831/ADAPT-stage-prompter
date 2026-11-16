@@ -65,6 +65,7 @@ const STATUS = {
   conflict: 409,
   'stale-live': 409,
   'activation-not-ready': 409,
+  'unresolved-image': 409,
   'in-use': 409,
   'dangling-reference': 409,
   'version-exists': 409,
