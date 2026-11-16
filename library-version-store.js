@@ -254,7 +254,7 @@ function createVersionStore(options) {
       production: {
         id: loaded.id,
         schema: loaded.metadata.schema == null ? null : loaded.metadata.schema,
-        title: loaded.metadata.title || null,
+        title: typeof loaded.metadata.title === 'string' ? loaded.metadata.title : null,
         createdAt: loaded.metadata.createdAt || null,
         updatedAt: loaded.metadata.updatedAt || null,
         currentVersionId: loaded.headId,

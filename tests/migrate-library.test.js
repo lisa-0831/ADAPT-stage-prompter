@@ -7,6 +7,7 @@ const path = require('path');
 const { createPrompterServer } = require('../server');
 const { StorageModeError, detectStorageMode } = require('../server/storage-mode');
 const { MigrationError, runCli, runMigration } = require('../library-migration-cli');
+const { createVersionStore } = require('../library-version-store');
 
 const REPO = path.resolve(__dirname, '..');
 const LIVE = '11111111-1111-4111-8111-111111111111';
@@ -308,13 +309,16 @@ test('two productions keep their scripts, owned assets, and distinct image copie
   assert.equal(prepared.activated, false);
   assert.equal(prepared.liveProductionId, LIVE);
   assert.equal(prepared.pointer.versionId, LIVE_V2);
-  assert.equal(prepared.pointer.previousVersionId, LIVE_V1);
+  assert.equal(prepared.pointer.previousActivation, null);
+  assert.equal(prepared.pointer.previousVersionId, undefined);
   assert.equal(prepared.pointer.productionId, LIVE);
   const liveOriginal = fs.readFileSync(path.join(root, 'data', 'library', 'migration-work', 'productions', LIVE, 'versions', LIVE_V1, 'script.txt'));
   assert.equal(liveOriginal.equals(Buffer.from(LIVE_TEXT)), true);
   const liveMigrated = fs.readFileSync(path.join(root, 'data', 'library', 'migration-work', 'productions', LIVE, 'versions', LIVE_V2, 'script.txt'), 'utf8');
   assert.equal(liveMigrated.includes(`library:${LIVE}/${LIVE_ASSET}`), true);
   assert.equal(liveMigrated.includes('images/Card.png'), false);
+  const liveVersion = JSON.parse(fs.readFileSync(path.join(root, 'data', 'library', 'migration-work', 'productions', LIVE, 'versions', LIVE_V2, 'version.json'), 'utf8'));
+  assert.equal(liveVersion.parentVersionId, LIVE_V1);
   const otherVersions = fs.readdirSync(path.join(root, 'data', 'library', 'migration-work', 'productions', OTHER, 'versions'));
   assert.deepEqual(otherVersions, [OTHER_V1]);
   const otherOriginal = fs.readFileSync(path.join(root, 'data', 'library', 'migration-work', 'productions', OTHER, 'versions', OTHER_V1, 'script.txt'), 'utf8');
@@ -341,10 +345,20 @@ test('two productions keep their scripts, owned assets, and distinct image copie
   assert.equal(committed.committed, true);
   assert.equal(committed.activated, false);
   assert.equal(committed.mirrorInstalled, false);
+  assert.equal(committed.marker.schema, 2);
   assert.equal(committed.marker.productionId, LIVE);
   assert.equal(committed.marker.versionId, LIVE_V2);
+  assert.equal(committed.marker.previousActivation, null);
+  assert.equal(committed.marker.previousVersionId, undefined);
   assert.equal(committed.marker.mirrorInstalled, false);
-  const publishedManifest = JSON.parse(fs.readFileSync(path.join(root, 'data', 'library', 'productions', OTHER, 'assets', 'manifest.json'), 'utf8'));
+  const stagedMetadata = fs.readFileSync(path.join(root, 'data', 'library', 'migration-work', 'productions', LIVE, 'metadata.json'));
+  const publishedMetadata = fs.readFileSync(path.join(root, 'data', 'library', 'productions', LIVE, 'metadata.json'));
+  assert.equal(publishedMetadata.equals(stagedMetadata), true);
+  assert.equal(JSON.parse(stagedMetadata.toString('utf8')).title, 'Live Show');
+  const stagedManifest = fs.readFileSync(path.join(root, 'data', 'library', 'migration-work', 'productions', OTHER, 'assets', 'manifest.json'));
+  const publishedManifestBytes = fs.readFileSync(path.join(root, 'data', 'library', 'productions', OTHER, 'assets', 'manifest.json'));
+  assert.equal(publishedManifestBytes.equals(stagedManifest), true);
+  const publishedManifest = JSON.parse(publishedManifestBytes.toString('utf8'));
   assert.equal(publishedManifest.assets.some((asset) => asset.assetId === SPARE && asset.referenced === false), true);
   assert.equal(publishedManifest.assets.some((asset) => asset.assetId === OWNED), true);
   const markerFile = path.join(root, 'data', 'library', 'migration.json');
@@ -355,6 +369,8 @@ test('two productions keep their scripts, owned assets, and distinct image copie
   const mode = detectStorageMode({ libraryDir: path.join(root, 'data', 'library') });
   assert.equal(mode.mode, 'versioned');
   assert.equal(mode.supported, false);
+  assert.equal(mode.marker.schema, 2);
+  assert.equal(mode.marker.previousActivation, null);
   assert.throws(
     () => createPrompterServer({
       scriptFile: path.join(root, 'script.txt'),
@@ -499,4 +515,165 @@ test('repository production files stay byte-identical', () => {
   ['data/library/migration.json', 'data/library/productions', 'data/library/migration-work', 'data/live-journal'].forEach((relative) => {
     assert.equal(fs.existsSync(path.join(REPO, relative)), false);
   });
+});
+
+const UNICODE_TITLE = '  欢迎 — “Café”  ';
+const PLAIN_TEXT = '# Plain Show\nHello.\n';
+const PLAIN_ID = '17171717-1717-4171-8171-171717171717';
+const PLAIN_V1 = '18181818-1818-4181-8181-181818181818';
+const PLAIN_MIGRATION = '19191919-1919-4191-8191-191919191919';
+
+function plainShow(root, title) {
+  writeShow(root, {
+    liveText: PLAIN_TEXT,
+    liveId: PLAIN_ID,
+    productions: [{ id: PLAIN_ID, title, text: PLAIN_TEXT }],
+  });
+}
+
+test('a title and a single version survive staging without a self previous activation', (t) => {
+  const root = makeRoot(t);
+  plainShow(root, UNICODE_TITLE);
+  const prepared = runMigration({
+    command: 'prepare',
+    root,
+    createId: ids([PLAIN_MIGRATION, PLAIN_V1]),
+  });
+  assert.equal(prepared.ok, true);
+  assert.equal(prepared.pointer.versionId, PLAIN_V1);
+  assert.equal(prepared.pointer.previousActivation, null);
+  const metadataPath = path.join(root, 'data', 'library', 'migration-work', 'productions', PLAIN_ID, 'metadata.json');
+  const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+  assert.equal(metadata.title, UNICODE_TITLE);
+  assert.equal(metadata.headVersionId, PLAIN_V1);
+  assert.equal(metadata.versions[0].parentVersionId, null);
+  const version = JSON.parse(fs.readFileSync(path.join(root, 'data', 'library', 'migration-work', 'productions', PLAIN_ID, 'versions', PLAIN_V1, 'version.json'), 'utf8'));
+  assert.equal(version.parentVersionId, null);
+  const store = createVersionStore({ root: path.join(root, 'data', 'library', 'migration-work') });
+  assert.equal(store.readProduction(PLAIN_ID).production.title, UNICODE_TITLE);
+  const ready = fs.readFileSync(path.join(root, 'data', 'library', 'migration-work', 'READY'));
+  const committed = runMigration({ command: 'commit', root, createId: refusingIds() });
+  assert.equal(committed.ok, true);
+  assert.equal(committed.marker.schema, 2);
+  assert.equal(committed.marker.previousActivation, null);
+  assert.equal(Object.prototype.hasOwnProperty.call(committed.marker, 'previousVersionId'), false);
+  const published = fs.readFileSync(path.join(root, 'data', 'library', 'productions', PLAIN_ID, 'metadata.json'));
+  assert.equal(published.equals(fs.readFileSync(metadataPath)), true);
+  assert.equal(fs.readFileSync(path.join(root, 'data', 'library', 'migration-work', 'READY')).equals(ready), true);
+  assert.equal(fs.existsSync(path.join(root, 'data', 'library', 'live-state.json')), false);
+});
+
+test('changing a title blocks reuse of the prepared plan', (t) => {
+  const root = makeRoot(t);
+  plainShow(root, UNICODE_TITLE);
+  assert.equal(runMigration({
+    command: 'prepare',
+    root,
+    createId: ids([PLAIN_MIGRATION, PLAIN_V1]),
+  }).ok, true);
+  const metadataPath = path.join(root, 'data', 'library', 'migration-work', 'productions', PLAIN_ID, 'metadata.json');
+  const before = fs.readFileSync(metadataPath);
+  const versionPath = path.join(root, 'data', 'library', 'migration-work', 'productions', PLAIN_ID, 'versions', PLAIN_V1, 'script.txt');
+  const versionBefore = fs.readFileSync(versionPath);
+  const indexPath = path.join(root, 'data', 'library', 'index.json');
+  const index = JSON.parse(fs.readFileSync(indexPath, 'utf8'));
+  index.scripts[0].title = 'A different title';
+  writeJson(indexPath, index);
+  const again = runMigration({ command: 'prepare', root, createId: refusingIds() });
+  assert.equal(again.ok, false);
+  assert.equal(again.code, 'source-changed');
+  assert.equal(fs.readFileSync(metadataPath).equals(before), true);
+  assert.equal(fs.readFileSync(versionPath).equals(versionBefore), true);
+  assert.equal(fs.existsSync(path.join(root, 'data', 'library', 'migration.json')), false);
+});
+
+test('abort removes an owned partial preparation and keeps a modified one', (t) => {
+  const clean = makeRoot(t);
+  plainShow(clean, 'Plain');
+  assert.throws(
+    () => runMigration({
+      command: 'prepare',
+      root: clean,
+      failAt: 'v1',
+      createId: ids([PLAIN_MIGRATION, PLAIN_V1]),
+    }),
+    (err) => err instanceof MigrationError && err.code === 'injected-failure',
+  );
+  const cleaned = runMigration({ command: 'abort', root: clean });
+  assert.equal(cleaned.ok, true);
+  assert.equal(fs.existsSync(path.join(clean, 'data', 'library', 'migration-work')), false);
+  assert.equal(fs.existsSync(path.join(clean, 'data', 'library', 'migration-attempt.json')), false);
+  assert.equal(fs.readFileSync(path.join(clean, 'data', 'library', 'scripts', `${PLAIN_ID}.txt`), 'utf8'), PLAIN_TEXT);
+
+  const modified = makeRoot(t);
+  plainShow(modified, 'Plain');
+  assert.equal(runMigration({
+    command: 'prepare',
+    root: modified,
+    createId: ids([PLAIN_MIGRATION, PLAIN_V1]),
+  }).ok, true);
+  const scriptPath = path.join(modified, 'data', 'library', 'migration-work', 'productions', PLAIN_ID, 'versions', PLAIN_V1, 'script.txt');
+  fs.writeFileSync(scriptPath, 'changed-bytes\n');
+  const refused = runMigration({ command: 'abort', root: modified });
+  assert.equal(refused.ok, false);
+  assert.equal(refused.code, 'unowned-tree');
+  assert.equal(fs.readFileSync(scriptPath, 'utf8'), 'changed-bytes\n');
+  assert.equal(fs.existsSync(path.join(modified, 'data', 'library', 'migration-attempt.json')), true);
+
+  const extra = makeRoot(t);
+  plainShow(extra, 'Plain');
+  assert.equal(runMigration({
+    command: 'prepare',
+    root: extra,
+    createId: ids([PLAIN_MIGRATION, PLAIN_V1]),
+  }).ok, true);
+  const extraFile = path.join(extra, 'data', 'library', 'migration-work', 'productions', PLAIN_ID, 'notes.txt');
+  fs.writeFileSync(extraFile, 'unrecognized\n');
+  const extraRefused = runMigration({ command: 'abort', root: extra });
+  assert.equal(extraRefused.ok, false);
+  assert.equal(extraRefused.code, 'unowned-tree');
+  assert.equal(fs.readFileSync(extraFile, 'utf8'), 'unrecognized\n');
+
+  const linked = makeRoot(t);
+  plainShow(linked, 'Plain');
+  assert.equal(runMigration({
+    command: 'prepare',
+    root: linked,
+    createId: ids([PLAIN_MIGRATION, PLAIN_V1]),
+  }).ok, true);
+  const outside = path.join(linked, 'secret.txt');
+  fs.writeFileSync(outside, 'keep-this\n');
+  const link = path.join(linked, 'data', 'library', 'migration-work', 'productions', PLAIN_ID, 'link.txt');
+  fs.symlinkSync(outside, link);
+  const linkRefused = runMigration({ command: 'abort', root: linked });
+  assert.equal(linkRefused.ok, false);
+  assert.equal(linkRefused.code, 'unsafe-path');
+  assert.equal(fs.readFileSync(outside, 'utf8'), 'keep-this\n');
+  assert.equal(fs.lstatSync(link).isSymbolicLink(), true);
+  assert.equal(fs.existsSync(path.join(linked, 'data', 'library', 'migration-work')), true);
+});
+
+test('abort keeps a published tree whose bytes no longer match the attempt', (t) => {
+  const root = makeRoot(t);
+  plainShow(root, 'Plain');
+  assert.equal(runMigration({
+    command: 'prepare',
+    root,
+    createId: ids([PLAIN_MIGRATION, PLAIN_V1]),
+  }).ok, true);
+  assert.throws(
+    () => runMigration({ command: 'commit', root, failAt: 'after-publish', createId: refusingIds() }),
+    (err) => err instanceof MigrationError && err.code === 'injected-failure',
+  );
+  const published = path.join(root, 'data', 'library', 'productions', PLAIN_ID, 'metadata.json');
+  const before = fs.readFileSync(published);
+  const parsed = JSON.parse(before.toString('utf8'));
+  parsed.title = 'Tampered';
+  fs.writeFileSync(published, `${JSON.stringify(parsed, null, 2)}\n`);
+  const refused = runMigration({ command: 'abort', root });
+  assert.equal(refused.ok, false);
+  assert.equal(refused.code, 'unowned-tree');
+  assert.equal(fs.existsSync(path.join(root, 'data', 'library', 'migration.json')), false);
+  assert.equal(JSON.parse(fs.readFileSync(published, 'utf8')).title, 'Tampered');
+  assert.equal(fs.existsSync(path.join(root, 'data', 'library', 'migration-work')), true);
 });

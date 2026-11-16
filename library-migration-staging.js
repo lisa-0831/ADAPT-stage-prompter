@@ -416,7 +416,78 @@ function prepareSources(plan, sources, maxImageBytes, located) {
   if (byKey.size) {
     throw new StagingError('invalid-plan', 'An image source is not used by this migration plan.');
   }
-  return prepared;
+  return prepared.map((asset) => ({ ...asset, referenced: true }));
+}
+
+function resolveTitles(plan, titles) {
+  const resolved = {};
+  if (titles == null) {
+    plan.productions.forEach((production) => {
+      resolved[production.id] = null;
+    });
+    return resolved;
+  }
+  if (typeof titles !== 'object' || Array.isArray(titles)) {
+    throw new StagingError('invalid-plan', 'Production titles must be an object.');
+  }
+  const seen = new Set();
+  plan.productions.forEach((production) => {
+    if (!Object.prototype.hasOwnProperty.call(titles, production.id)) {
+      throw new StagingError('missing-title', `Production ${production.id} has no title.`);
+    }
+    if (typeof titles[production.id] !== 'string') {
+      throw new StagingError('invalid-plan', `Production ${production.id} has a title that is not text.`);
+    }
+    resolved[production.id] = titles[production.id];
+    seen.add(production.id);
+  });
+  Object.keys(titles).forEach((id) => {
+    if (!seen.has(id)) {
+      throw new StagingError('invalid-plan', 'A title was supplied for a production that is not in the plan.');
+    }
+  });
+  return resolved;
+}
+
+function prepareUnassigned(plan, unassigned, maxImageBytes, located, assigned) {
+  if (unassigned == null) return [];
+  if (!Array.isArray(unassigned)) {
+    throw new StagingError('invalid-plan', 'Unassigned images must be a list.');
+  }
+  const productionIds = new Set(plan.productions.map((production) => production.id));
+  const assignedKeys = new Set(assigned.map((asset) => `${asset.productionId}/${asset.assetId}`));
+  const seen = new Set();
+  return unassigned.map((item) => {
+    if (!item || typeof item !== 'object') {
+      throw new StagingError('invalid-plan', 'An unassigned image is missing.');
+    }
+    const productionId = typeof item.productionId === 'string' ? item.productionId.toLowerCase() : '';
+    const assetId = typeof item.assetId === 'string' ? item.assetId.toLowerCase() : '';
+    if (!isValidScriptId(productionId) || !isValidScriptId(assetId)) {
+      throw new StagingError('invalid-id', 'An unassigned image has an invalid id.');
+    }
+    if (!productionIds.has(productionId)) {
+      throw new StagingError('invalid-plan', 'An unassigned image names a production that is not in the plan.');
+    }
+    const key = `${productionId}/${assetId}`;
+    if (seen.has(key) || assignedKeys.has(key)) {
+      throw new StagingError('invalid-plan', `Unassigned image ${key} was supplied more than once.`);
+    }
+    seen.add(key);
+    const read = readSource(item.path, maxImageBytes, located);
+    return {
+      productionId,
+      assetId,
+      originalName: displayAssetName(item.originalName || path.basename(item.path)),
+      legacyPath: null,
+      ext: read.ext,
+      mime: read.mime,
+      bytes: read.bytes,
+      byteLength: read.bytes.length,
+      contentHash: read.contentHash,
+      referenced: false,
+    };
+  });
 }
 
 function readSource(sourcePath, maxImageBytes, located) {
@@ -474,7 +545,7 @@ function versionIdentity(version) {
   };
 }
 
-function stagingIdentity(plan, assets) {
+function stagingIdentity(plan, assets, titles) {
   return {
     schema: SCHEMA,
     liveProductionId: plan.liveProductionId,
@@ -491,6 +562,7 @@ function stagingIdentity(plan, assets) {
     warnings: plan.warnings || [],
     productions: plan.productions.map((production) => ({
       id: production.id,
+      title: titles[production.id],
       headVersionId: production.headVersionId,
       versions: {
         v1: versionIdentity(production.versions.v1),
@@ -509,6 +581,7 @@ function stagingIdentity(plan, assets) {
       mime: asset.mime,
       byteLength: asset.byteLength,
       contentHash: asset.contentHash,
+      referenced: asset.referenced !== false,
     })),
   };
 }
@@ -526,7 +599,7 @@ function versionDocument(productionId, version, role) {
   };
 }
 
-function metadataDocument(production) {
+function metadataDocument(production, title) {
   const versions = [{
     id: production.versions.v1.id,
     role: 'v1',
@@ -543,7 +616,7 @@ function metadataDocument(production) {
       contentHash: production.versions.v2.contentHash,
     });
   }
-  return {
+  const document = {
     id: production.id,
     originalProductionId: production.id,
     headVersionId: production.headVersionId,
@@ -554,21 +627,27 @@ function metadataDocument(production) {
       note: HISTORICAL_PREVIEW_NOTE,
     },
   };
+  if (typeof title === 'string') document.title = title;
+  return document;
 }
 
 function manifestDocument(productionId, assets) {
   return {
     productionId,
-    assets: assets.map((asset) => ({
-      assetId: asset.assetId,
-      file: `${asset.assetId}.${asset.ext}`,
-      originalName: asset.originalName,
-      legacyPath: asset.legacyPath,
-      contentHash: asset.contentHash,
-      ext: asset.ext,
-      mime: asset.mime,
-      byteLength: asset.byteLength,
-    })),
+    assets: assets.map((asset) => {
+      const entry = {
+        assetId: asset.assetId,
+        file: `${asset.assetId}.${asset.ext}`,
+        originalName: asset.originalName,
+        legacyPath: asset.legacyPath,
+        contentHash: asset.contentHash,
+        ext: asset.ext,
+        mime: asset.mime,
+        byteLength: asset.byteLength,
+      };
+      if (asset.referenced === false) entry.referenced = false;
+      return entry;
+    }),
   };
 }
 
@@ -592,7 +671,7 @@ function productionDir(rootReal, productionId) {
   return path.join(workDir(rootReal), 'productions', productionId);
 }
 
-function expectedFiles(rootReal, plan, assets, identity, planHash) {
+function expectedFiles(rootReal, plan, assets, identity, planHash, titles) {
   const files = [];
   plan.productions.forEach((production) => {
     const dir = productionDir(rootReal, production.id);
@@ -615,7 +694,7 @@ function expectedFiles(rootReal, plan, assets, identity, planHash) {
     });
     files.push({
       path: path.join(dir, 'metadata.json'),
-      bytes: stableBytes(metadataDocument(production)),
+      bytes: stableBytes(metadataDocument(production, titles[production.id])),
       label: `metadata ${production.id}`,
       kind: 'metadata',
     });
@@ -1100,6 +1179,12 @@ function verifyProduction(rootReal, plan, production, problems, inodes) {
       problems.push({ code: 'corrupt-staging', message: `Metadata for ${production.id} has an unexpected head.` });
       record.complete = false;
     }
+    const expectedTitle = typeof production.title === 'string' ? production.title : null;
+    const actualTitle = typeof metadata.title === 'string' ? metadata.title : null;
+    if (actualTitle !== expectedTitle) {
+      problems.push({ code: 'corrupt-staging', message: `Metadata for ${production.id} has a different title.` });
+      record.complete = false;
+    }
     if (!metadata.historicalPreview || metadata.historicalPreview.usesAssetSnapshots !== false) {
       problems.push({
         code: 'corrupt-staging',
@@ -1243,6 +1328,10 @@ function verifyProduction(rootReal, plan, production, problems, inodes) {
         problems.push({ code: 'hash-mismatch', message: `Asset ${asset.assetId} does not match its recorded bytes.` });
         record.complete = false;
       }
+      if (source.referenced === false ? asset.referenced !== false : asset.referenced === false) {
+        problems.push({ code: 'corrupt-staging', message: `Asset ${asset.assetId} has an unexpected assignment.` });
+        record.complete = false;
+      }
       const fileStat = fs.statSync(assetPath);
       const inodeKey = `${fileStat.dev}:${fileStat.ino}`;
       const previous = inodes.get(inodeKey);
@@ -1315,17 +1404,51 @@ function failureResult(err) {
   };
 }
 
+function resolveStaging(located, source) {
+  const plan = copyPlan(source.plan);
+  validatePlan(plan);
+  const titles = resolveTitles(plan, source.titles);
+  const limit = imageLimit(source.maxImageBytes);
+  const assigned = prepareSources(plan, source.sources, limit, located);
+  const unassigned = prepareUnassigned(plan, source.unassigned, limit, located, assigned);
+  const assets = assigned.concat(unassigned);
+  const identity = stagingIdentity(plan, assets, titles);
+  const planHash = hashBuffer(stableBytes(identity));
+  const files = expectedFiles(located.rootReal, plan, assets, identity, planHash, titles);
+  return { plan, assets, identity, planHash, files, titles };
+}
+
+function describeStaging(input = {}) {
+  const source = input && typeof input === 'object' ? input : {};
+  try {
+    const located = locateRoot(source.root);
+    const resolved = resolveStaging(located, source);
+    return {
+      ok: true,
+      planHash: resolved.planHash,
+      preparingPlan: stableBytes(planDocument(resolved.identity, resolved.planHash, 'preparing')),
+      readyPlan: stableBytes(planDocument(resolved.identity, resolved.planHash, 'ready')),
+      ready: stableBytes(readyDocument(resolved.planHash)),
+      files: resolved.files
+        .filter((file) => path.basename(file.path) !== 'PLAN.json')
+        .map((file) => ({
+          relative: path.relative(workDir(located.rootReal), file.path).split(path.sep).join('/'),
+          bytes: file.bytes,
+        })),
+    };
+  } catch (err) {
+    if (err instanceof StagingError) return { ok: false, code: err.code, error: err.message };
+    throw err;
+  }
+}
+
 function stageMigration(input = {}) {
   const source = input && typeof input === 'object' ? input : {};
   let located = null;
   try {
     located = locateRoot(source.root);
-    const plan = copyPlan(source.plan);
-    validatePlan(plan);
-    const assets = prepareSources(plan, source.sources, imageLimit(source.maxImageBytes), located);
-    const identity = stagingIdentity(plan, assets);
-    const planHash = hashBuffer(stableBytes(identity));
-    const files = expectedFiles(located.rootReal, plan, assets, identity, planHash);
+    const resolved = resolveStaging(located, source);
+    const { plan, assets, identity, planHash, files } = resolved;
     const prior = assessExisting(located.rootReal, files, planHash);
     if (prior.status === 'ready') {
       if (prior.planState !== 'ready') replacePlanState(located.rootReal, identity, planHash);
@@ -1440,6 +1563,7 @@ function writeDocuments(onStage, rootReal, files, kind) {
 module.exports = {
   DEFAULT_MAX_IMAGE_BYTES,
   HISTORICAL_PREVIEW_NOTE,
+  describeStaging,
   stageMigration,
   verifyStaging,
 };

@@ -3,7 +3,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { planMigration } = require('./library-migration-plan');
-const { stageMigration, verifyStaging } = require('./library-migration-staging');
+const { describeStaging, stageMigration, verifyStaging } = require('./library-migration-staging');
 const { createVersionStore } = require('./library-version-store');
 const { parseImageReference } = require('./script-library-model');
 const {
@@ -375,9 +375,11 @@ function inspect(rootReal, maxImageBytes) {
         message: 'An image line is not a supported images/ name or a library reference.',
       });
     });
-    const title = entry && typeof entry.title === 'string' && entry.title.trim()
-      ? entry.title.trim().slice(0, 120)
-      : (titleFromScript(text) || 'Untitled script');
+    const title = entry && entry.unindexed
+      ? (titleFromScript(text) || 'Untitled script')
+      : (entry && typeof entry.title === 'string'
+        ? entry.title
+        : (titleFromScript(text) || 'Untitled script'));
     productions.push({
       id,
       title,
@@ -698,6 +700,7 @@ function attemptDocument(fields) {
     ids: fields.ids,
     pointer: fields.pointer || null,
     planHash: fields.planHash || null,
+    files: fields.files || null,
   };
 }
 
@@ -752,26 +755,14 @@ function sourceList(rootReal, inventory, plan) {
   return sources;
 }
 
-function copyUnassigned(rootReal, inventory) {
-  inventory.productions.forEach((production) => {
-    production.assets.filter((asset) => !asset.referenced).forEach((asset) => {
-      const dest = path.join(workDir(rootReal), 'productions', production.id, 'assets', `${asset.assetId}.${asset.ext}`);
-      const existing = readNoFollow(dest);
-      if (existing.bytes) {
-        if (hashBuffer(existing.bytes) !== asset.contentHash) {
-          throw new MigrationError('asset-conflict', 'An unassigned asset copy already has different bytes.');
-        }
-        return;
-      }
-      if (existing.unsafe) throw new MigrationError('unsafe-path', 'An unassigned asset path is not a regular file.');
-      fs.mkdirSync(path.dirname(dest), { recursive: true });
-      const source = readNoFollow(asset.absolutePath);
-      if (!source.bytes || hashBuffer(source.bytes) !== asset.contentHash) {
-        throw new MigrationError('missing-asset', 'An unassigned asset changed before it could be copied.');
-      }
-      writeAtomic(dest, source.bytes);
-    });
-  });
+function stagingRequest(rootReal, inventory, plan) {
+  return {
+    root: rootReal,
+    plan,
+    sources: sourceList(rootReal, inventory, plan),
+    titles: titleMap(inventory),
+    unassigned: unassignedSources(inventory),
+  };
 }
 
 function checkVersions(rootReal, inventory, ids, storeRoot) {
@@ -790,6 +781,10 @@ function checkVersions(rootReal, inventory, ids, storeRoot) {
     const head = store.readHead(production.id);
     if (!head.ok || head.version.id !== headId) {
       throw new MigrationError('corrupt-staging', 'The staged head does not match the migration plan.');
+    }
+    const stagedProduction = store.readProduction(production.id);
+    if (!stagedProduction.ok || stagedProduction.production.title !== production.title) {
+      throw new MigrationError('corrupt-staging', 'The staged production title does not match the library.');
     }
     const original = store.readVersion(production.id, planned.v1);
     if (!original.ok || !original.version || original.version.contentHash !== production.contentHash) {
@@ -823,17 +818,39 @@ function checkVersions(rootReal, inventory, ids, storeRoot) {
   return summaries;
 }
 
-function pointerFor(inventory, ids, plan) {
+function pointerFor(inventory, plan) {
   const live = inventory.productions.find((production) => production.id === inventory.liveProductionId);
-  const planned = ids[live.id];
   return {
     productionId: live.id,
     versionId: plan.pointer.versionId,
-    previousVersionId: planned.v1,
+    previousActivation: null,
     contentHash: plan.pointer.contentHash,
     origin: plan.pointer.origin,
     sourceScriptHash: inventory.liveScriptHash,
   };
+}
+
+function titleMap(inventory) {
+  const titles = {};
+  inventory.productions.forEach((production) => {
+    titles[production.id] = production.title;
+  });
+  return titles;
+}
+
+function unassignedSources(inventory) {
+  const sources = [];
+  inventory.productions.forEach((production) => {
+    production.assets.filter((asset) => !asset.referenced).forEach((asset) => {
+      sources.push({
+        productionId: production.id,
+        assetId: asset.assetId,
+        path: asset.absolutePath,
+        originalName: asset.originalName,
+      });
+    });
+  });
+  return sources;
 }
 
 function prepare(rootReal, inventory, options) {
@@ -894,20 +911,16 @@ function prepare(rootReal, inventory, options) {
   if (stagedBlocker) {
     return fail('activation-artifact', stagedBlocker.message, { command: 'prepare', path: stagedBlocker.path });
   }
-  const staged = stageMigration({
-    root: rootReal,
-    plan,
-    sources: sourceList(rootReal, inventory, plan),
+  const staged = stageMigration(Object.assign(stagingRequest(rootReal, inventory, plan), {
     onStage(stage) {
       if ((stage === 'v1' || stage === 'v2' || stage === 'asset') && failAt === stage) {
         throw new MigrationError('injected-failure', `Injected failure at ${stage}.`);
       }
     },
-  });
+  }));
   if (!staged.ok) {
     return fail(staged.code, staged.errors[0].message, { command: 'prepare', ready: false });
   }
-  copyUnassigned(rootReal, inventory);
   const verification = verifyStaging(rootReal);
   if (!verification.ready) {
     return fail(verification.code || 'not-ready', 'Staged files did not verify.', {
@@ -916,9 +929,23 @@ function prepare(rootReal, inventory, options) {
     });
   }
   const summaries = checkVersions(rootReal, inventory, attempt.ids, workDir(rootReal));
-  const pointer = pointerFor(inventory, attempt.ids, plan);
+  const pointer = pointerFor(inventory, plan);
   if (pointer.versionId !== (attempt.ids[pointer.productionId].v2 || attempt.ids[pointer.productionId].v1)) {
     return fail('corrupt-staging', 'The planned live version does not match the saved head.', { command: 'prepare' });
+  }
+  const described = describeStaging(stagingRequest(rootReal, inventory, plan));
+  if (!described.ok || described.planHash !== staged.planHash) {
+    return fail('corrupt-staging', 'The staged plan does not include the titles and assets that will be published.', {
+      command: 'prepare',
+      ready: false,
+    });
+  }
+  const files = readyFileRecord(rootReal, described);
+  if (!files) {
+    return fail('not-ready', 'READY does not match the files that will be published.', {
+      command: 'prepare',
+      ready: false,
+    });
   }
   attempt = attemptDocument({
     state: 'ready',
@@ -928,6 +955,7 @@ function prepare(rootReal, inventory, options) {
     ids: attempt.ids,
     pointer,
     planHash: staged.planHash,
+    files,
   });
   saveAttempt(rootReal, attempt);
   checkpoint(failAt, 'ready');
@@ -944,7 +972,7 @@ function prepare(rootReal, inventory, options) {
     pointer: {
       productionId: pointer.productionId,
       versionId: pointer.versionId,
-      previousVersionId: pointer.previousVersionId,
+      previousActivation: null,
       contentHash: pointer.contentHash,
       origin: pointer.origin,
     },
@@ -975,12 +1003,12 @@ function verify(rootReal, inventory) {
 
 function markerDocument(attempt) {
   return {
-    schema: 1,
+    schema: 2,
     state: 'committed',
     migrationId: attempt.migrationId,
     productionId: attempt.pointer.productionId,
     versionId: attempt.pointer.versionId,
-    previousVersionId: attempt.pointer.previousVersionId,
+    previousActivation: null,
     sourceScriptHash: attempt.pointer.sourceScriptHash,
     contentHash: attempt.pointer.contentHash,
     mirrorInstalled: false,
@@ -1023,32 +1051,6 @@ function copyProductionTree(sourceDir, destDir) {
   }
 }
 
-function mergeUnassignedManifests(destDir, inventory) {
-  inventory.productions.forEach((production) => {
-    const manifestFile = path.join(destDir, production.id, 'assets', 'manifest.json');
-    const parsed = readJsonObject(manifestFile);
-    if (!parsed.value || !Array.isArray(parsed.value.assets)) {
-      throw new MigrationError('corrupt-staging', 'A published asset manifest could not be read.');
-    }
-    const present = new Set(parsed.value.assets.map((asset) => asset.assetId));
-    production.assets.filter((asset) => !asset.referenced).forEach((asset) => {
-      if (present.has(asset.assetId)) return;
-      parsed.value.assets.push({
-        assetId: asset.assetId,
-        file: `${asset.assetId}.${asset.ext}`,
-        originalName: asset.originalName,
-        legacyPath: null,
-        contentHash: asset.contentHash,
-        ext: asset.ext,
-        mime: asset.mime,
-        byteLength: asset.byteLength,
-        referenced: false,
-      });
-    });
-    writeAtomic(manifestFile, stableBytes(parsed.value));
-  });
-}
-
 function treeFingerprint(dir) {
   const found = hashTree(dir);
   if (!found || found.unsafe) return null;
@@ -1060,7 +1062,7 @@ function commit(rootReal, inventory, options) {
   const loaded = readAttempt(rootReal);
   if (loaded && loaded.ok === false) return loaded;
   const attempt = loaded && loaded.attempt;
-  if (!attempt || !attempt.pointer || !attempt.planHash || !attempt.ids) {
+  if (!attempt || !attempt.pointer || attempt.pointer.previousActivation !== null || !attempt.planHash || !attempt.ids || !attempt.files) {
     return fail('not-ready', 'Commit requires a verified READY migration attempt.', { command: 'commit', activated: false });
   }
   const expectedMarker = markerDocument(attempt);
@@ -1104,14 +1106,34 @@ function commit(rootReal, inventory, options) {
     });
   }
   checkVersions(rootReal, inventory, attempt.ids, workDir(rootReal));
+  const described = describeStaging(stagingRequest(rootReal, inventory, buildPlan(inventory, attempt.ids)));
+  const recordedNow = described.ok ? readyFileRecord(rootReal, described) : null;
+  if (!described.ok || described.planHash !== attempt.planHash || !recordedNow
+    || JSON.stringify(sortValue(recordedNow)) !== JSON.stringify(sortValue(attempt.files))) {
+    return fail('not-ready', 'READY no longer matches the recorded titles, assets, and file inventory. Nothing was committed.', {
+      command: 'commit',
+      activated: false,
+      ready: false,
+    });
+  }
   checkpoint(failAt, 'before-publish');
   const stagedProductions = path.join(workDir(rootReal), 'productions');
   const incoming = path.join(libraryDir(rootReal), INCOMING_NAME);
   const published = path.join(libraryDir(rootReal), 'productions');
-  if (lstatIfExists(incoming)) removeOwnedDirectory(rootReal, incoming);
+  if (lstatIfExists(incoming)) {
+    const scratch = copyOwnership(incoming, productionFiles(attempt.files), { allowPartial: true });
+    if (!scratch.ok) return fail(scratch.code, scratch.error, { command: 'commit', activated: false });
+    if (scratch.present) deleteProvenDirectory(rootReal, incoming, hashMap(scratch.scan));
+  }
   copyProductionTree(stagedProductions, incoming);
-  mergeUnassignedManifests(incoming, inventory);
   verifyIncoming(incoming, inventory, attempt);
+  const copied = directoryHashes(incoming);
+  if (!copied || JSON.stringify(sortValue(copied)) !== JSON.stringify(sortValue(productionFiles(attempt.files)))) {
+    return fail('hash-mismatch', 'The copied production tree does not match the recorded READY inventory. The marker was not written.', {
+      command: 'commit',
+      activated: false,
+    });
+  }
   const publishedStat = lstatIfExists(published);
   if (publishedStat) {
     if (publishedStat.isSymbolicLink() || !publishedStat.isDirectory()) {
@@ -1123,7 +1145,7 @@ function commit(rootReal, inventory, options) {
         activated: false,
       });
     }
-    removeOwnedDirectory(rootReal, incoming);
+    deleteProvenDirectory(rootReal, incoming, copied);
   } else {
     fs.renameSync(incoming, published);
     fsyncDirectory(libraryDir(rootReal));
@@ -1148,6 +1170,10 @@ function commit(rootReal, inventory, options) {
 function verifyIncoming(incoming, inventory, attempt) {
   inventory.productions.forEach((production) => {
     const planned = attempt.ids[production.id];
+    const metadata = readJsonObject(path.join(incoming, production.id, 'metadata.json'));
+    if (!metadata.value || metadata.value.title !== production.title || metadata.value.headVersionId !== (planned.v2 || planned.v1)) {
+      throw new MigrationError('corrupt-staging', 'The published production metadata does not match the prepared title and head.');
+    }
     const versionDir = path.join(incoming, production.id, 'versions', planned.v1);
     const read = readNoFollow(path.join(versionDir, 'script.txt'));
     if (!read.bytes || !read.bytes.equals(production.bytes)) {
@@ -1170,19 +1196,246 @@ function verifyIncoming(incoming, inventory, attempt) {
   });
 }
 
-function removeOwnedDirectory(rootReal, target) {
+const TEMP_FILE = /^\..+\.\d+\.[0-9a-f]{8}\.tmp$/i;
+
+function scanTree(dir) {
+  const stat = lstatIfExists(dir);
+  if (!stat) return { missing: true, files: new Map(), dirs: new Set() };
+  if (stat.isSymbolicLink() || !stat.isDirectory()) return { unsafe: true, files: new Map(), dirs: new Set() };
+  const files = new Map();
+  const dirs = new Set();
+  const stack = [{ full: dir, rel: '' }];
+  while (stack.length) {
+    const current = stack.pop();
+    let entries;
+    try {
+      entries = fs.readdirSync(current.full, { withFileTypes: true });
+    } catch (err) {
+      return { unsafe: true, files, dirs };
+    }
+    entries.forEach((entry) => {
+      const rel = current.rel ? `${current.rel}/${entry.name}` : entry.name;
+      const full = path.join(current.full, entry.name);
+      if (entry.isSymbolicLink()) {
+        files.set(rel, { unsafe: true });
+        return;
+      }
+      if (entry.isDirectory()) {
+        dirs.add(rel);
+        stack.push({ full, rel });
+        return;
+      }
+      if (!entry.isFile()) {
+        files.set(rel, { unsafe: true });
+        return;
+      }
+      const read = readNoFollow(full);
+      files.set(rel, read.bytes ? { bytes: read.bytes } : { unsafe: true });
+    });
+  }
+  return { files, dirs };
+}
+
+function hashMap(scan) {
+  if (!scan || scan.unsafe) return null;
+  const out = {};
+  let unsafe = false;
+  scan.files.forEach((value, rel) => {
+    if (!value || value.unsafe || !value.bytes) {
+      unsafe = true;
+      return;
+    }
+    out[rel] = hashBuffer(value.bytes);
+  });
+  return unsafe ? null : out;
+}
+
+function directoryHashes(dir) {
+  const scan = scanTree(dir);
+  if (scan.missing || scan.unsafe) return null;
+  return hashMap(scan);
+}
+
+function productionFiles(record) {
+  const out = {};
+  Object.keys(record || {}).forEach((rel) => {
+    if (rel.startsWith('productions/')) out[rel.slice('productions/'.length)] = record[rel];
+  });
+  return out;
+}
+
+function readyFileRecord(rootReal, described) {
+  const scan = scanTree(workDir(rootReal));
+  if (scan.missing || scan.unsafe) return null;
+  const expected = new Map(described.files.map((file) => [file.relative, file.bytes]));
+  const record = {};
+  const seen = new Set();
+  let planOk = false;
+  let readyOk = false;
+  for (const [rel, value] of scan.files) {
+    if (!value || value.unsafe || !value.bytes) return null;
+    if (rel === 'PLAN.json') {
+      if (!value.bytes.equals(described.readyPlan)) return null;
+      planOk = true;
+      record[rel] = hashBuffer(value.bytes);
+      continue;
+    }
+    if (rel === 'READY') {
+      if (!value.bytes.equals(described.ready)) return null;
+      readyOk = true;
+      record[rel] = hashBuffer(value.bytes);
+      continue;
+    }
+    if (TEMP_FILE.test(rel.split('/').pop())) continue;
+    const want = expected.get(rel);
+    if (!want || !want.equals(value.bytes)) return null;
+    seen.add(rel);
+    record[rel] = hashBuffer(value.bytes);
+  }
+  if (!planOk || !readyOk) return null;
+  for (const rel of expected.keys()) {
+    if (!seen.has(rel)) return null;
+  }
+  return record;
+}
+
+function workOwnership(rootReal, described) {
+  const scan = scanTree(workDir(rootReal));
+  if (scan.missing) return { ok: true, present: false, complete: false };
+  if (scan.unsafe) {
+    return { ok: false, code: 'unsafe-path', error: 'migration-work is not a real directory. Nothing was deleted.' };
+  }
+  const expected = new Map(described.files.map((file) => [file.relative, file.bytes]));
+  const allowedDirs = new Set(['']);
+  expected.forEach((bytes, rel) => {
+    const parts = rel.split('/');
+    parts.pop();
+    let acc = '';
+    parts.forEach((part) => {
+      acc = acc ? `${acc}/${part}` : part;
+      allowedDirs.add(acc);
+    });
+  });
+  for (const dir of scan.dirs) {
+    if (!allowedDirs.has(dir)) {
+      return { ok: false, code: 'unowned-tree', error: 'migration-work contains an unrecognized directory. Nothing was deleted.' };
+    }
+  }
+  let sawReady = false;
+  let planState = null;
+  for (const [rel, value] of scan.files) {
+    if (!value || value.unsafe || !value.bytes) {
+      return { ok: false, code: 'unsafe-path', error: 'migration-work contains a symlink or unreadable file. Nothing was deleted.' };
+    }
+    if (rel === 'PLAN.json') {
+      if (value.bytes.equals(described.preparingPlan)) planState = 'preparing';
+      else if (value.bytes.equals(described.readyPlan)) planState = 'ready';
+      else return { ok: false, code: 'unowned-tree', error: 'PLAN.json does not match this migration attempt. Nothing was deleted.' };
+      continue;
+    }
+    if (rel === 'READY') {
+      if (!value.bytes.equals(described.ready)) {
+        return { ok: false, code: 'unowned-tree', error: 'READY does not match this migration attempt. Nothing was deleted.' };
+      }
+      sawReady = true;
+      continue;
+    }
+    if (TEMP_FILE.test(rel.split('/').pop())) continue;
+    const want = expected.get(rel);
+    if (!want || !want.equals(value.bytes)) {
+      return { ok: false, code: 'unowned-tree', error: 'A prepared file does not match this migration attempt. Nothing was deleted.' };
+    }
+  }
+  const missing = [];
+  expected.forEach((bytes, rel) => {
+    const found = scan.files.get(rel);
+    if (!found || !found.bytes || !found.bytes.equals(bytes)) missing.push(rel);
+  });
+  const complete = Boolean(sawReady && planState === 'ready' && missing.length === 0);
+  if ((sawReady || planState === 'ready') && !complete) {
+    return { ok: false, code: 'unowned-tree', error: 'READY does not match a complete prepared tree. Nothing was deleted.' };
+  }
+  return { ok: true, present: true, complete, scan };
+}
+
+function copyOwnership(dir, expectedHashes, options) {
+  const allowPartial = Boolean(options && options.allowPartial);
+  const scan = scanTree(dir);
+  if (scan.missing) return { ok: true, present: false };
+  if (scan.unsafe) {
+    return { ok: false, code: 'unsafe-path', error: 'A production directory is not a real directory. Nothing was deleted.' };
+  }
+  const found = {};
+  for (const [rel, value] of scan.files) {
+    if (!value || value.unsafe || !value.bytes) {
+      return { ok: false, code: 'unsafe-path', error: 'A production directory contains a symlink or unreadable file. Nothing was deleted.' };
+    }
+    if (TEMP_FILE.test(rel.split('/').pop())) {
+      return { ok: false, code: 'unowned-tree', error: 'A production directory contains an unrecognized temporary file. Nothing was deleted.' };
+    }
+    const hash = hashBuffer(value.bytes);
+    if (expectedHashes[rel] !== hash) {
+      return { ok: false, code: 'unowned-tree', error: 'A production file does not match this migration attempt. Nothing was deleted.' };
+    }
+    found[rel] = hash;
+  }
+  const expectedKeys = Object.keys(expectedHashes);
+  if (!allowPartial && (expectedKeys.length !== Object.keys(found).length || expectedKeys.some((rel) => found[rel] !== expectedHashes[rel]))) {
+    return { ok: false, code: 'unowned-tree', error: 'The production tree does not match the prepared files. Nothing was deleted.' };
+  }
+  return { ok: true, present: true, scan };
+}
+
+function deleteProvenDirectory(rootReal, target, expectedHashes) {
   const stat = lstatIfExists(target);
   if (!stat) return false;
-  if (stat.isSymbolicLink()) throw new MigrationError('unsafe-path', 'Refusing to delete a symlink.');
+  if (stat.isSymbolicLink() || !stat.isDirectory()) {
+    throw new MigrationError('unsafe-path', 'Refusing to delete a path that is not a real directory.');
+  }
   const real = fs.realpathSync(target);
-  if (!insideStrict(real, rootReal)) throw new MigrationError('unsafe-path', 'Refusing to delete a path outside the fixture.');
-  fs.rmSync(real, { recursive: true, force: false });
+  if (!insideStrict(real, rootReal)) {
+    throw new MigrationError('unsafe-path', 'Refusing to delete a path outside the fixture.');
+  }
+  const scan = scanTree(target);
+  const hashes = hashMap(scan);
+  if (!hashes || JSON.stringify(sortValue(hashes)) !== JSON.stringify(sortValue(expectedHashes))) {
+    throw new MigrationError('unowned-tree', 'The directory changed before it could be removed.');
+  }
+  Object.keys(hashes).sort((left, right) => right.length - left.length).forEach((rel) => {
+    const full = path.join(target, ...rel.split('/'));
+    const child = fs.lstatSync(full);
+    if (child.isSymbolicLink() || !child.isFile()) {
+      throw new MigrationError('unsafe-path', 'Refusing to delete a path that is not a regular file.');
+    }
+    fs.unlinkSync(full);
+  });
+  Array.from(scan.dirs).sort((left, right) => right.length - left.length).forEach((rel) => {
+    const full = path.join(target, ...rel.split('/'));
+    const child = fs.lstatSync(full);
+    if (child.isSymbolicLink() || !child.isDirectory()) {
+      throw new MigrationError('unsafe-path', 'Refusing to delete a path that is not a real directory.');
+    }
+    fs.rmdirSync(full);
+  });
+  const again = fs.lstatSync(target);
+  if (again.isSymbolicLink() || !again.isDirectory()) {
+    throw new MigrationError('unsafe-path', 'Refusing to delete a path that is not a real directory.');
+  }
+  fs.rmdirSync(target);
   return true;
 }
 
-function abort(rootReal) {
+function abort(rootReal, maxImageBytes) {
   if (lstatIfExists(markerPath(rootReal))) {
     return fail('abort-refused', 'A migration marker is present. Abort will not roll back a commit.', {
+      command: 'abort',
+      activated: false,
+    });
+  }
+  const attemptFile = attemptPath(rootReal);
+  const attemptStat = lstatIfExists(attemptFile);
+  if (attemptStat && (attemptStat.isSymbolicLink() || !attemptStat.isFile())) {
+    return fail('unsafe-path', 'The attempt file is not a regular file. Nothing was deleted.', {
       command: 'abort',
       activated: false,
     });
@@ -1190,40 +1443,125 @@ function abort(rootReal) {
   const loaded = readAttempt(rootReal);
   if (loaded && loaded.ok === false) return loaded;
   const attempt = loaded && loaded.attempt;
-  const removed = [];
   const incoming = path.join(libraryDir(rootReal), INCOMING_NAME);
-  if (lstatIfExists(incoming)) {
-    removeOwnedDirectory(rootReal, incoming);
-    removed.push(`data/library/${INCOMING_NAME}`);
-  }
   const published = path.join(libraryDir(rootReal), 'productions');
-  const publishedStat = lstatIfExists(published);
-  if (publishedStat) {
-    if (publishedStat.isSymbolicLink() || !publishedStat.isDirectory()) {
-      return fail('unsafe-path', 'The production tree is not a real directory.', { command: 'abort' });
-    }
-    const names = fs.readdirSync(published);
-    const owned = attempt && attempt.ids ? attempt.ids : {};
-    const foreign = names.filter((name) => !Object.prototype.hasOwnProperty.call(owned, name));
-    if (foreign.length || !attempt) {
-      return fail('unowned-tree', 'The production tree is not owned by this migration attempt and was left in place.', {
+  const work = workDir(rootReal);
+  const hasTree = Boolean(lstatIfExists(incoming) || lstatIfExists(published) || lstatIfExists(work));
+  if (!attempt) {
+    if (hasTree || attemptStat) {
+      return fail('unowned-tree', 'No migration attempt identifies these files. Nothing was deleted.', {
         command: 'abort',
+        activated: false,
       });
     }
-    removeOwnedDirectory(rootReal, published);
+    return { ok: true, command: 'abort', removed: [], activated: false };
+  }
+  if (attempt.state === 'committed') {
+    return fail('abort-refused', 'This attempt is already committed. Abort will not roll back a commit.', {
+      command: 'abort',
+      activated: false,
+    });
+  }
+  const inventory = inspect(rootReal, maxImageBytes);
+  if (!sameFingerprint(attempt.fingerprint, inventory.fingerprint)) {
+    return fail('unowned-tree', 'The recorded source fingerprint no longer matches the fixture. Nothing was deleted.', {
+      command: 'abort',
+      activated: false,
+    });
+  }
+  const attemptIds = Object.keys(attempt.ids || {}).sort();
+  const productionIds = inventory.productions.map((production) => production.id).sort();
+  if (!attempt.migrationId || attemptIds.join(',') !== productionIds.join(',')) {
+    return fail('unowned-tree', 'The attempt does not name the same productions as the fixture. Nothing was deleted.', {
+      command: 'abort',
+      activated: false,
+    });
+  }
+  const plan = buildPlan(inventory, attempt.ids);
+  if (!plan.ok) {
+    return fail('unowned-tree', 'The recorded attempt no longer describes this fixture. Nothing was deleted.', {
+      command: 'abort',
+      activated: false,
+    });
+  }
+  const described = describeStaging(stagingRequest(rootReal, inventory, plan));
+  if (!described.ok || (attempt.planHash && attempt.planHash !== described.planHash)) {
+    return fail('unowned-tree', 'The recorded plan hash does not match this attempt. Nothing was deleted.', {
+      command: 'abort',
+      activated: false,
+    });
+  }
+  const workProof = workOwnership(rootReal, described);
+  if (!workProof.ok) return fail(workProof.code, workProof.error, { command: 'abort', activated: false });
+  if (workProof.complete) {
+    const recorded = readyFileRecord(rootReal, described);
+    if (!recorded || !attempt.files || JSON.stringify(sortValue(recorded)) !== JSON.stringify(sortValue(attempt.files))) {
+      return fail('unowned-tree', 'The prepared file inventory does not match the recorded attempt. Nothing was deleted.', {
+        command: 'abort',
+        activated: false,
+      });
+    }
+  } else if (attempt.state === 'ready' || attempt.files) {
+    return fail('unowned-tree', 'The attempt says ready, but the prepared tree is no longer complete. Nothing was deleted.', {
+      command: 'abort',
+      activated: false,
+    });
+  }
+  const expectedProductions = workProof.complete ? productionFiles(attempt.files) : {};
+  const incomingProof = lstatIfExists(incoming)
+    ? copyOwnership(incoming, expectedProductions, { allowPartial: false })
+    : { ok: true, present: false };
+  if (!incomingProof.ok) return fail(incomingProof.code, incomingProof.error, { command: 'abort', activated: false });
+  if (incomingProof.present && !workProof.complete) {
+    return fail('unowned-tree', 'A production directory exists before preparation finished. Nothing was deleted.', {
+      command: 'abort',
+      activated: false,
+    });
+  }
+  const publishedProof = lstatIfExists(published)
+    ? copyOwnership(published, expectedProductions, { allowPartial: false })
+    : { ok: true, present: false };
+  if (!publishedProof.ok) return fail(publishedProof.code, publishedProof.error, { command: 'abort', activated: false });
+  if (publishedProof.present && !workProof.complete) {
+    return fail('unowned-tree', 'A production directory exists before preparation finished. Nothing was deleted.', {
+      command: 'abort',
+      activated: false,
+    });
+  }
+  const attemptBytes = readNoFollow(attemptFile);
+  if (!attemptBytes.bytes) {
+    return fail('unsafe-path', 'The attempt file could not be read. Nothing was deleted.', {
+      command: 'abort',
+      activated: false,
+    });
+  }
+  const removed = [];
+  if (incomingProof.present) {
+    deleteProvenDirectory(rootReal, incoming, hashMap(incomingProof.scan));
+    removed.push(`data/library/${INCOMING_NAME}`);
+  }
+  if (publishedProof.present) {
+    deleteProvenDirectory(rootReal, published, hashMap(publishedProof.scan));
     removed.push('data/library/productions');
   }
-  const work = workDir(rootReal);
-  if (lstatIfExists(work)) {
-    removeOwnedDirectory(rootReal, work);
+  if (workProof.present) {
+    deleteProvenDirectory(rootReal, work, hashMap(workProof.scan));
     removed.push('data/library/migration-work');
   }
-  if (lstatIfExists(attemptPath(rootReal))) {
-    const stat = lstatIfExists(attemptPath(rootReal));
-    if (stat.isSymbolicLink()) throw new MigrationError('unsafe-path', 'The attempt file is a symlink.');
-    fs.unlinkSync(attemptPath(rootReal));
-    removed.push(`data/library/${ATTEMPT_NAME}`);
+  const again = readNoFollow(attemptFile);
+  if (!again.bytes || !again.bytes.equals(attemptBytes.bytes)) {
+    return fail('unowned-tree', 'The attempt file changed before it could be removed.', {
+      command: 'abort',
+      activated: false,
+      removed,
+    });
   }
+  const finalStat = fs.lstatSync(attemptFile);
+  if (finalStat.isSymbolicLink() || !finalStat.isFile()) {
+    return fail('unsafe-path', 'The attempt file is not a regular file.', { command: 'abort', activated: false, removed });
+  }
+  fs.unlinkSync(attemptFile);
+  removed.push(`data/library/${ATTEMPT_NAME}`);
   return { ok: true, command: 'abort', removed, activated: false };
 }
 
@@ -1261,7 +1599,7 @@ function dispatchMigration(settings) {
   const maxImageBytes = Number.isInteger(settings.maxImageBytes) && settings.maxImageBytes > 0
     ? settings.maxImageBytes
     : DEFAULT_MAX_IMAGE_BYTES;
-  if (command === 'abort') return abort(auth.rootReal);
+  if (command === 'abort') return abort(auth.rootReal, maxImageBytes);
   const inventory = inspect(auth.rootReal, maxImageBytes);
   if (command === 'dry-run') {
     checkpoint(settings.failAt || '', 'inspect');

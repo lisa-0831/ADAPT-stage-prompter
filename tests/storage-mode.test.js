@@ -162,7 +162,9 @@ test('a structurally valid migration marker is detected', (t) => {
   assert.equal(detected.supported, false);
   assert.equal(detected.marker.productionId, PRODUCTION);
   assert.equal(detected.marker.versionId, VERSION);
-  assert.equal(detected.marker.previousVersionId, PREVIOUS);
+  assert.equal(detected.marker.schema, 1);
+  assert.equal(detected.marker.previousActivation, null);
+  assert.equal(detected.marker.previousVersionId, undefined);
   assert.equal(detected.marker.contentHash, CONTENT_HASH);
   assert.equal(detected.marker.mirrorInstalled, false);
   assert.equal(detected.marker.state, 'committed');
@@ -195,7 +197,7 @@ test('invalid JSON refuses startup', (t) => {
 test('an unsupported schema refuses startup', (t) => {
   const root = makeRoot(t);
   const paths = layout(root);
-  writeMarker(paths.libraryDir, marker({ schema: 2 }));
+  writeMarker(paths.libraryDir, marker({ schema: 3 }));
   const before = fingerprint(tracked(paths));
   const err = refusalCode(paths);
   assert.equal(err.code, 'unsupported-schema');
@@ -477,4 +479,80 @@ test('a directory named migration.json is rejected and left in place', (t) => {
   const err = refusalCode(paths);
   assert.equal(err.code, 'unsafe-marker');
   assert.equal(fs.readFileSync(path.join(markerDir, 'keep.txt'), 'utf8'), 'keep\n');
+});
+
+function markerV2(overrides = {}) {
+  return {
+    schema: 2,
+    state: 'committed',
+    migrationId: MIGRATION,
+    sourceScriptHash: SOURCE_HASH,
+    productionId: PRODUCTION,
+    versionId: VERSION,
+    contentHash: CONTENT_HASH,
+    previousActivation: null,
+    mirrorInstalled: false,
+    ...overrides,
+  };
+}
+
+test('a schema-1 marker is versioned storage with no previous activation', (t) => {
+  const root = makeRoot(t);
+  const libraryDir = path.join(root, 'library');
+  const selfFile = writeMarker(libraryDir, marker({ previousVersionId: VERSION }));
+  const selfBefore = fs.readFileSync(selfFile);
+  const detected = detectStorageMode({ libraryDir });
+  assert.equal(detected.mode, 'versioned');
+  assert.equal(detected.supported, false);
+  assert.equal(detected.marker.schema, 1);
+  assert.equal(detected.marker.previousActivation, null);
+  assert.equal(detected.marker.previousVersionId, undefined);
+  assert.equal(fs.readFileSync(selfFile).equals(selfBefore), true);
+  const otherRoot = makeRoot(t);
+  const otherDir = path.join(otherRoot, 'library');
+  const otherFile = writeMarker(otherDir, marker({ previousVersionId: PREVIOUS }));
+  const otherBefore = fs.readFileSync(otherFile);
+  const again = detectStorageMode({ libraryDir: otherDir });
+  assert.equal(again.marker.previousActivation, null);
+  assert.equal(again.marker.versionId, VERSION);
+  assert.equal(fs.readFileSync(otherFile).equals(otherBefore), true);
+});
+
+test('a schema-2 marker is recognized and still refuses startup', (t) => {
+  const root = makeRoot(t);
+  const paths = layout(root);
+  const file = writeMarker(paths.libraryDir, markerV2());
+  const before = fs.readFileSync(file);
+  const detected = detectStorageMode({ libraryDir: paths.libraryDir });
+  assert.equal(detected.mode, 'versioned');
+  assert.equal(detected.supported, false);
+  assert.equal(detected.marker.schema, 2);
+  assert.equal(detected.marker.previousActivation, null);
+  const err = refusalCode(paths);
+  assert.equal(err.code, 'unsupported-versioned-storage');
+  assert.notEqual(err.code, 'unsupported-schema');
+  assert.equal(fs.readFileSync(file).equals(before), true);
+});
+
+test('malformed schema-1 and schema-2 markers stay distinct from versioned runtime refusal', (t) => {
+  const cases = [
+    [marker({ previousVersionId: null }), 'missing-field'],
+    [marker({ previousVersionId: 'not-a-version' }), 'invalid-version-id'],
+    [markerV2({ previousActivation: { productionId: PRODUCTION, versionId: PREVIOUS } }), 'invalid-field'],
+    [markerV2({ previousVersionId: PREVIOUS }), 'invalid-field'],
+  ];
+  cases.forEach(([value, code]) => {
+    const root = makeRoot(t);
+    const paths = layout(root);
+    writeMarker(paths.libraryDir, value);
+    const err = refusalCode(paths);
+    assert.equal(err.code, code);
+    assert.notEqual(err.code, 'unsupported-versioned-storage');
+  });
+  const missing = makeRoot(t);
+  const missingPaths = layout(missing);
+  const withoutActivation = markerV2();
+  delete withoutActivation.previousActivation;
+  writeMarker(missingPaths.libraryDir, withoutActivation);
+  assert.equal(refusalCode(missingPaths).code, 'missing-field');
 });

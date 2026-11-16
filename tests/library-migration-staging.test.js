@@ -644,3 +644,28 @@ test('does not write a live pointer, migration marker, or journal', (t) => {
   assert.deepEqual(realFingerprint(), realBefore);
   assertFixtureUntouched(built);
 });
+
+test('a supplied title is verified before READY and a later title conflicts', (t) => {
+  const root = makeRoot(t);
+  const text = '# PLAIN\nNo images here.\n';
+  const plan = planMigration({
+    liveScript: text,
+    liveId: PLAIN,
+    productions: [{ id: PLAIN, text, versions: { v1: PLAIN_V1 }, assets: {} }],
+  });
+  const title = '  欢迎 — “Café”  ';
+  const staged = stageMigration({ root, plan, sources: [], titles: { [PLAIN]: title } });
+  assert.equal(staged.ok, true);
+  const metadataPath = path.join(workOf(root), 'productions', PLAIN, 'metadata.json');
+  const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+  assert.equal(metadata.title, title);
+  assert.equal(verifyStaging(root).ready, true);
+  const changed = { ...metadata, title: 'Changed' };
+  fs.writeFileSync(metadataPath, `${JSON.stringify(changed, null, 2)}\n`);
+  assert.equal(verifyStaging(root).ready, false);
+  fs.writeFileSync(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`);
+  const conflict = stageMigration({ root, plan, sources: [], titles: { [PLAIN]: 'Another title' } });
+  assert.equal(conflict.ok, false);
+  assert.equal(conflict.code, 'conflicting-plan');
+  assert.equal(JSON.parse(fs.readFileSync(metadataPath, 'utf8')).title, title);
+});

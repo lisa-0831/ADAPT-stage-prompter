@@ -63,10 +63,9 @@ function requireMarkerField(marker, field) {
   }
 }
 
-function validateMarker(marker) {
+function sharedMarker(marker) {
   if (!marker || typeof marker !== 'object' || Array.isArray(marker)) fail('invalid-json');
   requireMarkerField(marker, 'schema');
-  if (marker.schema !== 1) fail('unsupported-schema', 'schema');
   requireMarkerField(marker, 'state');
   if (marker.state !== 'committed') fail('unsupported-marker-state', 'state');
   requireMarkerField(marker, 'migrationId');
@@ -78,9 +77,6 @@ function validateMarker(marker) {
   requireMarkerField(marker, 'versionId');
   const versionId = canonicalId(marker.versionId);
   if (!versionId) fail('invalid-version-id', 'versionId');
-  requireMarkerField(marker, 'previousVersionId');
-  const previousVersionId = canonicalId(marker.previousVersionId);
-  if (!previousVersionId) fail('invalid-version-id', 'previousVersionId');
   requireMarkerField(marker, 'sourceScriptHash');
   const sourceScriptHash = canonicalHash(marker.sourceScriptHash);
   if (!sourceScriptHash) fail('invalid-content-hash', 'sourceScriptHash');
@@ -90,16 +86,36 @@ function validateMarker(marker) {
   requireMarkerField(marker, 'mirrorInstalled');
   if (typeof marker.mirrorInstalled !== 'boolean') fail('invalid-field', 'mirrorInstalled');
   return {
-    schema: 1,
     state: 'committed',
     migrationId,
     productionId,
     versionId,
-    previousVersionId,
+    previousActivation: null,
     sourceScriptHash,
     contentHash,
     mirrorInstalled: marker.mirrorInstalled,
   };
+}
+
+function validateMarker(marker) {
+  const shared = sharedMarker(marker);
+  if (marker.schema === 1) {
+    requireMarkerField(marker, 'previousVersionId');
+    if (!canonicalId(marker.previousVersionId)) fail('invalid-version-id', 'previousVersionId');
+    return { schema: 1, ...shared };
+  }
+  if (marker.schema === 2) {
+    if (!Object.prototype.hasOwnProperty.call(marker, 'previousActivation')) {
+      fail('missing-field', 'previousActivation');
+    }
+    if (marker.previousActivation !== null) fail('invalid-field', 'previousActivation');
+    if (Object.prototype.hasOwnProperty.call(marker, 'previousVersionId')) {
+      fail('invalid-field', 'previousVersionId');
+    }
+    return { schema: 2, ...shared };
+  }
+  fail('unsupported-schema', 'schema');
+  return null;
 }
 
 function readMarker(markerPath) {
