@@ -46,6 +46,7 @@ const HTTP_ADAPTER_CONTRACT = Object.freeze({
     'GET /api/library/:id': 'readProduction. 404 when missing. The saved-head content hash is the legacy revision.',
     'GET /api/library/:id/versions': 'listProductionVersions. Staff only. Committed history is separate from orphans. Saved head comes from production metadata. Live and previous live come from verified live state. 200.',
     'GET /api/library/:id/versions/:versionId': 'readProductionVersion. Staff only. Returns that version\'s stored text. It does not substitute the saved head or the live version, and it does not activate, broadcast, or write. 404 when missing. 409 when the directory is an orphan.',
+    'POST /api/library/:id/versions/:versionId/restore': 'restoreSavedVersion. Staff only. Copies one committed version into a new saved head through saveVersion. The new parentVersionId is the previous saved head. sourceVersionId is returned on this response and is not stored. Identical text leaves the head in place. A shared images/ reference is legacy-image and writes nothing. Live state, the mirror, and the cue stay as they are. 201 for a new version. 200 when unchanged. 409 when the saved head moved or the directory is an orphan.',
     'PUT /api/library/:id': 'Split a title change and a text change. Rename uses metadata generation. Save uses the saved-head version id. If one succeeds and the other conflicts, return 409 partial with the field that was saved. Do not drop either field.',
     'GET /api/library/:id/assets': 'listAssets. Staff only. 200.',
     'POST /api/library/:id/assets': 'uploadAsset. 201. Same asset id and bytes is the stored asset. Different bytes is 409 conflict.',
@@ -1158,6 +1159,95 @@ function createVersionedLibraryService(options) {
     });
   }
 
+  function restoreSavedVersion(input) {
+    return exclusive(async () => {
+      const body = input || {};
+      const productionId = canonicalId(body.productionId);
+      const sourceVersionId = canonicalId(body.sourceVersionId);
+      const expectedVersionId = canonicalId(body.expectedVersionId);
+      const newVersionId = canonicalId(body.newVersionId);
+      if (!productionId || !sourceVersionId || !expectedVersionId || !newVersionId) {
+        return fail('invalid-id', 'The production and version ids are not valid.');
+      }
+      if (newVersionId === sourceVersionId || newVersionId === expectedVersionId) {
+        return fail('invalid-id', 'A restored version needs its own id.');
+      }
+      if (typeof body.createdAt !== 'string' || Number.isNaN(Date.parse(body.createdAt))) {
+        return fail('invalid-clock', 'A version needs a creation time.');
+      }
+      const production = store.readProduction(productionId);
+      if (!production.ok) {
+        return fail(
+          production.code === 'missing-parent' ? 'missing-production' : (production.code || 'missing-production'),
+          production.error || 'That production could not be read.',
+        );
+      }
+      const headId = production.production.headVersionId;
+      if (expectedVersionId !== headId) {
+        return fail('conflict', 'The production changed after this version was opened.', {
+          currentVersionId: headId,
+        });
+      }
+      const recorded = production.production.versions.some((entry) => canonicalId(entry && entry.id) === sourceVersionId);
+      if (!recorded) {
+        const orphans = store.listOrphans(productionId);
+        const orphan = orphans.ok && orphans.orphans.find((entry) => entry.id === sourceVersionId);
+        if (orphan) {
+          return fail('orphan-version', 'That version is not part of the saved history.', {
+            versionId: sourceVersionId,
+            complete: orphan.complete === true,
+          });
+        }
+        return fail('missing-version', 'That version could not be found.');
+      }
+      const source = store.readVersion(productionId, sourceVersionId);
+      if (!source.ok) {
+        return fail(
+          source.code === 'missing-parent' ? 'missing-version' : (source.code || 'corrupt-version'),
+          source.error || 'That version could not be read.',
+        );
+      }
+      if (source.version.productionId !== productionId || source.version.id !== sourceVersionId) {
+        return fail('corrupt-version', 'That version names a different production or version.');
+      }
+      const sourceFile = path.join(library.real, 'productions', productionId, 'versions', sourceVersionId, 'script.txt');
+      const beforeBytes = fs.readFileSync(sourceFile);
+      const formatted = validate(source.text);
+      if (!formatted.ok) {
+        const message = formatted.errors[0] && formatted.errors[0].message
+          ? formatted.errors[0].message
+          : 'This script could not be saved.';
+        return fail('invalid-script', message);
+      }
+      const images = store.describeImages(productionId, source.text);
+      if (!images.ok) return images;
+      if (images.legacyImages.length) {
+        return fail('legacy-image', 'A new version cannot keep a shared images/ reference.');
+      }
+      const saved = await store.saveVersion({
+        productionId,
+        expectedVersionId: headId,
+        newVersionId,
+        text: source.text,
+        createdAt: body.createdAt,
+      });
+      if (!fs.readFileSync(sourceFile).equals(beforeBytes)) {
+        return fail('corrupt-version', 'The historical version changed during restore.');
+      }
+      if (!saved.ok) return saved;
+      const result = {
+        ok: true,
+        unchanged: Boolean(saved.unchanged),
+        sourceVersionId,
+        savedHeadVersionId: saved.currentVersionId,
+        version: saved.version,
+        liveState: publicLiveState(readLiveRecord()),
+      };
+      if (!saved.unchanged) result.parentVersionId = saved.version.parentVersionId;
+      return result;
+    });
+  }
+
   function restoreCurrent(input) {
     return exclusive(async () => {
       const body = input || {};
@@ -1199,6 +1289,7 @@ function createVersionedLibraryService(options) {
     readProductionDetail,
     listProductionVersions,
     readProductionVersion,
+    restoreSavedVersion,
     updateProduction,
     readLiveShow,
     resolveTrackCurrent,

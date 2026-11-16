@@ -17,7 +17,11 @@ const { hashText, isValidScriptId } = require('../script-library');
 // existing script and state messages were emitted. This adapter does not
 // emit those messages. Without that report the field is false. Sending
 // those socket messages still does not prove that every connected client
-// rendered them. A durable Live commit followed
+// rendered them. POST /api/library/:id/versions/:versionId/restore copies
+// one committed version into a new saved head. It leaves Live State, the
+// compatibility mirror, and the cue where they are. sourceVersionId is
+// returned on that response and is not written into version.json.
+// A durable Live commit followed
 // by a synchronization failure is not a storage rollback. X-Version-Id
 // retries keep the same id for the same text. The server stamps createdAt
 // on each request, so a half-written version can still answer
@@ -518,6 +522,56 @@ function registerVersionedHttpRoutes(options) {
     }
     if (!detail.ok) return sendError(res, detail);
     return res.json(detail);
+  });
+
+  app.post('/api/library/:id/versions/:versionId/restore', requireStaff, async (req, res) => {
+    const productionId = canonicalRouteId(req.params.id);
+    const sourceVersionId = canonicalRouteId(req.params.versionId);
+    if (!productionId || !sourceVersionId) {
+      return res.status(400).json({ ok: false, code: 'invalid-id', error: 'That production or version id is not valid.' });
+    }
+    const body = jsonBody(req);
+    const versionHeader = headerId(req, 'X-Version-Id');
+    if (!versionHeader.id) {
+      return res.status(400).json({ ok: false, code: 'invalid-id', error: 'A restored version needs its own id.' });
+    }
+    if (typeof body.expectedVersionId !== 'string') {
+      return res.status(400).json({ ok: false, code: 'invalid-id', error: 'The saved head that was reviewed is required.' });
+    }
+    const stamp = createdAt();
+    if (!stamp) {
+      return res.status(400).json({ ok: false, code: 'invalid-clock', error: 'A version needs a creation time.' });
+    }
+    const restored = await invoke(res, () => service.restoreSavedVersion({
+      productionId,
+      sourceVersionId,
+      expectedVersionId: body.expectedVersionId,
+      newVersionId: versionHeader.id,
+      createdAt: stamp,
+    }));
+    if (!restored) return undefined;
+    if (restored.code === 'orphan-version') {
+      return res.status(409).json({
+        ok: false,
+        code: 'orphan-version',
+        error: restored.error,
+        orphan: {
+          versionId: restored.versionId,
+          complete: restored.complete === true,
+          committed: false,
+        },
+      });
+    }
+    if (restored.code === 'conflict') {
+      return res.status(409).json({
+        ok: false,
+        code: 'conflict',
+        error: restored.error,
+        currentVersionId: restored.currentVersionId || null,
+      });
+    }
+    if (!restored.ok) return sendError(res, restored);
+    return res.status(restored.unchanged ? 200 : 201).json(restored);
   });
 
   app.get('/api/library/:id/assets', requireStaff, async (req, res) => {
