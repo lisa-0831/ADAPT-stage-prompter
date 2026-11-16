@@ -832,4 +832,5 @@ module.exports = {
   ProductionError,
   classifyScriptImages,
   createProductionManager,
+  validateTitle,
 };
