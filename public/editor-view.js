@@ -1279,12 +1279,17 @@ function init(settings) {
 }
 
 
+    function showNotice(message) {
+      showControllerNotice(message);
+    }
+
     return {
       init,
       open,
       isOpen,
       isEnabled,
       noteScriptRevision,
+      showNotice,
     };
   }
 

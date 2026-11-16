@@ -68,7 +68,18 @@ async function readJson(response) {
   return body;
 }
 
-async function startFixture() {
+async function startFixture(options) {
+  const settings = options || {};
+  const staffHeaders = settings.staffToken
+    ? { 'X-Staff-Token': settings.staffToken }
+    : null;
+  function fixtureFetch(url, init) {
+    const requestInit = init || {};
+    if (!staffHeaders) return fetch(url, requestInit);
+    return fetch(url, Object.assign({}, requestInit, {
+      headers: Object.assign({}, staffHeaders, requestInit.headers || {}),
+    }));
+  }
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prompter-browser-'));
   assertDisposable(dir);
   const scriptFile = path.join(dir, 'script.txt');
@@ -79,12 +90,12 @@ async function startFixture() {
   const repoScriptHash = crypto.createHash('sha256').update(fs.readFileSync(repoScript)).digest('hex');
 
   fs.writeFileSync(scriptFile, '# Bootstrap Holder\n[BOOT]\nBoot line\n');
-  const created = createPrompterServer({
+  const created = createPrompterServer(Object.assign({
     scriptFile,
     previousFile,
     libraryDir,
     journalDir,
-  });
+  }, settings.staffToken ? { staffToken: settings.staffToken } : {}));
   let closed = false;
 
   async function close() {
@@ -108,7 +119,7 @@ async function startFixture() {
     const { port } = created.server.address();
     const baseURL = `http://127.0.0.1:${port}`;
 
-    const createdScript = await readJson(await fetch(`${baseURL}/api/library`, {
+    const createdScript = await readJson(await fixtureFetch(`${baseURL}/api/library`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -117,7 +128,7 @@ async function startFixture() {
       }),
     }));
     const scriptId = createdScript.script.id;
-    const uploaded = await readJson(await fetch(`${baseURL}/api/library/${scriptId}/assets`, {
+    const uploaded = await readJson(await fixtureFetch(`${baseURL}/api/library/${scriptId}/assets`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/octet-stream',
@@ -125,7 +136,7 @@ async function startFixture() {
       },
       body: PNG,
     }));
-    const updated = await readJson(await fetch(`${baseURL}/api/library/${scriptId}`, {
+    const updated = await readJson(await fixtureFetch(`${baseURL}/api/library/${scriptId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -133,12 +144,12 @@ async function startFixture() {
         expectedRevision: createdScript.script.revision,
       }),
     }));
-    await readJson(await fetch(`${baseURL}/api/library/${scriptId}/live`, {
+    await readJson(await fixtureFetch(`${baseURL}/api/library/${scriptId}/live`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ expectedRevision: updated.script.revision }),
     }));
-    await readJson(await fetch(`${baseURL}/api/library`, {
+    await readJson(await fixtureFetch(`${baseURL}/api/library`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

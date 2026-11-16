@@ -615,12 +615,20 @@ test('the controller page offers the library without removing the current script
   assert.match(client, /id="editor-save"/);
   assert.match(client, /id="editor-publish"/);
   assert.match(client, /id="editor-save-library"/);
-  assert.match(client, /ScriptLibrary\.liveSwitchConfirmContent/);
-  assert.match(client, /ScriptLibrary\.setLiveOutcome/);
-  assert.match(client, /ScriptLibrary\.setLiveRequestState/);
-  assert.match(client, /Manage Images/);
   assert.match(client, /ScriptLibrary\.parseImageReference/);
+  assert.match(client, /PrompterLibrary\.fetch\(/);
   assert.match(client, /PrompterEditor\.noteScriptRevision/);
+  assert.match(client, /PrompterLibrary\.isOpen\(\)/);
+  assert.equal(client.includes('function openLibrary'), false);
+  assert.equal(client.includes('function initScriptLibrary'), false);
+  assert.equal(client.includes('function isLibraryOpen'), false);
+  const libraryView = fs.readFileSync(path.join(root, 'public/library-view.js'), 'utf8');
+  assert.match(libraryView, /ScriptLibrary\.liveSwitchConfirmContent/);
+  assert.match(libraryView, /ScriptLibrary\.setLiveOutcome/);
+  assert.match(libraryView, /ScriptLibrary\.setLiveRequestState/);
+  assert.match(libraryView, /Manage Images/);
+  assert.match(libraryView, /prompter-staff-token/);
+  assert.match(libraryView, /X-Staff-Token/);
   const editorView = fs.readFileSync(path.join(root, 'public/editor-view.js'), 'utf8');
   assert.match(editorView, /Choose image/);
   assert.match(editorView, /ScriptEditor\.setSceneImage/);
@@ -1021,14 +1029,14 @@ test('restoring the previous live script keeps both library productions', async 
 });
 
 test('set as live rejects a stale revision and keeps the current show', async (t) => {
-  const client = fs.readFileSync(path.join(root, 'client.html'), 'utf8');
   const editor = fs.readFileSync(path.join(root, 'public/editor-view.js'), 'utf8');
+  const libraryView = fs.readFileSync(path.join(root, 'public/library-view.js'), 'utf8');
   assert.match(editor, /expectedRevision: editorLibraryRevision/);
-  assert.match(client, /expectedRevision: libraryPendingRevision/);
+  assert.match(libraryView, /expectedRevision: libraryPendingRevision/);
   assert.match(editor, /Save to the library before setting this script live/);
-  assert.match(client, /Review latest/);
+  assert.match(libraryView, /Review latest/);
   assert.match(editor, /Load latest version/);
-  assert.match(client, /reviewedLiveRevision\(entry, libraryReviewed\)/);
+  assert.match(libraryView, /reviewedLiveRevision\(entry, libraryReviewed\)/);
 
   const fixture = startServer(t, { scriptText: MACBETH });
   const port = await listen(fixture.created.server);

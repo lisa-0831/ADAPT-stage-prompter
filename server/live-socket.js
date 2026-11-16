@@ -1,0 +1,84 @@
+const { movePosition } = require('../navigation-model');
+
+// WebSocket commands only. The live cue, slides, and revision stay in server.js.
+// This module reads them when a message arrives and writes the cue back through
+// updateCue. A second call does not add another connection listener.
+
+const registeredServers = new WeakSet();
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function registerLiveSocketHandlers(deps) {
+  if (!deps || !deps.wss || registeredServers.has(deps.wss)) return;
+  registeredServers.add(deps.wss);
+
+  function currentSlide() {
+    const slides = deps.getSlides();
+    const state = deps.getState();
+    return slides[state.slideIndex] || { title: '', lines: [] };
+  }
+
+  function handleNavigate(direction) {
+    const next = movePosition(deps.getSlides(), deps.getState(), direction);
+    deps.updateCue({
+      slideIndex: next.slideIndex,
+      lineIndex: next.lineIndex,
+      showTitleImage: next.showTitleImage,
+    });
+    deps.broadcast({ type: 'state', state: deps.getState() });
+  }
+
+  deps.wss.on('connection', (ws) => {
+    console.log('[ws] Client connected');
+    ws.send(JSON.stringify({
+      type: 'script',
+      slides: deps.getSlides(),
+      revision: deps.getScriptRevision(),
+      liveScriptId: deps.getLiveScriptId(),
+    }));
+    ws.send(JSON.stringify({
+      type: 'state',
+      state: deps.getState(),
+    }));
+
+    ws.on('message', (raw) => {
+      let msg;
+      try { msg = JSON.parse(raw); } catch { return; }
+
+      switch (msg.type) {
+        case 'navigate':
+          handleNavigate(msg.direction);
+          break;
+        case 'goto':
+          if (deps.getSlides().length) {
+            if (msg.slideIndex !== undefined) {
+              deps.updateCue({
+                slideIndex: clamp(msg.slideIndex, 0, deps.getSlides().length - 1),
+              });
+            }
+            if (msg.lineIndex !== undefined) {
+              deps.updateCue({
+                lineIndex: clamp(msg.lineIndex, 0, Math.max(0, currentSlide().lines.length - 1)),
+              });
+            }
+            deps.updateCue({
+              showTitleImage: !!(currentSlide().titleImage && deps.getState().lineIndex === 0),
+            });
+          }
+          deps.broadcast({ type: 'state', state: deps.getState() });
+          break;
+        case 'reloadScript':
+          deps.loadScript();
+          break;
+        default:
+          break;
+      }
+    });
+
+    ws.on('close', () => console.log('[ws] Client disconnected'));
+  });
+}
+
+module.exports = { registerLiveSocketHandlers };

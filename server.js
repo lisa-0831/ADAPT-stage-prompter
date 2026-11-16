@@ -3,65 +3,20 @@ const http = require('http');
 const WebSocket = require('ws');
 const fs = require('fs');
 const path = require('path');
-const { timingSafeEqual } = require('crypto');
 const { parseScript, positionAfterScriptReplace } = require('./script-format');
-const { movePosition } = require('./navigation-model');
 const { stagePublishedScript } = require('./script-editor-model');
 const {
   createScriptLibrary,
-  createPrivatePathGuard,
   hashText,
   isValidScriptId,
 } = require('./script-library');
+const { registerHttpRoutes } = require('./server/http-routes');
+const { registerLiveSocketHandlers } = require('./server/live-socket');
 const {
   commitLiveFiles,
   recoverLiveFiles,
   readBackupMeta,
 } = require('./live-script-store');
-
-function imageLimitMessage(limit) {
-  const amount = limit >= 1024 * 1024 && limit % (1024 * 1024) === 0
-    ? `${limit / (1024 * 1024)} MB`
-    : `${limit} bytes`;
-  return `That image is too large. Use a file of ${amount} or smaller.`;
-}
-
-function readLimitedBody(limit) {
-  return function readLimitedBodyMiddleware(req, res, next) {
-    const chunks = [];
-    let total = 0;
-    let rejected = false;
-    req.on('data', (chunk) => {
-      if (rejected) return;
-      total += chunk.length;
-      if (total > limit) {
-        rejected = true;
-        res.status(413).json({ ok: false, error: imageLimitMessage(limit) });
-        req.destroy();
-        return;
-      }
-      chunks.push(chunk);
-    });
-    req.on('end', () => {
-      if (rejected || res.headersSent) return;
-      req.body = Buffer.concat(chunks);
-      next();
-    });
-    req.on('error', () => {
-      if (rejected || res.headersSent) return;
-      res.status(400).json({ ok: false, error: 'That image could not be read.' });
-    });
-  };
-}
-
-function assetNameFromRequest(req) {
-  const raw = req.get('X-Asset-Name') || '';
-  try {
-    return decodeURIComponent(raw).slice(0, 200);
-  } catch (err) {
-    return '';
-  }
-}
 
 function defaultScript() {
   return `# Scene 1 | Kansas Place in Brooklyn, New York
@@ -90,16 +45,6 @@ I'll get you. And your little dog too.
 Don't be sad, Dorothy. Be happy. Don't worry about that old bat.
 [DOROTHY]
 I don't know why she is so mean. Maybe if we got to know her? Or brought her some flowers.`;
-}
-
-function staffTokensMatch(provided, expected) {
-  const left = Buffer.from(String(provided));
-  const right = Buffer.from(String(expected));
-  if (left.length !== right.length) {
-    timingSafeEqual(right, right);
-    return false;
-  }
-  return timingSafeEqual(left, right);
 }
 
 function createPrompterServer(options = {}) {
@@ -149,12 +94,10 @@ function createPrompterServer(options = {}) {
     showTitleImage: false,
   };
 
-  function clamp(val, min, max) {
-    return Math.max(min, Math.min(max, val));
-  }
-
-  function currentSlide() {
-    return slides[state.slideIndex] || { title: '', lines: [] };
+  function updateCue(fields) {
+    if (Object.prototype.hasOwnProperty.call(fields, 'slideIndex')) state.slideIndex = fields.slideIndex;
+    if (Object.prototype.hasOwnProperty.call(fields, 'lineIndex')) state.lineIndex = fields.lineIndex;
+    if (Object.prototype.hasOwnProperty.call(fields, 'showTitleImage')) state.showTitleImage = fields.showTitleImage;
   }
 
   function broadcast(msg) {
@@ -305,378 +248,38 @@ function createPrompterServer(options = {}) {
     return null;
   }
 
-  function requireStaff(req, res, next) {
-    if (!staffToken) return next();
-    if (staffTokensMatch(req.get('X-Staff-Token') || '', staffToken)) return next();
-    return res.status(401).json({
-      ok: false,
-      error: 'The staff access code was not accepted.',
-    });
-  }
-
-  function sendAsset(res, asset) {
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('Cache-Control', 'private, max-age=3600');
-    res.type(asset.mime);
-    return res.send(asset.body);
-  }
-
-  function referencedTexts() {
-    const texts = [];
-    try { texts.push(fs.readFileSync(scriptFile, 'utf8')); } catch (err) { /* The live file may not exist yet. */ }
-    try { texts.push(fs.readFileSync(previousFile, 'utf8')); } catch (err) { /* There may be no previous script. */ }
-    return texts;
-  }
-
-  function libraryScript(result) {
-    return {
-      id: result.id,
-      title: result.title,
-      createdAt: result.createdAt,
-      updatedAt: result.updatedAt,
-      revision: result.revision,
-      live: result.id === library.getLiveId(),
-    };
-  }
-
-  function handleNavigate(dir) {
-    const next = movePosition(slides, state, dir);
-    state.slideIndex = next.slideIndex;
-    state.lineIndex = next.lineIndex;
-    state.showTitleImage = next.showTitleImage;
-    broadcast({ type: 'state', state });
-  }
-
-  wss.on('connection', (ws) => {
-    console.log('[ws] Client connected');
-    ws.send(JSON.stringify({
-      type: 'script',
-      slides,
-      revision: scriptRevision,
-      liveScriptId: library.getLiveId(),
-    }));
-    ws.send(JSON.stringify({ type: 'state', state }));
-
-    ws.on('message', (raw) => {
-      let msg;
-      try { msg = JSON.parse(raw); } catch { return; }
-
-      switch (msg.type) {
-        case 'navigate':
-          handleNavigate(msg.direction);
-          break;
-        case 'goto':
-          if (slides.length) {
-            if (msg.slideIndex !== undefined) {
-              state.slideIndex = clamp(msg.slideIndex, 0, slides.length - 1);
-            }
-            if (msg.lineIndex !== undefined) {
-              state.lineIndex = clamp(msg.lineIndex, 0, Math.max(0, currentSlide().lines.length - 1));
-            }
-            state.showTitleImage = !!(currentSlide().titleImage && state.lineIndex === 0);
-          }
-          broadcast({ type: 'state', state });
-          break;
-        case 'reloadScript':
-          loadScript();
-          break;
-        default:
-          break;
-      }
-    });
-
-    ws.on('close', () => console.log('[ws] Client disconnected'));
+  registerLiveSocketHandlers({
+    wss,
+    getSlides() { return slides; },
+    getState() { return state; },
+    updateCue,
+    getScriptRevision() { return scriptRevision; },
+    getLiveScriptId() { return library.getLiveId(); },
+    broadcast,
+    loadScript,
   });
 
-  // The controller page is not server-side authorization. ?role=controller
-  // only changes the browser. Script upload stays reachable by anyone who
-  // can reach the server, matching the previous Replace Script behavior.
-  // Library routes use PROMPTER_STAFF_TOKEN when that variable is set.
-  app.use(express.text({ type: 'text/plain', limit: '5mb' }));
-  app.use(express.json({ limit: '5mb' }));
-  app.use(createPrivatePathGuard(libraryDir, __dirname, [journalDir]));
-  app.use(express.static(__dirname, { index: false }));
-
-  app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'client.html'));
-  });
-
-  app.get('/api/library/access', (req, res) => {
-    res.json({ ok: true, required: Boolean(staffToken) });
-  });
-
-  app.get('/api/library', requireStaff, (req, res) => {
-    const listed = library.list();
-    res.json({
-      ok: true,
-      liveId: listed.liveId,
-      scripts: listed.scripts.map((entry) => ({
-        ...entry,
-        live: entry.id === listed.liveId,
-      })),
-    });
-  });
-
-  app.post('/api/library', requireStaff, (req, res) => {
-    const body = req.body && typeof req.body === 'object' ? req.body : {};
-    const created = library.create({ title: body.title, text: body.text });
-    if (!created.ok) {
-      return res.status(created.status || 400).json({ ok: false, error: created.error, code: created.code });
-    }
-    if (body.trackIfCurrent === true && hashText(body.text) === scriptRevision) {
-      const currentId = library.getLiveId();
-      const current = currentId ? library.read(currentId) : null;
-      if (!current || !current.ok || current.revision !== scriptRevision) {
-        library.setLiveId(created.id);
-      }
-    }
-    return res.status(201).json({ ok: true, script: libraryScript(created), liveId: library.getLiveId() });
-  });
-
-  app.get('/api/library/:id', requireStaff, (req, res) => {
-    if (!isValidScriptId(req.params.id)) {
-      return res.status(400).json({ ok: false, error: 'That script id is not valid.' });
-    }
-    const record = library.read(req.params.id);
-    if (!record.ok) {
-      return res.status(record.status || 404).json({ ok: false, error: record.error });
-    }
-    return res.json({
-      ok: true,
-      script: { ...libraryScript(record), text: record.text },
-    });
-  });
-
-  app.put('/api/library/:id', requireStaff, (req, res) => {
-    if (!isValidScriptId(req.params.id)) {
-      return res.status(400).json({ ok: false, error: 'That script id is not valid.' });
-    }
-    const body = req.body && typeof req.body === 'object' ? req.body : {};
-    const changes = { expectedRevision: body.expectedRevision };
-    if (Object.prototype.hasOwnProperty.call(body, 'title')) changes.title = body.title;
-    if (Object.prototype.hasOwnProperty.call(body, 'text')) changes.text = body.text;
-    const updated = library.update(req.params.id, changes);
-    if (!updated.ok) {
-      return res.status(updated.status || 400).json({
-        ok: false,
-        error: updated.error,
-        code: updated.code,
-      });
-    }
-    return res.json({
-      ok: true,
-      unchanged: Boolean(updated.unchanged),
-      script: libraryScript(updated),
-      liveId: library.getLiveId(),
-    });
-  });
-
-  app.get('/api/library/:id/assets', requireStaff, (req, res) => {
-    if (!isValidScriptId(req.params.id)) {
-      return res.status(400).json({ ok: false, error: 'That script id is not valid.' });
-    }
-    const listed = library.listAssets(req.params.id);
-    if (!listed.ok) {
-      return res.status(listed.status || 404).json({ ok: false, error: listed.error });
-    }
-    return res.json({ ok: true, assets: listed.assets });
-  });
-
-  app.post('/api/library/:id/assets', requireStaff, readLimitedBody(imageMaxBytes), (req, res) => {
-    if (!isValidScriptId(req.params.id)) {
-      return res.status(400).json({ ok: false, error: 'That script id is not valid.' });
-    }
-    const saved = library.addAsset(req.params.id, {
-      body: Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0),
-      name: assetNameFromRequest(req),
-    });
-    if (!saved.ok) {
-      return res.status(saved.status || 400).json({ ok: false, error: saved.error, code: saved.code });
-    }
-    return res.status(201).json({ ok: true, asset: saved.asset });
-  });
-
-  app.get('/api/library/:id/assets/:assetId', requireStaff, (req, res) => {
-    if (!isValidScriptId(req.params.id) || !isValidScriptId(req.params.assetId)) {
-      return res.status(404).type('text/plain').send('Not found');
-    }
-    const asset = library.readAsset(req.params.id, req.params.assetId);
-    if (!asset.ok) return res.status(404).type('text/plain').send('Not found');
-    return sendAsset(res, asset);
-  });
-
-  app.delete('/api/library/:id/assets/:assetId', requireStaff, (req, res) => {
-    if (!isValidScriptId(req.params.id) || !isValidScriptId(req.params.assetId)) {
-      return res.status(400).json({ ok: false, error: 'That image could not be found.' });
-    }
-    const removed = library.removeAsset(req.params.id, req.params.assetId, referencedTexts());
-    if (!removed.ok) {
-      return res.status(removed.status || 400).json({ ok: false, error: removed.error, code: removed.code });
-    }
-    return res.json({ ok: true });
-  });
-
-  app.get('/api/live/assets/:scriptId/:assetId', (req, res) => {
-    const scriptId = String(req.params.scriptId || '').toLowerCase();
-    const assetId = String(req.params.assetId || '').toLowerCase();
-    if (!isValidScriptId(scriptId) || !isValidScriptId(assetId)) {
-      return res.status(404).type('text/plain').send('Not found');
-    }
-    if (!liveRaw.toLowerCase().includes(`library:${scriptId}/${assetId}`)) {
-      return res.status(404).type('text/plain').send('Not found');
-    }
-    const asset = library.readAsset(scriptId, assetId);
-    if (!asset.ok) return res.status(404).type('text/plain').send('Not found');
-    return sendAsset(res, asset);
-  });
-
-  app.post('/api/library/:id/live', requireStaff, (req, res) => {
-    if (!isValidScriptId(req.params.id)) {
-      return res.status(400).json({ ok: false, error: 'That script id is not valid.' });
-    }
-    const record = library.read(req.params.id);
-    if (!record.ok) {
-      return res.status(record.status || 404).json({ ok: false, error: record.error });
-    }
-    const requestBody = req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body)
-      ? req.body
-      : {};
-    const expectedRevision = typeof requestBody.expectedRevision === 'string'
-      ? requestBody.expectedRevision
-      : '';
-    // Missing and stale revisions are rejected before the live file is touched.
-    // A rename does not change the revision, because the revision is the script text.
-    if (!expectedRevision) {
-      return res.status(400).json({
-        ok: false,
-        code: 'revision-required',
-        error: 'The script revision was missing, so this script was not set live. Open the library again and review the script before setting it live.',
-      });
-    }
-    if (record.revision !== expectedRevision) {
-      return res.status(409).json({
-        ok: false,
-        code: 'conflict',
-        error: 'This saved script changed after you reviewed it. It was not set live. Review the latest version, then set it live again.',
-      });
-    }
-    const previousId = library.getLiveId();
-    const differentProduction = previousId !== record.id;
-    let previousTitle = '';
-    if (previousId) {
-      const previous = library.read(previousId);
-      if (previous.ok) previousTitle = previous.title;
-    }
-    const missingImages = library.countMissingImages(record.text);
-    const written = writeLiveScript(record.text, !differentProduction);
-    if (!written.ok) {
-      return res.status(written.status || 500).json({ ok: false, error: written.error });
-    }
-    library.setLiveId(record.id);
-    try {
-      broadcast({
-        type: 'script',
-        slides,
-        revision: scriptRevision,
-        liveScriptId: library.getLiveId(),
-      });
-    } catch (err) {
-      console.error(err);
-    }
-    return res.json({
-      ok: true,
-      unchanged: !written.changed && !differentProduction,
-      resetPosition: differentProduction,
-      revision: scriptRevision,
-      liveId: record.id,
-      title: record.title,
-      previousTitle: previousTitle || 'Unsaved live script',
-      slides: slides.length,
-      missingImages,
-    });
-  });
-
-  app.post('/script', (req, res) => {
-    const libraryId = req.get('X-Library-Id') || '';
-    const expectedRevision = req.get('X-Library-Revision') || '';
-    const resetPosition = req.get('X-Reset-Position') === '1';
-    const restoreRequested = req.get('X-Restore-Previous') === '1';
-    if (restoreRequested) {
-      let previousText = '';
-      try {
-        previousText = readTextFile(previousFile);
-      } catch (err) {
-        console.error(err);
-        return res.status(500).json({ ok: false, error: 'Could not read the script' });
-      }
-      if (!previousText || req.body !== previousText) {
-        return res.status(400).json({
-          ok: false,
-          error: 'The previous script could not be restored. The live show was not changed.',
-        });
-      }
-    }
-    const written = writeLiveScript(req.body, !resetPosition);
-    if (!written.ok) {
-      return res.status(written.status || 500).json({ ok: false, error: written.error });
-    }
-
-    let libraryUpdated = false;
-    let libraryConflict = false;
-    // A restore swaps the live file only. Library rows keep the text
-    // each production was saved with, including when this request also
-    // carries the id of the production that is live right now.
-    if ((libraryId || expectedRevision) && !written.restoredFromPrevious) {
-      const currentLiveId = library.getLiveId();
-      if (
-        libraryId
-        && expectedRevision
-        && currentLiveId
-        && libraryId === currentLiveId
-        && !resetPosition
-      ) {
-        const updated = library.update(libraryId, {
-          text: written.text,
-          expectedRevision,
-        });
-        libraryUpdated = Boolean(updated.ok);
-        libraryConflict = updated.code === 'conflict';
-      }
-    }
-    const liveScriptId = rememberLiveScript(written.restoredLiveId, written.text);
-    try {
-      broadcast({
-        type: 'script',
-        slides,
-        revision: scriptRevision,
-        liveScriptId,
-      });
-    } catch (err) {
-      console.error(err);
-    }
-
-    return res.json({
-      ok: true,
-      slides: slides.length,
-      revision: scriptRevision,
-      unchanged: !written.changed,
-      liveScriptId,
-      libraryUpdated,
-      libraryConflict,
-    });
-  });
-
-  app.get('/script/previous', (req, res) => {
-    if (!fs.existsSync(previousFile)) {
-      return res.status(404).json({ error: 'No previous script' });
-    }
-    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    return res.send(fs.readFileSync(previousFile, 'utf8'));
-  });
-
-  app.get('/script', (req, res) => {
-    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    return res.send(fs.readFileSync(scriptFile, 'utf8'));
+  // HTTP routes live in server/http-routes.js. WebSocket commands live in
+  // server/live-socket.js. The cue object above stays the one they update.
+  // Live writes still go through writeLiveScript, which owns the journal.
+  registerHttpRoutes({
+    app,
+    staticRoot: __dirname,
+    libraryDir,
+    journalDir,
+    staffToken,
+    imageMaxBytes,
+    library,
+    writeLiveScript,
+    broadcast,
+    rememberLiveScript,
+    getScriptRevision() { return scriptRevision; },
+    getSlides() { return slides; },
+    getLiveRaw() { return liveRaw; },
+    readLiveScript() { return fs.readFileSync(scriptFile, 'utf8'); },
+    previousScriptExists() { return fs.existsSync(previousFile); },
+    readPreviousScript() { return fs.readFileSync(previousFile, 'utf8'); },
+    readPreviousText() { return readTextFile(previousFile); },
   });
 
   try {
