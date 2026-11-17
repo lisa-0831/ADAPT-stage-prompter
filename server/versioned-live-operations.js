@@ -1,6 +1,5 @@
 const crypto = require('crypto');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { createVersionStore } = require('../library-version-store');
 const { detectImage } = require('../script-library');
@@ -12,10 +11,13 @@ const {
   freshInstallationBytes,
 } = require('./storage-mode');
 const { recoverVersionedInstall } = require('./versioned-live-install');
+const { assessWritableRoot } = require('./writable-root');
+const { lockAround } = require('./storage-writer-lock');
 
 // Fixture-only live operations. One factory owns one in-process queue.
-// There is no cross-process lock. Save, publish, and set-live on the same
-// factory cannot pass the saved-head check at the same time.
+// Save, publish, and set-live on the same factory cannot pass the saved-head
+// check at the same time. Each queued operation also takes the kernel flock
+// for that canonical library, or joins the flock this process already holds.
 //
 // Live journals share <journalDir>/versioned-live with the initial installer.
 // The commit point is the rename of pending to committed. A pending journal
@@ -51,7 +53,6 @@ const LIVE_OPERATIONS = Object.freeze(['set-live', 'publish-live', 'restore-prev
 const JOURNAL_FILES = Object.freeze(['plan.json', 'live-state.json', 'mirror.txt']);
 const INITIAL_JOURNAL_FILES = Object.freeze(['plan.json', 'live-state.json', 'mirror.txt', 'marker.json']);
 const MAX_BYTES = 8 * 1024 * 1024;
-const REPO_ROOT = path.resolve(__dirname, '..');
 
 class OperationError extends Error {
   constructor(code, message, stage) {
@@ -158,12 +159,7 @@ function authorizeRoot(root) {
   } catch (err) {
     return fail('unsafe-root', 'The root directory could not be resolved.');
   }
-  const repoReal = fs.realpathSync(REPO_ROOT);
-  const tmpReal = fs.realpathSync(os.tmpdir());
-  if (rootReal === repoReal || insideStrict(rootReal, repoReal) || insideStrict(repoReal, rootReal)) {
-    return fail('unsafe-root', 'Live operations are limited to an explicit temporary fixture.');
-  }
-  if (rootReal === tmpReal || !insideStrict(rootReal, tmpReal)) {
+  if (!assessWritableRoot(rootReal).ok) {
     return fail('unsafe-root', 'Live operations are limited to an explicit temporary fixture.');
   }
   return { ok: true, rootReal };
@@ -444,7 +440,10 @@ function createVersionedLiveOperations(options) {
   const now = options && options.now;
 
   function exclusive(work) {
-    const run = chain.then(work, work);
+    const run = chain.then(
+      () => (library.ok ? lockAround(library.real, work) : work()),
+      () => (library.ok ? lockAround(library.real, work) : work()),
+    );
     chain = run.then(() => undefined, () => undefined);
     return run;
   }

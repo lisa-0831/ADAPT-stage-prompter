@@ -3,17 +3,19 @@
 // version.json without schema or createdAt. A later save adds schema,
 // currentVersionId, updatedAt, and generation without rewriting old version
 // files. A missing generation counts as 1, because staging already wrote the
-// metadata once. This process serializes its own saves. It does not lock out
-// another process.
+// metadata once. This process serializes its own saves and takes the kernel
+// flock for the canonical library directory. A second process cannot save
+// while that flock is held.
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { validate } = require('./script-editor-model');
 const { parseImageReference } = require('./script-library-model');
 const { detectImage, hashText, isValidScriptId } = require('./script-library');
+const { assessWritableRoot } = require('./server/writable-root');
+const { lockAround } = require('./server/storage-writer-lock');
 
 const SCHEMA = 1;
-const REPO_ROOT = path.resolve(__dirname);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 class VersionStoreError extends Error {
@@ -107,8 +109,7 @@ function openVersionStore(options, readOnly) {
     throw new VersionStoreError('unsafe-path', 'The version store root must be a real directory.');
   }
   const rootReal = fs.realpathSync(settings.root);
-  const repoReal = fs.realpathSync(REPO_ROOT);
-  if (!readOnly && contained(repoReal, rootReal)) {
+  if (!readOnly && !assessWritableRoot(rootReal).ok) {
     throw new VersionStoreError('unsafe-path', 'The version store root must be outside this repository.');
   }
   const failAt = settings.failAt || '';
@@ -724,7 +725,7 @@ function openVersionStore(options, readOnly) {
   }
 
   function saveVersion(input) {
-    return exclusive(() => saveVersionLocked(input));
+    return exclusive(() => lockAround(rootReal, () => saveVersionLocked(input)));
   }
 
   const api = {

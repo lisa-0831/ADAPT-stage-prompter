@@ -1,20 +1,20 @@
 const crypto = require('crypto');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { validate } = require('./script-editor-model');
 const { parseImageReference } = require('./script-library-model');
 const { hashText, isValidScriptId } = require('./script-library');
 const { createVersionStore } = require('./library-version-store');
+const { assessWritableRoot } = require('./server/writable-root');
+const { lockAround } = require('./server/storage-writer-lock');
 
 // Fixture-only production creation and rename. This module does not open a
 // server, write Live State, or upload assets.
 //
-// One factory serializes its own create and rename calls. It does not share
-// that queue with another factory, with M5 saveVersion, or with M7D2 live
-// operations, and it does not lock another process. The versioned library
-// service is the coordinator that must be used before those writers share a
-// library. Direct factory calls can still race with the service.
+// One factory serializes its own create and rename calls. Those calls also
+// take the kernel flock for the canonical library, or join the flock this
+// process already holds. The versioned library service remains the
+// coordinator for a running server.
 //
 // The published name is <library>/productions/<uuid>. Files are written in a
 // .creating-* directory this call created, verified, and then renamed. A
@@ -39,7 +39,6 @@ const RENAME_STAGES = Object.freeze([
 const SCHEMA = 1;
 const TITLE_MAX = 120;
 const MAX_SCRIPT_BYTES = 8 * 1024 * 1024;
-const REPO_ROOT = path.resolve(__dirname);
 const HISTORICAL_IMAGE_NOTE = 'v1 keeps this images/ path. The text hash does not cover the image bytes, so replacing the shared file later changes what v1 displays.';
 const PREVIEW_NOTE = 'The original version keeps its image lines. Shared images/ paths are not copied into this production.';
 
@@ -147,12 +146,7 @@ function authorizeRoot(root) {
   } catch (err) {
     return fail('unsafe-root', 'The root directory could not be resolved.');
   }
-  const repoReal = fs.realpathSync(REPO_ROOT);
-  const tmpReal = fs.realpathSync(os.tmpdir());
-  if (rootReal === repoReal || insideStrict(rootReal, repoReal) || insideStrict(repoReal, rootReal)) {
-    return fail('unsafe-root', 'Production management is limited to an explicit temporary fixture.');
-  }
-  if (rootReal === tmpReal || !insideStrict(rootReal, tmpReal)) {
+  if (!assessWritableRoot(rootReal).ok) {
     return fail('unsafe-root', 'Production management is limited to an explicit temporary fixture.');
   }
   return { ok: true, rootReal };
@@ -325,7 +319,7 @@ function createProductionManager(options) {
   const createId = typeof settings.createId === 'function' ? settings.createId : () => crypto.randomUUID();
 
   function exclusive(work) {
-    const run = chain.then(work, work);
+    const run = chain.then(() => lockAround(library.real, work), () => lockAround(library.real, work));
     chain = run.then(() => undefined, () => undefined);
     return run;
   }

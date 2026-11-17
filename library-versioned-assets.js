@@ -1,12 +1,13 @@
 const crypto = require('crypto');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { parseImageReference } = require('./script-library-model');
 const { detectImage, displayAssetName, isValidScriptId } = require('./script-library');
 const { createVersionStore } = require('./library-version-store');
 const { classifyScriptImages } = require('./library-versioned-production-management');
 const { loadVersionedShow } = require('./server/versioned-show');
+const { assessWritableRoot } = require('./server/writable-root');
+const { lockAround } = require('./server/storage-writer-lock');
 
 // Fixture-only production assets. This module does not open a server, assign
 // scenes, rewrite @image lines, or change a saved script version, the live
@@ -48,7 +49,6 @@ const DELETE_STAGES = Object.freeze([
   'after-unlink',
 ]);
 const DEFAULT_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
-const REPO_ROOT = path.resolve(__dirname);
 
 class AssetError extends Error {
   constructor(code, message, stage) {
@@ -157,12 +157,7 @@ function authorizeRoot(root) {
   } catch (err) {
     return fail('unsafe-root', 'The root directory could not be resolved.');
   }
-  const repoReal = fs.realpathSync(REPO_ROOT);
-  const tmpReal = fs.realpathSync(os.tmpdir());
-  if (rootReal === repoReal || insideStrict(rootReal, repoReal) || insideStrict(repoReal, rootReal)) {
-    return fail('unsafe-root', 'Asset management is limited to an explicit temporary fixture.');
-  }
-  if (rootReal === tmpReal || !insideStrict(rootReal, tmpReal)) {
+  if (!assessWritableRoot(rootReal).ok) {
     return fail('unsafe-root', 'Asset management is limited to an explicit temporary fixture.');
   }
   return { ok: true, rootReal };
@@ -288,7 +283,7 @@ function createVersionedAssetManager(options) {
   let chain = Promise.resolve();
 
   function exclusive(work) {
-    const run = chain.then(work, work);
+    const run = chain.then(() => lockAround(library.real, work), () => lockAround(library.real, work));
     chain = run.then(() => undefined, () => undefined);
     return run;
   }

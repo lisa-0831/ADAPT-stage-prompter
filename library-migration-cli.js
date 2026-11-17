@@ -5,6 +5,7 @@ const path = require('path');
 const { planMigration } = require('./library-migration-plan');
 const { describeStaging, stageMigration, verifyStaging } = require('./library-migration-staging');
 const { createVersionStore } = require('./library-version-store');
+const { lockAround } = require('./server/storage-writer-lock');
 const { parseImageReference } = require('./script-library-model');
 const {
   detectImage,
@@ -15,9 +16,11 @@ const {
 } = require('./script-library');
 
 // Fixture-only migration commands. Every root must be an explicit temporary
-// directory. M6 does not migrate this repository, and it does not install the
-// live-script mirror. M7 has to add a trusted production root before a real
-// library can be committed. A committed fixture marker makes M3 refuse startup.
+// directory. This module does not migrate the ADAPT checkout. Prepare, abort,
+// and commit take the same kernel flock as a running versioned server, so
+// they cannot write a library that server already owns. A persistent
+// migration claim is beginPersistentMigration in server/persistent-authorization.js.
+// That claim does not stage or commit a library. M9C2 has to connect it.
 
 const ATTEMPT_NAME = 'migration-attempt.json';
 const MARKER_NAME = 'migration.json';
@@ -137,11 +140,11 @@ function authorizeRoot(root) {
   }
   const repoReal = fs.realpathSync(path.resolve(__dirname));
   if (contained(rootReal, repoReal) || contained(repoReal, rootReal)) {
-    return fail('unsafe-root', 'M6 cannot inspect or migrate this repository. A trusted production root arrives in M7.');
+    return fail('unsafe-root', 'This checkout cannot be inspected or migrated by the fixture command.');
   }
   const tmpReal = fs.realpathSync(os.tmpdir());
   if (rootReal === tmpReal || !insideStrict(rootReal, tmpReal)) {
-    return fail('unsafe-root', 'M6 only accepts an explicit temporary fixture. A trusted production root arrives in M7.');
+    return fail('unsafe-root', 'This command only accepts an explicit temporary fixture.');
   }
   return { ok: true, rootReal };
 }
@@ -1599,16 +1602,29 @@ function dispatchMigration(settings) {
   const maxImageBytes = Number.isInteger(settings.maxImageBytes) && settings.maxImageBytes > 0
     ? settings.maxImageBytes
     : DEFAULT_MAX_IMAGE_BYTES;
-  if (command === 'abort') return abort(auth.rootReal, maxImageBytes);
+  if (command === 'abort') return withLibraryLock(auth.rootReal, () => abort(auth.rootReal, maxImageBytes));
   const inventory = inspect(auth.rootReal, maxImageBytes);
   if (command === 'dry-run') {
     checkpoint(settings.failAt || '', 'inspect');
     return reportOf(inventory);
   }
   if (command === 'verify') return verify(auth.rootReal, inventory);
-  if (command === 'prepare') return prepare(auth.rootReal, inventory, settings);
-  if (command === 'commit') return commit(auth.rootReal, inventory, settings);
+  if (command === 'prepare') return withLibraryLock(auth.rootReal, () => prepare(auth.rootReal, inventory, settings));
+  if (command === 'commit') return withLibraryLock(auth.rootReal, () => commit(auth.rootReal, inventory, settings));
   return fail('invalid-command', 'Choose one of --dry-run, --prepare, --verify, --abort, or --commit.');
+}
+
+function withLibraryLock(rootReal, work) {
+  const libraryDir = path.join(rootReal, 'data', 'library');
+  const stat = lstatIfExists(libraryDir);
+  if (!stat || (!stat.isDirectory() && !stat.isSymbolicLink())) {
+    return fail('unsafe-lock', 'Migration writes need a real library directory before they can take the writer lock.', { activated: false });
+  }
+  const result = lockAround(libraryDir, work);
+  if (result && result.ok === false && (result.code === 'writer-locked' || result.code === 'writer-lock-lost' || result.code === 'lock-unsupported' || result.code === 'unsafe-lock')) {
+    return fail(result.code, result.error, { activated: false });
+  }
+  return result;
 }
 
 function parseArgs(argv) {

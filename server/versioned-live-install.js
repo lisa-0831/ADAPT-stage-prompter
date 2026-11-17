@@ -1,6 +1,5 @@
 const crypto = require('crypto');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { loadVersionedShow } = require('./versioned-show');
 const { detectStorageMode, StorageModeError } = require('./storage-mode');
@@ -41,7 +40,8 @@ const MIRROR_NAME = 'mirror.txt';
 const MARKER_NAME = 'marker.json';
 const JOURNAL_FILES = Object.freeze([PLAN_NAME, STATE_NAME, MIRROR_NAME, MARKER_NAME]);
 const MAX_JOURNAL_BYTES = 8 * 1024 * 1024;
-const REPO_ROOT = path.resolve(__dirname, '..');
+const { assessWritableRoot } = require('./writable-root');
+const { lockAround } = require('./storage-writer-lock');
 
 class InstallError extends Error {
   constructor(code, message) {
@@ -153,12 +153,7 @@ function authorizeRoot(root) {
   } catch (err) {
     return fail('unsafe-root', 'The root directory could not be resolved.');
   }
-  const repoReal = fs.realpathSync(REPO_ROOT);
-  if (rootReal === repoReal || insideStrict(rootReal, repoReal) || insideStrict(repoReal, rootReal)) {
-    return fail('unsafe-root', 'Installation is limited to an explicit temporary fixture.');
-  }
-  const tmpReal = fs.realpathSync(os.tmpdir());
-  if (rootReal === tmpReal || !insideStrict(rootReal, tmpReal)) {
+  if (!assessWritableRoot(rootReal).ok) {
     return fail('unsafe-root', 'Installation is limited to an explicit temporary fixture.');
   }
   return { ok: true, rootReal };
@@ -573,7 +568,29 @@ function promotionMatches(journal, marker) {
   return journal.ok && sameActivation(journal.plan, marker);
 }
 
+function canLockLibrary(libraryDir) {
+  if (typeof libraryDir !== 'string' || !path.isAbsolute(libraryDir)) return false;
+  let stat;
+  try {
+    stat = fs.lstatSync(path.resolve(libraryDir));
+  } catch (err) {
+    return false;
+  }
+  if (!stat || stat.isSymbolicLink() || !stat.isDirectory()) return false;
+  try {
+    return assessWritableRoot(fs.realpathSync(path.resolve(libraryDir))).ok === true;
+  } catch (err) {
+    return false;
+  }
+}
+
 function installVersionedLive(options) {
+  const libraryDir = options && options.libraryDir;
+  if (!canLockLibrary(libraryDir)) return installVersionedLiveUnlocked(options);
+  return lockAround(libraryDir, () => installVersionedLiveUnlocked(options));
+}
+
+function installVersionedLiveUnlocked(options) {
   const context = locate(options || {});
   if (!context.ok) return context;
   const committed = lstatIfExists(context.committedDir);
@@ -663,6 +680,12 @@ function installVersionedLive(options) {
 }
 
 function recoverVersionedInstall(options) {
+  const libraryDir = options && options.libraryDir;
+  if (!canLockLibrary(libraryDir)) return recoverVersionedInstallUnlocked(options);
+  return lockAround(libraryDir, () => recoverVersionedInstallUnlocked(options));
+}
+
+function recoverVersionedInstallUnlocked(options) {
   const context = locate(options || {});
   if (!context.ok) return context;
   context.failAt = '';

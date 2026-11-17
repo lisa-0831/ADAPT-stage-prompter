@@ -85,6 +85,7 @@ function snapshot(dir) {
         walk(full);
         return;
       }
+      if (entry.name === '.writer.lock') return;
       found[key] = hashBuffer(fs.readFileSync(full));
     });
   }
@@ -416,4 +417,5 @@ test('installation refuses the repository and does not change its files', () => 
   assert.equal(fs.existsSync(path.join(REPO, 'data', 'library', 'live-state.json')), false);
   assert.equal(fs.existsSync(path.join(REPO, 'data', 'library', 'productions')), false);
   assert.equal(fs.existsSync(path.join(REPO, 'data', 'live-journal')), false);
+  assert.equal(fs.existsSync(path.join(REPO, 'data', 'library', '.writer.lock')), false);
 });

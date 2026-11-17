@@ -61,18 +61,27 @@ function createPrompterServer(options = {}) {
   // Decide the storage mode before opening the library, recovering the
   // journal, adopting script.txt, or creating a network server.
   // A committed marker is not permission to start. Versioned startup is
-  // returned only when the caller passes a fixture authorization created
-  // for this exact temporary root. Headers, query parameters, and
-  // environment variables cannot create that authorization.
+  // returned only for a fixture token or a persistent-root token created
+  // from an authorization file. Headers, query parameters, and environment
+  // variables cannot create either token.
   const storageMode = detectStorageMode({ libraryDir });
   if (storageMode.mode !== 'legacy') {
     const runtime = require('./server/versioned-runtime');
-    if (!runtime.fixtureAuthorizationAccepted(options.versionedFixture, {
+    const storagePaths = {
       libraryDir,
       scriptFile,
       previousFile,
       journalDir,
-    })) {
+    };
+    const fixtureOk = runtime.fixtureAuthorizationAccepted(options.versionedFixture, storagePaths);
+    const persistentOk = runtime.persistentAuthorizationAccepted(options.persistentRoot, storagePaths);
+    if (fixtureOk && persistentOk) {
+      throw new StorageModeError(
+        'ambiguous-authorization',
+        'Refusing to start. Versioned startup received both a fixture token and a persistent-root token.',
+      );
+    }
+    if (!fixtureOk && !persistentOk) {
       throw new StorageModeError(
         'unsupported-versioned-storage',
         'Refusing to start. This library has a committed migration.json, and this server cannot load versioned storage yet. It will not read script.txt as the show, change the library, or listen for clients. Leave the marker in place.',
@@ -87,6 +96,7 @@ function createPrompterServer(options = {}) {
       imageMaxBytes: options.imageMaxBytes,
       staticRoot: __dirname,
       versionedFixture: options.versionedFixture,
+      persistentRoot: options.persistentRoot,
       now: options.now,
       createId: options.createId,
       failSynchronization: options.failSynchronization,

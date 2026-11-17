@@ -11,12 +11,20 @@ const { loadVersionedShow } = require('./versioned-show');
 const { installVersionedLive } = require('./versioned-live-install');
 const { createVersionedLibraryService } = require('./versioned-library-service');
 const { registerVersionedHttpRoutes } = require('./versioned-http-routes');
+const { acquireStorageWriter } = require('./storage-writer-lock');
+const {
+  persistentAuthorizationAccepted,
+  retainPersistentRoot,
+  releasePersistentRoot,
+  authorizeVersionedPersistentRoot,
+  beginPersistentMigration,
+} = require('./persistent-authorization');
 
-// Versioned startup is available only to a test harness that calls
-// authorizeVersionedFixture for one temporary directory. A committed marker
-// is required as well. This module does not read an environment variable,
-// header, or query parameter to grant that permission, and it does not open
-// the repository library.
+// Versioned startup accepts either authorizeVersionedFixture for one
+// temporary directory, or authorizeVersionedPersistentRoot for one
+// authorized persistent directory. A committed marker is required. This
+// module does not read an environment variable, header, or query parameter
+// to grant that permission, and it does not open the repository library.
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const FIXTURE_AUTH = Symbol('adapt.versionedFixtureAuthorization');
@@ -264,22 +272,58 @@ function imageLimit(options) {
 async function bootAuthorizedVersionedServer(options) {
   const settings = options || {};
   const token = settings.versionedFixture;
-  const checked = validateFixture(token);
-  if (!checked.ok || !token || token[FIXTURE_AUTH] !== true) {
-    throw startupError('fixture-unauthorized', 'Versioned startup was not authorized for this fixture.');
+  const persistent = settings.persistentRoot;
+  const persistentOk = persistentAuthorizationAccepted(persistent, {
+    libraryDir: persistent && persistent.libraryDir,
+    scriptFile: persistent && persistent.scriptFile,
+    previousFile: persistent && persistent.previousFile,
+    journalDir: persistent && persistent.journalDir,
+  });
+  if (persistentOk && token && token[FIXTURE_AUTH] === true) {
+    throw startupError('ambiguous-authorization', 'Versioned startup received both a fixture token and a persistent-root token.');
+  }
+  let checked;
+  if (persistentOk) {
+    checked = {
+      ok: true,
+      root: persistent.root,
+      libraryDir: persistent.libraryDir,
+      scriptFile: persistent.scriptFile,
+      previousFile: persistent.previousFile,
+      metaFile: persistent.metaFile,
+      journalDir: persistent.journalDir,
+    };
+    retainPersistentRoot(checked.root);
+  } else {
+    checked = validateFixture(token);
+    if (!checked.ok || !token || token[FIXTURE_AUTH] !== true) {
+      throw startupError('fixture-unauthorized', 'Versioned startup was not authorized for this fixture.');
+    }
   }
   const maxImageBytes = imageLimit(settings);
   const staffToken = settings.staffToken !== undefined
     ? settings.staffToken
     : (process.env.PROMPTER_STAFF_TOKEN || '');
   let service = null;
-  let released = false;
-  async function release() {
-    if (released || !service || service.ok !== true) return;
-    released = true;
-    await service.close();
+  let ownership = null;
+  let shutdown = null;
+  function release() {
+    if (!shutdown) {
+      shutdown = (async () => {
+        if (service && service.ok === true && typeof service.close === 'function') {
+          await service.close();
+        }
+        if (ownership) {
+          ownership.release();
+          ownership = null;
+        }
+        if (persistentOk) releasePersistentRoot(checked.root);
+      })();
+    }
+    return shutdown;
   }
   try {
+    ownership = acquireStorageWriter(checked.libraryDir);
     const journalDir = ensureJournal(checked.journalDir, checked.root);
     const guard = createLiveGenerationGuard();
     const deferred = [];
@@ -577,6 +621,9 @@ module.exports = {
   VersionedStartupError,
   authorizeVersionedFixture,
   fixtureAuthorizationAccepted,
+  authorizeVersionedPersistentRoot,
+  persistentAuthorizationAccepted,
+  beginPersistentMigration,
   createLiveGenerationGuard,
   bootAuthorizedVersionedServer,
 };

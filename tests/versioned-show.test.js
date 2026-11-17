@@ -95,6 +95,7 @@ function snapshot(dir) {
         walk(full);
         return;
       }
+      if (entry.name === '.writer.lock') return;
       found[key] = hashBuffer(fs.readFileSync(full));
     });
   }

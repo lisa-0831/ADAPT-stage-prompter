@@ -74,6 +74,7 @@ function snapshot(dir) {
         walk(full);
         return;
       }
+      if (entry.name === '.writer.lock') return;
       found[path.relative(dir, full)] = hashBuffer(fs.readFileSync(full));
     });
   }

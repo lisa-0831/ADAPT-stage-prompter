@@ -1,6 +1,5 @@
 const crypto = require('crypto');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { validate } = require('../script-editor-model');
 const { isValidScriptId } = require('../script-library');
@@ -13,14 +12,16 @@ const {
 const { createVersionedAssetManager } = require('../library-versioned-assets');
 const { createVersionedLiveOperations } = require('./versioned-live-operations');
 const { detectStorageMode, StorageModeError } = require('./storage-mode');
+const { assessWritableRoot } = require('./writable-root');
+const { acquireStorageWriter, StorageWriterLockError } = require('./storage-writer-lock');
 
 // Application-facing coordinator for one versioned library root.
 //
 // Create, rename, save, publish, upload, delete, set-live, and restore go
 // through one in-process queue keyed by the library's real path. A second
 // service for that path is refused. close() releases the path after the
-// queue is idle. There is no cross-process lock: one server process may own
-// a storage directory.
+// queue is idle. A kernel flock on the canonical library directory is held
+// for the same lifetime so a second OS process cannot open that library.
 //
 // Direct use of the underlying factories bypasses this queue. The HTTP
 // adapter must call this service and must not construct those factories.
@@ -35,7 +36,6 @@ const { detectStorageMode, StorageModeError } = require('./storage-mode');
 // A corrupt or symlinked production is an invalid entry, not a row that can
 // be activated. Live status comes from a verified live-state.json.
 
-const REPO_ROOT = path.resolve(__dirname, '..');
 const DEFAULT_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const writers = new Map();
 
@@ -119,12 +119,7 @@ function authorizeRoot(root) {
   } catch (err) {
     return fail('unsafe-root', 'The root directory could not be resolved.');
   }
-  const repoReal = fs.realpathSync(REPO_ROOT);
-  const tmpReal = fs.realpathSync(os.tmpdir());
-  if (rootReal === repoReal || insideStrict(rootReal, repoReal) || insideStrict(repoReal, rootReal)) {
-    return fail('unsafe-root', 'Versioned library service writes are limited to an explicit temporary fixture.');
-  }
-  if (rootReal === tmpReal || !insideStrict(rootReal, tmpReal)) {
+  if (!assessWritableRoot(rootReal).ok) {
     return fail('unsafe-root', 'Versioned library service writes are limited to an explicit temporary fixture.');
   }
   return { ok: true, rootReal };
@@ -219,6 +214,19 @@ function createVersionedLibraryService(options) {
   if (writers.has(library.real)) {
     return refusedService(fail('writer-active', 'This library already has a writer in this process.'));
   }
+  let ownership;
+  try {
+    ownership = acquireStorageWriter(library.real);
+  } catch (err) {
+    const code = err instanceof StorageWriterLockError ? err.code : 'writer-locked';
+    return refusedService(fail(code, err.message || 'This storage root already has a writer.'));
+  }
+  function releaseOwnership() {
+    if (!ownership) return;
+    const held = ownership;
+    ownership = null;
+    held.release();
+  }
 
   const slot = { chain: Promise.resolve() };
   writers.set(library.real, slot);
@@ -230,6 +238,7 @@ function createVersionedLibraryService(options) {
     store = createVersionStore({ root: library.real });
   } catch (err) {
     writers.delete(library.real);
+    releaseOwnership();
     return refusedService(fail(err.code || 'unsafe-path', 'The production tree could not be opened.'));
   }
   const productions = createProductionManager({
@@ -248,6 +257,7 @@ function createVersionedLibraryService(options) {
   });
   if (!productions.ok || !assets.ok) {
     writers.delete(library.real);
+    releaseOwnership();
     return refusedService(fail('unsafe-path', 'The production tree could not be opened.'));
   }
 
@@ -267,6 +277,7 @@ function createVersionedLibraryService(options) {
     const release = slot.chain.then(() => undefined, () => undefined);
     return release.then(() => {
       if (writers.get(library.real) === slot) writers.delete(library.real);
+      releaseOwnership();
     });
   }
 
@@ -374,6 +385,7 @@ function createVersionedLibraryService(options) {
   });
   if (!live.ok) {
     writers.delete(library.real);
+    releaseOwnership();
     return refusedService(fail('unsafe-path', 'The live operations could not be opened.'));
   }
 

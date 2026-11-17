@@ -100,6 +100,9 @@ const STATUS = {
   'corrupt-production': 503,
   closed: 503,
   'writer-active': 503,
+  'writer-locked': 503,
+  'writer-lock-lost': 503,
+  'lock-unsupported': 503,
   'storage-failure': 503,
 };
 
