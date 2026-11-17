@@ -2,6 +2,8 @@
 
 Status after M9C3A: **NO-GO**.
 
+A local handoff directory under the operator's home folder does not change this result. It is not the production host, and a restart on this Mac is not evidence for any row below.
+
 A PASS below requires evidence from the production host, the production network, or a named ADAPT decision. A pass on the development Mac is not a PASS for that row. Unknowns stay NEEDS DECISION or NOT RUN.
 
 Evidence statuses:

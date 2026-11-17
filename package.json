@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node server.js",
+    "start:local": "node scripts/start-local-persistent.js",
     "test": "node --test",
     "test:browser": "playwright test"
   },

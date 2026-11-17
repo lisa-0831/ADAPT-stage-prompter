@@ -47,6 +47,20 @@ Opening `/` without a role defaults to Audience. The legacy
 `?role=viewer` URL also opens the Audience view. Unknown role values redirect
 to `?role=viewer`, which uses the same non-interactive Audience view.
 
+### Local versioned library
+
+The migrated ADAPT library used for local handoff does not live in this Git checkout. Start it with:
+
+```bash
+npm run start:local
+```
+
+That command reads `~/ADAPT-stage-prompter-config/runtime-authorization.json` and serves only `http://127.0.0.1:3000`. Use the same role URLs with `127.0.0.1` instead of a network address. If the authorization file is missing, the command stops. It does not open `script.txt` from this checkout.
+
+`node server.js` is unchanged. It still starts the checkout's Legacy copy and can print a network address. It does not read the versioned library outside the checkout.
+
+Saved productions, saved versions, production-owned images, and the installed Live State are files under `~/ADAPT-stage-prompter-data`. They remain when this process stops and when this checkout changes branch. A cue position that has not been saved, and script text that is only in the browser, are not part of that storage. Moving the data to a host chosen later is described in [docs/migration/local-persistent-handoff.md](docs/migration/local-persistent-handoff.md).
+
 ---
 
 ## Navigation
@@ -263,6 +277,8 @@ Saved scripts and their pictures are files, not a database. They are stored in `
 
 `script.txt` is still the live show. `script.previous.txt` is still the one-step backup used by **Restore Previous Script**. `script.previous.txt.meta.json` remembers which saved production that backup belonged to, so its pictures still resolve.
 
+A committed versioned library is opened only by the persistent runtime command above. `SCRIPT_LIBRARY_DIR`, `SCRIPT_FILE`, and `PREVIOUS_SCRIPT_FILE` do not select it, and `node server.js` does not fall back to it. The checkout copy of `data/` stays the Legacy library.
+
 The `data/` folder is not part of git. Do not commit uploaded scripts or pictures. On a production machine, keep `data/library/` on a disk that survives restarts and deploys. Copy that whole folder, plus `script.txt`, `script.previous.txt`, and `script.previous.txt.meta.json`, when you make a backup. You can move the library with:
 
 ```bash
@@ -275,7 +291,9 @@ SCRIPT_LIBRARY_DIR=/var/lib/stage-prompter/library node server.js
 
 The Controller page is not a login. `?role=controller` only changes what that browser shows. It does not authorize anyone.
 
-**Edit Script**, **Replace Script**, and **Restore Previous Script** use `POST /script`, which has no password. Anyone who can reach the server can replace the live script. This is the same exposure the app already had.
+**Edit Script**, **Replace Script**, and **Restore Previous Script** use `POST /script`, which has no password. Anyone who can reach the server can replace the live script. This is the same exposure the app already had. WebSocket `navigate`, `goto`, and `reloadScript` also have no password. A staff code does not cover those requests.
+
+Security S2B, which would change who can send those commands, is not part of this branch. The local persistent server binds to `127.0.0.1` and does not accept a public address. That loopback limit is not production approval. The production gate in [docs/migration/m9c3-go-no-go.md](docs/migration/m9c3-go-no-go.md) remains **NO-GO** until ADAPT IT selects and tests the host. Do not publish this server with a tunnel or a bind address of `0.0.0.0`.
 
 Library files are not in the public file list. A browser cannot open `data/library/` as a web address. Unpublished script text and pictures are available through the library address, not as a static file.
 
