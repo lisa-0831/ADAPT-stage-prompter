@@ -368,19 +368,19 @@ function beginPersistentMigration(spec) {
   const libraryDir = requireDirectory(parsed.libraryDir, 'library');
   const scriptFile = requireFile(parsed.scriptFile, 'script mirror');
   const previousFile = requireFile(parsed.previousFile, 'previous script');
+  const journalDir = allowJournal(parsed.journalDir);
   containedPaths(root, {
     library: libraryDir,
     script: scriptFile,
     previous: previousFile,
-    journal: allowJournal(parsed.journalDir),
+    journal: journalDir,
   });
   if (typeof parsed.expectedLiveProductionId !== 'string' || parsed.expectedLiveProductionId.length === 0) {
     fail('malformed-authorization', 'The migration authorization needs the expected live production.');
   }
-  checkManifest(root, parsed.sourceManifest);
   let hold;
   try {
-    hold = acquireStorageWriter(libraryDir);
+    hold = acquireStorageWriter(libraryDir, { exclusiveClaim: true });
   } catch (err) {
     if (err instanceof StorageWriterLockError) {
       return { ok: false, code: err.code, error: err.message };
@@ -393,16 +393,26 @@ function beginPersistentMigration(spec) {
     hold.release();
     throw err;
   }
+  retainPersistentRoot(root);
   let released = false;
   return {
     ok: true,
     code: 'migration-owned',
     root,
     libraryDir,
+    scriptFile,
+    previousFile,
+    journalDir,
+    expectedLiveProductionId: parsed.expectedLiveProductionId,
+    sourceManifest: parsed.sourceManifest,
     release() {
       if (released) return;
       released = true;
-      hold.release();
+      try {
+        hold.release();
+      } finally {
+        releasePersistentRoot(root);
+      }
     },
   };
 }

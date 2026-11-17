@@ -127,7 +127,8 @@ function releaseHolder(libraryReal) {
   holder.worker.terminate();
 }
 
-function acquireStorageWriter(libraryDir) {
+function acquireStorageWriter(libraryDir, options) {
+  const exclusiveClaim = Boolean(options && options.exclusiveClaim);
   const located = resolveLibrary(libraryDir);
   const existing = holders.get(located.libraryReal);
   if (existing) {
@@ -135,6 +136,9 @@ function acquireStorageWriter(libraryDir) {
       existing.lost = true;
       holders.delete(located.libraryReal);
       throw fail('writer-lock-lost', 'The storage writer lock closed before the operation finished.');
+    }
+    if (existing.exclusive || exclusiveClaim) {
+      throw fail('writer-locked', 'This process already owns this storage root.');
     }
     existing.count += 1;
     let released = false;
@@ -164,7 +168,7 @@ function acquireStorageWriter(libraryDir) {
     }
     throw fail('lock-unsupported', 'This filesystem cannot provide an exclusive storage lock.');
   }
-  const holder = { count: 1, status, worker, lost: false };
+  const holder = { count: 1, status, worker, lost: false, exclusive: exclusiveClaim };
   holders.set(located.libraryReal, holder);
   let released = false;
   return {

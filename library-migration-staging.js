@@ -4,6 +4,7 @@ const os = require('os');
 const path = require('path');
 const { parseImageReference } = require('./script-library-model');
 const { detectImage, displayAssetName, hashText, isValidScriptId } = require('./script-library');
+const { isPersistentRootRetained } = require('./server/persistent-authorization');
 
 // Writes an already validated migration plan into a caller-supplied temporary
 // root. It does not read the live show, activate a production, or choose a
@@ -156,6 +157,16 @@ function locateRoot(root) {
     }
     throw new StagingError('unsafe-destination', 'The destination root does not exist.');
   }
+  if (rootReal === repoReal || insideStrict(rootReal, repoReal) || insideStrict(repoReal, rootReal)) {
+    throw new StagingError('unsafe-destination', 'The destination root must not be the repository.');
+  }
+  if (isPersistentRootRetained(rootReal)) {
+    const retainedStat = fs.lstatSync(rootReal);
+    if (retainedStat.isSymbolicLink() || !retainedStat.isDirectory()) {
+      throw new StagingError('unsafe-destination', 'The destination root must be a directory.');
+    }
+    return { rootReal, tmpReal, repoReal, boundary: rootReal };
+  }
   if (rootReal === tmpReal) {
     throw new StagingError(
       'unsafe-destination',
@@ -191,7 +202,7 @@ function locateRoot(root) {
   if (!realStat.isDirectory()) {
     throw new StagingError('unsafe-destination', 'The destination root must be a directory.');
   }
-  return { rootReal, tmpReal, repoReal };
+  return { rootReal, tmpReal, repoReal, boundary: tmpReal };
 }
 
 function workDir(rootReal) {
@@ -511,11 +522,12 @@ function readSource(sourcePath, maxImageBytes, located) {
   } catch (err) {
     throw new StagingError('symlink-escape', 'An image source resolves outside the temporary directory.');
   }
-  if (!insideStrict(real, located.tmpReal)) {
-    throw new StagingError('symlink-escape', 'An image source resolves outside the temporary directory.');
+  const boundary = located.boundary || located.tmpReal;
+  if (!insideStrict(real, boundary)) {
+    throw new StagingError('symlink-escape', 'An image source resolves outside the authorized destination.');
   }
-  if (!componentsStayInside(lexical, located.tmpReal)) {
-    throw new StagingError('symlink-escape', 'An image source resolves outside the temporary directory.');
+  if (!componentsStayInside(lexical, boundary)) {
+    throw new StagingError('symlink-escape', 'An image source resolves outside the authorized destination.');
   }
   if (contained(real, located.repoReal)) {
     throw new StagingError('unsafe-source', 'An image source must not be a file in this repository.');

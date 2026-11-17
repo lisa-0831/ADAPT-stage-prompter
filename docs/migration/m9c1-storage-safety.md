@@ -10,7 +10,7 @@ Labels:
 - **Decision needed** — ADAPT or IT must choose before M9C3.
 - **Blocker** — operational launch must not pass this point until the condition is met.
 
-M9C1 verdict is recorded in the milestone report, not in this file as a launch approval.
+M9C1 verdict is recorded in the milestone report, not in this file as a launch approval. M9C2 adds the persistent migration command, the persistent launcher, and the backup helper described here. Those commands are specified in `docs/migration/m9c2-deployment-plan.md`. They have not been run against the real ADAPT checkout.
 
 ## 1. Persistent-root authorization
 

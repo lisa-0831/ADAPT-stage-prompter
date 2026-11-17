@@ -6,6 +6,7 @@ const { planMigration } = require('./library-migration-plan');
 const { describeStaging, stageMigration, verifyStaging } = require('./library-migration-staging');
 const { createVersionStore } = require('./library-version-store');
 const { lockAround } = require('./server/storage-writer-lock');
+const { beginPersistentMigration, PersistentAuthorizationError } = require('./server/persistent-authorization');
 const { parseImageReference } = require('./script-library-model');
 const {
   detectImage,
@@ -15,17 +16,17 @@ const {
   titleFromScript,
 } = require('./script-library');
 
-// Fixture-only migration commands. Every root must be an explicit temporary
-// directory. This module does not migrate the ADAPT checkout. Prepare, abort,
-// and commit take the same kernel flock as a running versioned server, so
-// they cannot write a library that server already owns. A persistent
-// migration claim is beginPersistentMigration in server/persistent-authorization.js.
-// That claim does not stage or commit a library. M9C2 has to connect it.
+// Fixture commands stay limited to an explicit temporary directory. The
+// persistent command is runPersistentMigration. It reads an external
+// adapt-persistent-migration file, holds one exclusive writer lock from
+// validation through the end of that command, and commits only when the
+// caller passes the plan hash printed by prepare.
 
 const ATTEMPT_NAME = 'migration-attempt.json';
 const MARKER_NAME = 'migration.json';
 const INCOMING_NAME = 'productions.incoming';
 const COMMANDS = ['dry-run', 'prepare', 'verify', 'abort', 'commit'];
+const PERSISTENT_COMMANDS = ['preflight', 'prepare', 'commit', 'abort'];
 const DEFAULT_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const IMAGE_EXT = { jpg: true, png: true, webp: true };
 
@@ -1652,6 +1653,194 @@ function parseArgs(argv) {
   return { ok: true, command, root };
 }
 
+function legacyInputFiles(rootReal) {
+  const files = [];
+  function add(relative) {
+    const full = path.join(rootReal, ...relative.split('/'));
+    const stat = lstatIfExists(full);
+    if (!stat) return;
+    if (stat.isSymbolicLink() || !stat.isFile()) {
+      throw new MigrationError('unsafe-path', 'A source file is not a regular file.');
+    }
+    files.push(relative);
+  }
+  function walk(relativeDir) {
+    const full = path.join(rootReal, ...relativeDir.split('/'));
+    const stat = lstatIfExists(full);
+    if (!stat) return;
+    if (stat.isSymbolicLink() || !stat.isDirectory()) {
+      throw new MigrationError('unsafe-path', 'A source directory is not a real directory.');
+    }
+    fs.readdirSync(full, { withFileTypes: true }).forEach((entry) => {
+      if (entry.name === '.writer.lock') return;
+      const relative = path.posix.join(relativeDir, entry.name);
+      if (entry.isSymbolicLink()) throw new MigrationError('unsafe-path', 'A source path is a symlink.');
+      if (entry.isDirectory()) {
+        walk(relative);
+        return;
+      }
+      if (!entry.isFile()) throw new MigrationError('unsafe-path', 'A source file is not a regular file.');
+      files.push(relative);
+    });
+  }
+  add('script.txt');
+  add('script.previous.txt');
+  add('script.previous.txt.meta.json');
+  add('data/library/index.json');
+  walk('data/library/scripts');
+  walk('data/library/assets');
+  walk('images');
+  return files;
+}
+
+function manifestAgrees(rootReal, sourceManifest) {
+  let files;
+  try {
+    files = legacyInputFiles(rootReal);
+  } catch (err) {
+    if (err instanceof MigrationError) return fail(err.code, err.message, { activated: false });
+    throw err;
+  }
+  const expected = Object.keys(sourceManifest).sort();
+  const present = files.sort();
+  if (expected.length !== present.length || expected.some((key, index) => key !== present[index])) {
+    return fail('unexpected-file', 'The source manifest does not list the same files as this root.', { activated: false });
+  }
+  for (let index = 0; index < expected.length; index += 1) {
+    const relative = expected[index];
+    const full = path.join(rootReal, ...relative.split('/'));
+    const read = readNoFollow(full);
+    if (!read.bytes) return fail('unsafe-path', 'A source file could not be read.', { activated: false });
+    const actual = hashBuffer(read.bytes);
+    if (actual.toLowerCase() !== String(sourceManifest[relative]).toLowerCase()) {
+      return fail('manifest-mismatch', 'The source manifest does not match this root.', { activated: false });
+    }
+  }
+  return null;
+}
+
+function sameProductionId(left, right) {
+  return typeof left === 'string' && typeof right === 'string' && left.toLowerCase() === right.toLowerCase();
+}
+
+function runPersistentClaim(claim, settings) {
+  const rootReal = claim.root;
+  const command = settings.command;
+  const maxImageBytes = Number.isInteger(settings.maxImageBytes) && settings.maxImageBytes > 0
+    ? settings.maxImageBytes
+    : DEFAULT_MAX_IMAGE_BYTES;
+  const disagreed = manifestAgrees(rootReal, claim.sourceManifest);
+  if (disagreed) return disagreed;
+  const inventory = inspect(rootReal, maxImageBytes);
+  if (!inventory.safeToPrepare && command !== 'abort') {
+    return fail(inventory.errors[0].code, inventory.errors[0].message, {
+      command,
+      activated: false,
+      blockingErrors: inventory.errors.map(publicError),
+    });
+  }
+  if (command !== 'abort' && !sameProductionId(inventory.liveProductionId, claim.expectedLiveProductionId)) {
+    return fail('live-mismatch', 'The live script bytes do not match the authorized production. The stored live id was not used.', {
+      command,
+      activated: false,
+      liveProductionId: inventory.liveProductionId,
+    });
+  }
+  if (command !== 'abort' && lstatIfExists(markerPath(rootReal))) {
+    return fail('already-committed', 'A migration marker is already present. It was not rewritten.', {
+      command,
+      activated: false,
+    });
+  }
+  if (command === 'preflight') {
+    return Object.assign(reportOf(inventory), {
+      command: 'preflight',
+      readOnly: true,
+      owned: true,
+      expectedLiveProductionId: claim.expectedLiveProductionId,
+    });
+  }
+  if (command === 'abort') return abort(rootReal, maxImageBytes);
+  if (command === 'prepare') {
+    const prepared = prepare(rootReal, inventory, settings);
+    if (!prepared.ok) return prepared;
+    const verification = verify(rootReal, inventory);
+    if (!verification.ready || verification.planHash !== prepared.planHash) {
+      return fail(verification.code || 'not-ready', 'Prepared staging did not verify. Nothing was committed.', {
+        command: 'prepare',
+        activated: false,
+        planHash: prepared.planHash,
+      });
+    }
+    return prepared;
+  }
+  const loaded = readAttempt(rootReal);
+  if (loaded && loaded.ok === false) return loaded;
+  const attempt = loaded && loaded.attempt;
+  if (!attempt || attempt.state !== 'ready' || typeof attempt.planHash !== 'string') {
+    return fail('not-ready', 'Commit requires a verified READY migration attempt.', { command: 'commit', activated: false });
+  }
+  if (attempt.planHash.toLowerCase() !== settings.planHash.toLowerCase()) {
+    return fail('plan-mismatch', 'The plan hash does not match the prepared migration. Nothing was committed.', {
+      command: 'commit',
+      activated: false,
+    });
+  }
+  const verification = verify(rootReal, inventory);
+  if (!verification.ready || verification.planHash !== attempt.planHash) {
+    return fail(verification.code || 'not-ready', 'READY staging did not verify. Nothing was committed.', {
+      command: 'commit',
+      activated: false,
+    });
+  }
+  const committed = commit(rootReal, inventory, settings);
+  if (!committed.ok) return committed;
+  const marker = readJsonObject(markerPath(rootReal));
+  const expected = committed.marker;
+  if (!marker.value || !expected || marker.value.schema !== 2 || marker.value.state !== 'committed'
+    || marker.value.previousActivation !== null
+    || marker.value.migrationId !== expected.migrationId
+    || marker.value.productionId !== expected.productionId
+    || marker.value.versionId !== expected.versionId
+    || marker.value.contentHash !== expected.contentHash) {
+    return fail('corrupt-marker', 'The committed marker does not match the authorized plan.', {
+      command: 'commit',
+      activated: false,
+    });
+  }
+  return Object.assign({}, committed, { fixtureOnly: false, command: 'commit' });
+}
+
+function runPersistentMigration(options) {
+  const settings = options || {};
+  if (!PERSISTENT_COMMANDS.includes(settings.command)) {
+    return fail('invalid-command', 'Choose preflight, prepare, commit, or abort.');
+  }
+  if (settings.root !== undefined) {
+    return fail('invalid-command', 'The persistent migration command takes its root from the authorization file.');
+  }
+  if (settings.command === 'commit' && (typeof settings.planHash !== 'string' || !/^[0-9a-f]{64}$/i.test(settings.planHash))) {
+    return fail('plan-required', 'Commit requires the plan hash printed by prepare.', { activated: false });
+  }
+  let claim;
+  try {
+    claim = beginPersistentMigration({ configPath: settings.configPath });
+  } catch (err) {
+    if (err instanceof PersistentAuthorizationError) return fail(err.code, err.message, { activated: false });
+    throw err;
+  }
+  if (!claim.ok) return fail(claim.code, claim.error || 'The migration could not take the writer lock.', { activated: false });
+  try {
+    return runPersistentClaim(claim, settings);
+  } catch (err) {
+    if (err instanceof MigrationError && err.code === 'injected-failure') throw err;
+    if (err instanceof MigrationError) return fail(err.code, err.message, { activated: false });
+    throw err;
+  } finally {
+    claim.release();
+  }
+}
+
 function runCli(argv, io) {
   const stdout = io && io.stdout ? io.stdout : process.stdout;
   const parsed = parseArgs(argv);
@@ -1680,4 +1869,5 @@ module.exports = {
   parseArgs,
   runCli,
   runMigration,
+  runPersistentMigration,
 };
