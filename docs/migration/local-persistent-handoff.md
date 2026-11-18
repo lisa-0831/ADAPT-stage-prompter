@@ -1,44 +1,46 @@
 # Local persistent handoff
 
-This is a local operating copy of the versioned ADAPT library. It is not production approval. [m9c3-go-no-go.md](m9c3-go-no-go.md) stays **NO-GO** until ADAPT IT chooses a host and the production checks pass.
+`npm run setup` installs the Versioned Library from the Legacy seed in this repository. `npm start` serves that installation on `127.0.0.1`. This is not production approval. [m9c3-go-no-go.md](m9c3-go-no-go.md) stays **NO-GO** until ADAPT IT chooses a host and the production checks pass.
 
-## Where the data lives
+Security S2B is not implemented. `POST /script`, Restore Previous, and WebSocket `navigate`, `goto`, and `reloadScript` have no authentication.
 
-| Purpose | Path |
-| --- | --- |
-| Persistent library | `/Users/lisawang/ADAPT-stage-prompter-data` |
-| Authorization | `/Users/lisawang/ADAPT-stage-prompter-config` |
-| Pre-migration backup | `/Users/lisawang/ADAPT-stage-prompter-backups/legacy-before-migration` |
+## Where a new installation lives
 
-These directories are outside the Git checkout. The checkout's `script.txt`, `data/library/`, and `images/` are still the untouched Legacy copy. Starting the persistent server, editing application code, or switching branches does not write those checkout files and does not replace the persistent directory.
+Setup creates three directories outside the Git checkout. The default parent is `~/Library/Application Support/ADAPT Stage Prompter` on macOS and `~/.local/share/adapt-stage-prompter` on Linux.
 
-The runtime authorization file is the only switch that selects this directory. `npm run start:local` reads that file and binds `127.0.0.1`. If the file is missing, it exits. It does not open the checkout's Legacy files.
+| Purpose | Default path inside that parent | Override |
+| --- | --- | --- |
+| Versioned library | `library/` | `ADAPT_PROMPTER_DATA` |
+| Authorization files | `config/` | `ADAPT_PROMPTER_CONFIG` |
+| Pre-migration backup | `backups/legacy-before-migration/` | `ADAPT_PROMPTER_BACKUP` |
 
-```bash
-npm run start:local
-```
+`ADAPT_PROMPTER_HOME` moves all three together. The authorization files are mode `0600` and are owned by the account that runs setup. Do not commit them.
 
-Controller, Actor, and Audience use the same role URLs on `127.0.0.1`. There is no new login. `PROMPTER_STAFF_TOKEN` is optional and, when unset, library routes stay open on that loopback server, matching the current local workflow.
+Setup refuses a path inside this checkout. It also refuses these development directories, and it does not read or write them:
 
-`node server.js` and `npm start` still start the checkout Legacy server. They are not a fallback for this library.
+- `~/ADAPT-stage-prompter-data`
+- `~/ADAPT-stage-prompter-config`
+- `~/ADAPT-stage-prompter-backups`
 
-## What was migrated
+Those names belong to one development machine. A new computer does not need them.
 
-The persistent directory was filled from a byte-checked copy of the checkout, then backed up and restore-checked before migration. Migration used `scripts/migrate-persistent.js` with `migration-authorization.json`. The live script bytes selected WELCOME (`2d0f0937-fc36-4d27-a31e-d047c2fd5623`). The index `liveId` still names Test, and that drift was left as recorded.
+## What setup does once
 
-Committed installation:
+1. Read the Legacy seed in the checkout: `script.txt`, `script.previous.txt`, `script.previous.txt.meta.json`, `data/library/`, and `images/`.
+2. Copy that seed into an empty library directory.
+3. Back up the copy, verify the backup, restore it to a temporary directory, and compare hashes. The temporary restore check is removed after it matches. The backup stays.
+4. Write a migration authorization file and run the existing preflight, prepare, and commit commands. Commit uses the plan hash printed by prepare.
+5. Write a runtime authorization file from the committed marker.
 
-- migration `41be0a3b-ffb4-4248-849a-ca3acf02b6e3`
-- production `2d0f0937-fc36-4d27-a31e-d047c2fd5623`
-- version `5eca4a88-6f8e-4c7b-bdcd-538e57fee3a2`
-- content hash `8f8ccda312a0346efdf73d4da30f0c36c68c1841a55de840f82a5c6d47ad025f`
-- `previousActivation` is null
+Live is the saved production whose bytes equal `script.txt`. A different `liveId` in `data/library/index.json` is left as recorded. For the seed in this repository, the byte match is WELCOME (`2d0f0937-fc36-4d27-a31e-d047c2fd5623`). The index still names Test.
 
-Do not run the Legacy migration again for this directory. A second commit is refused because the marker is already committed.
+A second `npm run setup` checks the runtime authorization and stops. It does not copy again, migrate again, or replace the marker. If the library directory already contains unrelated files, setup stops and names that directory. It does not delete those files.
+
+`npm start` reads the runtime authorization. If the file is missing, the process exits. It does not open the Legacy seed. `npm run start:legacy` is the old checkout server and is not a fallback.
 
 ## What a restart keeps
 
-These are files under the persistent root:
+These are files under the library directory:
 
 - a production saved with **Save to Library** or `POST /api/library`
 - a later edit saved with `PUT /api/library/:id` (older version files stay as written)
@@ -61,7 +63,7 @@ ADAPT IT can place the same tree on the host it chooses without changing the app
 3. Write a new runtime authorization file outside the checkout. Mode `0600` or `0400`, owner equal to the server account, not a symlink, and its path must already be the canonical real path. Keep `purpose` as `adapt-persistent-runtime`.
 4. Change only the path fields (`root`, `libraryDir`, `scriptFile`, `previousFile`, `journalDir`) to the new canonical paths. Copy the `installation` object unchanged: schema, state, migration id, production id, version id, and content hash.
 5. Start with `node scripts/start-persistent.js --config <new-file> --bind 127.0.0.1`. Do not bind `0.0.0.0`, `::`, or `*` until the production gate allows a tested private network. The launcher rejects those addresses.
-6. Leave the Git checkout on Legacy storage. Do not copy the persistent tree back over the checkout, and do not commit the authorization file.
+6. Leave the Git checkout as the Legacy seed. Do not copy the installed tree back over the checkout, and do not commit the authorization file.
 
 The migration authorization file is the record of the original source hashes. It is not needed to boot the copied library.
 
@@ -69,5 +71,5 @@ The migration authorization file is the record of the original source hashes. It
 
 - `POST /script`, Restore Previous, and WebSocket `navigate`, `goto`, and `reloadScript` have no authentication.
 - A staff token covers library routes only when it is set. It does not cover the requests above.
-- The local command listens on `127.0.0.1` only. That is not a public deployment and does not close the production gate.
+- `npm start` listens on `127.0.0.1` only. That is not a public deployment and does not close the production gate.
 - Security S2B is not implemented on this branch.

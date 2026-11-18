@@ -14,7 +14,7 @@ Stage Prompter shows one live script to three kinds of screens:
 
 The screens stay together through one Node.js process. That process serves the web pages over HTTP and pushes cue changes over a WebSocket on the same port. The script, the library, and the stage images are files on disk. They are not stored in the browser.
 
-Today the working copy in this repository is still Legacy storage. Versioned storage has been built and rehearsed on copies. It has not been turned on for the real files.
+The repository ships the Legacy seed (`script.txt`, `script.previous.txt`, `data/library/`, and `images/`). `npm run setup` copies that seed outside the checkout, backs it up, and migrates it once. `npm start` then serves that Versioned Library on `127.0.0.1`. A missing setup stops startup. It does not open the seed instead. This first-time install is not a production cutover, and it does not approve a public address. The production gate below stays **NO-GO**.
 
 ## 2. Why this cannot be a static site
 
@@ -28,7 +28,7 @@ The server has to:
 - Recover those writes after a crash by reading journals on disk
 - Refuse a second process that tries to write the same library
 
-A static host can show a snapshot of a page. It cannot keep the cue, the library, or the lock. The production entry point is `scripts/start-persistent.js`. `npm start`, which runs `node server.js`, is the development entry point. It listens on every interface and it will not open a committed versioned library.
+A static host can show a snapshot of a page. It cannot keep the cue, the library, or the lock. After `npm run setup`, the installed entry point is `npm start` (`scripts/start-installed.js`). It listens on `127.0.0.1` and reads the runtime authorization file. `scripts/start-persistent.js` remains the command that can point at an authorization file on a host ADAPT IT chooses later. `npm run start:legacy` (`node server.js`) is the old checkout server. It can listen on every interface, and it will not open a committed versioned library.
 
 ## 3. What development has already built
 
@@ -101,7 +101,7 @@ These names are illustrations. They are not approved paths.
 | Backups | `<backup-directory>` | Yes. Not inside the storage root |
 | Logs | `<log-directory>` | Logs may rotate. The cutover record should be copied somewhere durable |
 
-`<persistent-storage-root>` holds `script.txt`, `script.previous.txt`, `script.previous.txt.meta.json`, `data/library`, `images`, and `data/live-journal`. A git clone does not contain `data/`. The real library has to be copied onto the host during the later cutover. M9C3A does not copy it.
+`<persistent-storage-root>` holds `script.txt`, `script.previous.txt`, `script.previous.txt.meta.json`, `data/library`, `images`, and `data/live-journal`. A git clone contains the Legacy seed, including `data/library/` and `images/`. It does not contain the migrated library, the authorization files, or backups. `npm run setup` copies the seed into this root. That install is not the later production cutover.
 
 The runtime authorization file names that one root and one committed installation. For the ADAPT migration the marker is schema 2. The file must match `migrationId`, `productionId`, `versionId`, and `contentHash` from `data/library/migration.json`. `mirrorInstalled` and `liveInstalled` change during operation and are not part of the match. If they differ, the server refuses to listen.
 

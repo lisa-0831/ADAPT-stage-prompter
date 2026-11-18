@@ -1,9 +1,41 @@
 node_modules/
 .DS_Store
-script.previous.txt
-script.previous.txt.meta.json
-data/
 playwright-report/
 test-results/
 blob-report/
 tests/browser/.runtime/
+
+# Credentials, authorization files, backups, and writer locks.
+# These names are ignored in any directory.
+.env
+.env.*
+!.env.example
+runtime-authorization.json
+migration-authorization.json
+backup-manifest.json
+.writer.lock
+
+# Ignore everything under data/, then allow only the Legacy seed.
+# A parent directory must be re-included before a file inside it can be.
+data/*
+!data/library/
+data/library/*
+!data/library/index.json
+!data/library/scripts/
+data/library/scripts/*
+!data/library/scripts/2d0f0937-fc36-4d27-a31e-d047c2fd5623.txt
+!data/library/scripts/ee04e849-90d4-4eeb-b2a6-562b06067a32.txt
+
+# Generated library state stays ignored even if a broader exception is added above.
+data/live-journal/
+data/library/.writer.lock
+data/library/migration.json
+data/library/migration-attempt.json
+data/library/migration-work/
+data/library/productions/
+data/library/productions.incoming/
+data/library/live-state.json
+data/library/assets/
+
+# script.txt, script.previous.txt, and script.previous.txt.meta.json
+# are Legacy seed files at the repository root and are intentionally not ignored.

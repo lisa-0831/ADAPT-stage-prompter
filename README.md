@@ -12,29 +12,56 @@ A real-time shared script display — all devices stay in sync automatically.
 npm install
 ```
 
-### 2. Start the server
+Node.js and Perl are required. Perl provides the file lock. The suites were run with Node.js v24.18.0.
+
+### 2. Install the Versioned Library (one time)
 
 ```bash
-node server.js
+npm run setup
 ```
 
-The terminal will print your local network address, e.g.:
+This copies the Legacy Library that ships in this repository (`script.txt`, `script.previous.txt`, `data/library/`, and `images/`) into a durable directory outside the Git checkout. It backs that copy up, checks the backup, and migrates it once with the existing authorization checks. Live is chosen by matching `script.txt` bytes to a saved production. The library index is not used to pick the live show.
+
+Run the same command again after it succeeds. It leaves the installed library, the authorization files, and the backup where they are. If the destination already has unrelated files, setup stops and does not delete them.
+
+The default directory is:
+
+| System | Location |
+| --- | --- |
+| macOS | `~/Library/Application Support/ADAPT Stage Prompter` |
+| Linux | `~/.local/share/adapt-stage-prompter` |
+
+`library/` inside that directory is the show data. `config/` holds the authorization files, mode `0600`. `backups/legacy-before-migration/` is the checked pre-migration copy.
+
+ADAPT IT can choose another disk:
+
+```bash
+ADAPT_PROMPTER_HOME=/var/lib/adapt-stage-prompter npm run setup
+```
+
+`ADAPT_PROMPTER_DATA`, `ADAPT_PROMPTER_CONFIG`, and `ADAPT_PROMPTER_BACKUP` override the three directories separately. A path inside this checkout is refused. Setup also refuses `~/ADAPT-stage-prompter-data`, `~/ADAPT-stage-prompter-config`, and `~/ADAPT-stage-prompter-backups`, so an existing development copy is not read or written.
+
+### 3. Start the server
+
+```bash
+npm start
+```
+
+The server listens on `127.0.0.1` only and opens the installed Versioned Library. If setup has not been run, it stops. It does not open the Legacy files in the checkout.
 
 ```
-🎭  Stage Prompter running on port 3000
-   Local:   http://localhost:3000
-   Network: http://192.168.1.42:3000
+Controller: http://127.0.0.1:3000/?role=controller
+Actor:      http://127.0.0.1:3000/?role=actor
+Audience:   http://127.0.0.1:3000/?role=audience
 ```
 
-### 3. Open on devices
+`PORT=8080 npm start` changes the port. The address stays loopback.
 
-| Role                                    | URL                                         |
-| --------------------------------------- | ------------------------------------------- |
-| **Controller** (person advancing lines) | `http://192.168.1.42:3000/?role=controller` |
-| **Actor** (independent reading controls) | `http://192.168.1.42:3000/?role=actor`      |
-| **Audience** (live script, no controls) | `http://192.168.1.42:3000/?role=audience`   |
+Phones and other computers cannot open `127.0.0.1`. Putting this server on a show network, a tunnel, or `0.0.0.0` is still **NO-GO**. See [docs/migration/m9c3-go-no-go.md](docs/migration/m9c3-go-no-go.md). Security S2B is not part of this repository.
 
-All devices must be on the same Wi-Fi network.
+Saved productions, saved versions, production-owned images, and Live State stay in the durable directory when the process stops and when this checkout changes. A cue position that has not been saved does not. Details are in [docs/migration/local-persistent-handoff.md](docs/migration/local-persistent-handoff.md).
+
+`npm run start:legacy` is the older checkout server. It can listen on the network, it uses the Legacy seed in this directory, and it is not a fallback for `npm start`. Do not use it for the installed library.
 
 Captions scale with the space on each screen. Audience text is the largest, so it
 stays readable when projected. Actor and Controller text is slightly smaller so
@@ -46,20 +73,6 @@ keep a gap that scales with the caption.
 Opening `/` without a role defaults to Audience. The legacy
 `?role=viewer` URL also opens the Audience view. Unknown role values redirect
 to `?role=viewer`, which uses the same non-interactive Audience view.
-
-### Local versioned library
-
-The migrated ADAPT library used for local handoff does not live in this Git checkout. Start it with:
-
-```bash
-npm run start:local
-```
-
-That command reads `~/ADAPT-stage-prompter-config/runtime-authorization.json` and serves only `http://127.0.0.1:3000`. Use the same role URLs with `127.0.0.1` instead of a network address. If the authorization file is missing, the command stops. It does not open `script.txt` from this checkout.
-
-`node server.js` is unchanged. It still starts the checkout's Legacy copy and can print a network address. It does not read the versioned library outside the checkout.
-
-Saved productions, saved versions, production-owned images, and the installed Live State are files under `~/ADAPT-stage-prompter-data`. They remain when this process stops and when this checkout changes branch. A cue position that has not been saved, and script text that is only in the browser, are not part of that storage. Moving the data to a host chosen later is described in [docs/migration/local-persistent-handoff.md](docs/migration/local-persistent-handoff.md).
 
 ---
 
@@ -252,7 +265,7 @@ The library keeps more than one script on the server. The live show still uses o
 8. **Rename** changes the title. The script text and pictures stay the same.
 9. **Set as Live** asks you to confirm. The window names the script that is live now and the script that will replace it. It stays open until the server accepts the change. Every connected screen then receives the selected script and that production's pictures. Actors who were browsing are returned to Live when the script itself changes. The cue starts at the beginning, because this is a different production.
 
-The first time the server starts, the current `script.txt` is copied into the library if that text is not already saved. Starting the server again does not create a second copy of the same text. The saved scripts remain after a restart, and the server remembers which one was set live.
+On the older checkout server, the first start copies `script.txt` into the library if that text is not already saved. Starting that server again does not create a second copy of the same text. The installed Versioned Library is filled by `npm run setup` instead. It does not create another copy of the same text on startup. Saved scripts remain after a restart, and the server remembers which one was set live.
 
 ### How the old script buttons relate to the library
 
@@ -269,23 +282,21 @@ The first time the server starts, the current `script.txt` is copied into the li
 
 ## Storage and deployment
 
-Saved scripts and their pictures are files, not a database. They are stored in `data/library/` next to `script.txt`:
+`npm start` reads the runtime authorization written by `npm run setup`. That file selects the durable Versioned Library. `SCRIPT_LIBRARY_DIR`, `SCRIPT_FILE`, and `PREVIOUS_SCRIPT_FILE` do not select it. If the authorization file is missing, `npm start` stops. It does not open the Legacy seed instead.
 
-- `data/library/index.json` stores titles, ids, dates, and which script is live
-- `data/library/scripts/` stores the script text
-- `data/library/assets/<script-id>/` stores that production's pictures and a small `manifest.json` with the picture's display name, type, size, and date
+The repository copy is the Legacy seed used by setup:
 
-`script.txt` is still the live show. `script.previous.txt` is still the one-step backup used by **Restore Previous Script**. `script.previous.txt.meta.json` remembers which saved production that backup belonged to, so its pictures still resolve.
+- `script.txt` is the live script bytes
+- `script.previous.txt` and `script.previous.txt.meta.json` are the one-step backup
+- `data/library/index.json` stores titles, ids, and dates
+- `data/library/scripts/` stores the saved script text
+- `images/` stores the shared pictures named by `@image: images/...`
 
-A committed versioned library is opened only by the persistent runtime command above. `SCRIPT_LIBRARY_DIR`, `SCRIPT_FILE`, and `PREVIOUS_SCRIPT_FILE` do not select it, and `node server.js` does not fall back to it. The checkout copy of `data/` stays the Legacy library.
+Do not commit the durable directory, either authorization file, a backup, or `PROMPTER_STAFF_TOKEN`. Those stay outside Git. After setup, new saves go to the durable directory, not back into this checkout.
 
-The `data/` folder is not part of git. Do not commit uploaded scripts or pictures. On a production machine, keep `data/library/` on a disk that survives restarts and deploys. Copy that whole folder, plus `script.txt`, `script.previous.txt`, and `script.previous.txt.meta.json`, when you make a backup. You can move the library with:
+`npm run start:legacy` (`node server.js`) still uses the Legacy seed beside the checkout. It refuses to start when it finds a committed `migration.json`. It is not a way to open the installed Versioned Library. `PROMPTER_IMAGE_MAX_BYTES` changes the per-image limit. The default is 10 MB.
 
-```bash
-SCRIPT_LIBRARY_DIR=/var/lib/stage-prompter/library node server.js
-```
-
-`SCRIPT_FILE` and `PREVIOUS_SCRIPT_FILE` still choose the live file and the previous-script backup. When `SCRIPT_LIBRARY_DIR` is not set, the library is created beside the live script file. A path on a temporary disk is wiped on the next deploy, so point `SCRIPT_LIBRARY_DIR` at storage that outlives the process. `PROMPTER_IMAGE_MAX_BYTES` changes the per-image limit. The default is 10 MB.
+Moving an installed library to another disk is described in [docs/migration/local-persistent-handoff.md](docs/migration/local-persistent-handoff.md).
 
 ### Security limitation
 
@@ -302,7 +313,7 @@ Pictures for the show that is live now can be loaded by Controller, Actor, and A
 Set a shared staff code before anyone outside the trusted Wi-Fi can reach the server:
 
 ```bash
-PROMPTER_STAFF_TOKEN="choose-a-long-private-code" node server.js
+PROMPTER_STAFF_TOKEN="choose-a-long-private-code" npm start
 ```
 
 When that code is set, every library request must include it. The Controller asks for the code and keeps it in that browser tab. The code is not written into the page. Do not commit the code or put it in the README.
@@ -325,7 +336,7 @@ Script text is not written into the server log. Error messages do not return a s
 ## Running on a different port
 
 ```bash
-PORT=8080 node server.js
+PORT=8080 npm start
 ```
 
-Library location and the optional staff code are described in [Storage and deployment](#storage-and-deployment).
+That changes the port and still listens on `127.0.0.1`. Library location and the optional staff code are described in [Storage and deployment](#storage-and-deployment).

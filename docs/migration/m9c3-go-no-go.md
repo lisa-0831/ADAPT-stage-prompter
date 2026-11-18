@@ -39,9 +39,11 @@ Local regression of the application code is not one of these rows. It does not o
 
 ## Commands that stay forbidden while this file says NO-GO
 
-- `scripts/migrate-persistent.js prepare` or `commit` against the ADAPT root
-- `scripts/start-persistent.js` against the ADAPT root
-- `scripts/backup-storage.js create` against the ADAPT root
+- `scripts/migrate-persistent.js prepare` or `commit` against an existing production root, including `~/ADAPT-stage-prompter-data`
+- `scripts/start-persistent.js` against that same root
+- `scripts/backup-storage.js create` against that same root
 - Any public listener for the current WebSocket protocol
+
+`npm run setup` copies the Legacy seed in this repository into a new directory outside the checkout. It refuses `~/ADAPT-stage-prompter-data`, `~/ADAPT-stage-prompter-config`, and `~/ADAPT-stage-prompter-backups`. That install is not a production cutover and does not change this NO-GO.
 
 `preflight` against the real root is also out of scope until the backup gate is passed. Taking the lock there creates `data/library/.writer.lock`.

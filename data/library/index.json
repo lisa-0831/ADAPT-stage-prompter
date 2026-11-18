@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "liveId": "ee04e849-90d4-4eeb-b2a6-562b06067a32",
+  "scripts": [
+    {
+      "id": "2d0f0937-fc36-4d27-a31e-d047c2fd5623",
+      "title": "WELCOME TO ADAPT COMMUNITY NETWORK’S",
+      "createdAt": "2026-11-16T01:00:42.086Z",
+      "updatedAt": "2026-11-16T01:00:42.086Z",
+      "revision": "ab07d71d986cb25fe9a3afc3de8077a359a2f1356bb765d9e948e252a419e5d0"
+    },
+    {
+      "id": "ee04e849-90d4-4eeb-b2a6-562b06067a32",
+      "title": "Test",
+      "createdAt": "2026-11-16T02:27:19.387Z",
+      "updatedAt": "2026-11-16T03:38:54.178Z",
+      "revision": "44f27efa4ff652dfe0be20d967cd385a149a8ee0f13e16b250caa5dc9d09ca47"
+    }
+  ]
+}
