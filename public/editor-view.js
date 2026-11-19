@@ -38,6 +38,7 @@
     let showResolvedImage;
     let appendSlidePreview;
     let getLibraryEntries;
+    let openVersionHistory = function () {};
     let enabled = false;
 
     let editorMode = 'live';
@@ -45,6 +46,9 @@
     let editorAssetCatalog = [];
     let editorLibraryRevision = null;
     let editorLibraryTitle = '';
+    let editorSavedVersionId = null;
+    let editorVersionAttempt = null;
+    let editorLibraryGeneration = null;
     let returnToLibrary = false;
     let libraryNoticeAfterClose = '';
     let editorModel = null;
@@ -100,6 +104,7 @@ function captureEditorDom() {
   setLive: doc.getElementById('editor-set-live'),
   publish: doc.getElementById('editor-publish'),
   restore: doc.getElementById('editor-restore'),
+  versionHistory: doc.getElementById('editor-version-history'),
   closeTop: doc.getElementById('editor-close-top'),
   close: doc.getElementById('editor-close'),
 };
@@ -108,6 +113,30 @@ function captureEditorDom() {
 function editorDraftScriptId() {
   if (editorLibraryId) return editorLibraryId;
   return 'live';
+}
+
+function showSavedEditorTitle() {
+  if (editorMode !== 'library') return;
+  const heading = doc.getElementById('script-editor-title');
+  if (!heading) return;
+  heading.textContent = editorLibraryTitle
+    ? `Edit saved script: ${editorLibraryTitle}`
+    : 'Edit saved script';
+}
+
+function versionHeaders(text, headers) {
+  if (!ScriptLibrary || typeof ScriptLibrary.nextVersionAttempt !== 'function') return headers;
+  editorVersionAttempt = ScriptLibrary.nextVersionAttempt(editorVersionAttempt, text, crypto);
+  if (editorVersionAttempt.versionId) headers['X-Version-Id'] = editorVersionAttempt.versionId;
+  return headers;
+}
+
+function rememberSavedVersion(text, versionId) {
+  const kept = editorVersionAttempt && editorVersionAttempt.text === text && editorVersionAttempt.versionId
+    ? editorVersionAttempt.versionId
+    : (typeof versionId === 'string' && versionId ? versionId : null);
+  if (kept) editorVersionAttempt = { text, versionId: kept };
+  if (typeof versionId === 'string' && versionId) editorSavedVersionId = versionId;
 }
 
 function noteScriptRevision() {
@@ -219,6 +248,7 @@ function refreshEditorChrome() {
   const libraryEditing = editorMode === 'library';
   editorDom.saveLibrary.hidden = !libraryEditing;
   editorDom.setLive.hidden = !libraryEditing;
+  if (editorDom.versionHistory) editorDom.versionHistory.hidden = !libraryEditing;
   editorDom.publish.hidden = libraryEditing;
   if (libraryEditing) editorDom.restore.hidden = true;
   editorDom.publish.disabled = libraryEditing || !(editorBaseRevision && result.ok && !editorAwaitingRevision);
@@ -810,6 +840,9 @@ async function open(libraryScript) {
   editorLibraryId = fromLibrary ? libraryScript.id : null;
   editorLibraryRevision = fromLibrary ? libraryScript.revision : null;
   editorLibraryTitle = fromLibrary ? libraryScript.title || '' : '';
+  editorLibraryGeneration = null;
+  editorVersionAttempt = null;
+  editorSavedVersionId = null;
   editorConfirmMode = null;
   editorPreviewOn = false;
   editorDom.preview.hidden = true;
@@ -822,7 +855,7 @@ async function open(libraryScript) {
     : 'Edit Script';
   doc.getElementById('script-editor-help').textContent = fromLibrary
     ? 'You are editing a saved library script. Save to Library keeps it in the library and does not change the live show. Set as Live is a separate step and uses the saved copy.'
-    : 'Choose a scene and edit the lines. Save a draft to keep the work in this browser. The live show does not change until you publish. Replace Script is different: it pastes a whole script and goes live immediately.';
+    : 'Choose a scene and edit the lines. Save a draft to keep the work in this browser. The live show does not change until you publish. Replace Script is separate: it publishes the pasted text. On a versioned server that is a new version of the live production, then an activation. It is not a temporary live-only change.';
   editorDom.status.textContent = fromLibrary
     ? 'Loading the saved script…'
     : 'Loading the current script…';
@@ -839,6 +872,8 @@ async function open(libraryScript) {
       published = body.script.text;
       editorLibraryTitle = body.script.title || editorLibraryTitle;
       editorLibraryRevision = body.script.revision || editorLibraryRevision;
+      if (Number.isInteger(body.script.generation)) editorLibraryGeneration = body.script.generation;
+      showSavedEditorTitle();
     } else {
       const res = await request('/script');
       if (!res.ok) throw new Error('Could not load the script');
@@ -991,6 +1026,7 @@ async function runPublish(text) {
       headers['X-Library-Id'] = editorLibraryId;
       headers['X-Library-Revision'] = editorLibraryRevision;
     }
+    if (mode !== 'restore') versionHeaders(text, headers);
     const res = await request('/script', {
       method: 'POST',
       headers,
@@ -999,10 +1035,18 @@ async function runPublish(text) {
     let body = null;
     try { body = await res.json(); } catch (err) { body = null; }
     const status = ScriptEditor.publicationStatus(res.ok, body);
+    if (status && status.success !== true && status.saved !== true && ScriptLibrary) {
+      const specific = ScriptLibrary.operationFailureMessage(body);
+      if (specific) status.message = specific;
+    }
     if (mode === 'publish') {
       const outcome = ScriptEditor.publishOutcome(status);
       if (!outcome.ok) {
-        showConfirmFailure(outcome.message);
+        if (outcome.saved) rememberSavedVersion(text, outcome.versionId);
+        const kept = outcome.saved && outcome.versionId
+          ? `${outcome.message} Saved version ${outcome.versionId}.`
+          : outcome.message;
+        showConfirmFailure(kept);
         return;
       }
       const storage = draftStorage();
@@ -1012,6 +1056,7 @@ async function runPublish(text) {
       }
       if (outcome.revision) editorBaseRevision = outcome.revision;
       editorBaselineText = text;
+      editorVersionAttempt = null;
       forceCloseEditor();
       const liveState = liveShow.getLiveState();
       const slides = liveShow.getSlides();
@@ -1078,16 +1123,36 @@ async function saveLibraryScript() {
   }
   editorDom.saveLibrary.disabled = true;
   try {
+    const headers = { 'Content-Type': 'application/json' };
+    versionHeaders(text, headers);
     const res = await libraryFetch(`/api/library/${editorLibraryId}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ text, expectedRevision: editorLibraryRevision }),
     });
     const body = await res.json().catch(() => null);
-    if (res.status === 409 || (body && body.code === 'conflict')) {
-      editorDom.status.textContent = body && body.error
-        ? body.error
-        : 'This saved script was changed after you opened it. Your edits were not saved over that newer copy.';
+    const partial = ScriptLibrary.partialSaveOutcome(body);
+    if (partial) {
+      if (partial.generation != null) editorLibraryGeneration = partial.generation;
+      if (partial.titleSaved && body.script && body.script.title) {
+        editorLibraryTitle = body.script.title;
+        showSavedEditorTitle();
+      }
+      if (partial.textSaved && body.script && typeof body.script.revision === 'string') {
+        editorLibraryRevision = body.script.revision;
+        editorBaseRevision = body.script.revision;
+        editorBaselineText = text;
+        rememberSavedVersion(text, body.script.versionId);
+      }
+      editorDom.status.textContent = partial.message;
+      refreshEditorChrome();
+      return;
+    }
+    const specific = ScriptLibrary.operationFailureMessage(body);
+    if (specific || res.status === 409 || (body && body.code)) {
+      editorDom.status.textContent = specific
+        || (body && body.error)
+        || 'This saved script was changed after you opened it. Your edits were not saved over that newer copy.';
       return;
     }
     if (!res.ok || !body || !body.script) {
@@ -1100,6 +1165,9 @@ async function saveLibraryScript() {
     editorBaseRevision = body.script.revision;
     editorBaselineText = text;
     editorLibraryTitle = body.script.title || editorLibraryTitle;
+    if (Number.isInteger(body.script.generation)) editorLibraryGeneration = body.script.generation;
+    rememberSavedVersion(text, body.script.versionId);
+    showSavedEditorTitle();
     editorDom.status.textContent = 'Saved to the library. The live show was not changed.';
     refreshEditorChrome();
   } catch (err) {
@@ -1163,7 +1231,21 @@ async function runEditorSetLive() {
   }
 }
 
-async function loadLatestSavedScript() {
+function noteSavedHead(productionId, detail) {
+  if (!editorModel || editorLibraryId !== productionId) return;
+  const message = detail && detail.message
+    ? detail.message
+    : 'The library saved a new version. The live show was not changed.';
+  if (editorIsDirty()) {
+    editorDom.status.textContent = `${message} Your unsaved edits are still in this editor and were not replaced. They are not based on the new saved version.`;
+    editorDom.conflict.hidden = false;
+    editorDom.conflict.textContent = 'The saved version changed while this draft was open. Load the latest saved script only after you save or discard these edits.';
+    return;
+  }
+  loadLatestSavedScript(`${message} The editor now shows that saved version. It is not live.`);
+}
+
+async function loadLatestSavedScript(statusMessage) {
   if (!editorLibraryId) return;
   if (editorIsDirty()) {
     showConfirmFailure('Save or discard the open edits before loading the latest saved script. The live show was not changed.');
@@ -1182,6 +1264,9 @@ async function loadLatestSavedScript() {
     const script = body.script;
     editorLibraryRevision = script.revision || null;
     editorLibraryTitle = script.title || editorLibraryTitle;
+    if (Number.isInteger(script.generation)) editorLibraryGeneration = script.generation;
+    editorVersionAttempt = null;
+    showSavedEditorTitle();
     editorBaseRevision = script.revision || editorBaseRevision;
     editorBaselineText = script.text;
     editorModel = ScriptEditor.load(script.text);
@@ -1189,7 +1274,7 @@ async function loadLatestSavedScript() {
     renderEditor();
     showStaleDrafts();
     hideEditorConfirm();
-    editorDom.status.textContent = 'Loaded the latest saved script. The live show was not changed. Review it, then set it live.';
+    editorDom.status.textContent = statusMessage || 'Loaded the latest saved script. The live show was not changed. Review it, then set it live.';
   } catch (err) {
     showConfirmFailure('The latest saved script could not be loaded. The live show was not changed.');
   } finally {
@@ -1212,6 +1297,7 @@ function init(settings) {
   showResolvedImage = given.showResolvedImage;
   appendSlidePreview = given.appendSlidePreview;
   getLibraryEntries = given.getLibraryEntries;
+  if (given.openVersionHistory) openVersionHistory = given.openVersionHistory;
   enabled = true;
   captureEditorDom();
   doc.getElementById('btn-edit-script').addEventListener('click', () => open());
@@ -1222,6 +1308,12 @@ function init(settings) {
   editorDom.setLive.addEventListener('click', beginSetLiveFromEditor);
   editorDom.publish.addEventListener('click', beginPublish);
   editorDom.restore.addEventListener('click', beginRestore);
+  if (editorDom.versionHistory) {
+    editorDom.versionHistory.addEventListener('click', () => {
+      if (!editorLibraryId) return;
+      openVersionHistory(editorLibraryId, editorLibraryTitle);
+    });
+  }
   editorDom.confirmNo.addEventListener('click', cancelEditorConfirm);
   editorDom.confirm.addEventListener('click', (event) => {
     if (event.target !== editorDom.confirm || editorAwaitingRevision) return;
@@ -1290,6 +1382,7 @@ function init(settings) {
       isEnabled,
       noteScriptRevision,
       showNotice,
+      noteSavedHead,
     };
   }
 

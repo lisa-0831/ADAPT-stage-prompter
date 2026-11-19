@@ -29,12 +29,19 @@
     const staffStorage = Object.prototype.hasOwnProperty.call(options, 'sessionStorage')
       ? options.sessionStorage
       : defaultSessionStorage();
+    const objectUrls = Object.prototype.hasOwnProperty.call(options, 'objectUrls')
+      ? options.objectUrls
+      : (typeof globalThis !== 'undefined' ? globalThis.URL : null);
+    const cryptoApi = Object.prototype.hasOwnProperty.call(options, 'crypto')
+      ? options.crypto
+      : (typeof globalThis !== 'undefined' ? globalThis.crypto : null);
 
     let enabled = false;
     let listenersBound = false;
     let openEditor = function () {};
     let isEditorOpen = function () { return false; };
     let showControllerNotice = function () {};
+    let noteSavedHead = function () {};
     let revokePreviewUrls = function () {};
     let showResolvedImage = function () {};
     let appendSlidePreview = function () {};
@@ -50,6 +57,28 @@ let libraryReviewed = null;
 let libraryPendingAsset = null;
 let libraryImagesScriptId = null;
 const libraryGuard = ScriptEditor.createPublishGuard();
+let createSession = null;
+let createScriptToken = 0;
+let createSceneKey = 0;
+let libraryHighlightId = null;
+let manageAsset = null;
+let historyProductionId = null;
+let historyTitle = '';
+let historyListing = null;
+let historyDetail = null;
+let historyRestoreId = null;
+let historyRestoreSource = null;
+let historyBusy = false;
+const historyObjectUrls = [];
+
+function manageFileSignature(file) {
+  return [
+    file && file.name || '',
+    file && file.size || 0,
+    file && file.lastModified || 0,
+    file && file.type || '',
+  ].join('\0');
+}
 
 function rememberLibraryEntries(scripts, liveId) {
   libraryEntries = Array.isArray(scripts) ? scripts.slice() : [];
@@ -93,7 +122,26 @@ function libraryDom() {
     token: doc.getElementById('library-token'),
     add: doc.getElementById('library-add'),
     title: doc.getElementById('library-new-title'),
-    file: doc.getElementById('library-file'),
+    createOpen: doc.getElementById('library-create-open'),
+    create: doc.getElementById('library-create'),
+    createTitle: doc.getElementById('library-create-name'),
+    createScript: doc.getElementById('library-create-script'),
+    createScriptPicked: doc.getElementById('library-create-script-picked'),
+    createScriptName: doc.getElementById('library-create-script-name'),
+    createScriptClear: doc.getElementById('library-create-script-clear'),
+    createCard: doc.getElementById('library-create-card'),
+    createCardPicked: doc.getElementById('library-create-card-picked'),
+    createCardPreview: doc.getElementById('library-create-card-preview'),
+    createCardName: doc.getElementById('library-create-card-name'),
+    createCardClear: doc.getElementById('library-create-card-clear'),
+    createScenes: doc.getElementById('library-create-scenes'),
+    createSceneList: doc.getElementById('library-create-scene-list'),
+    createReview: doc.getElementById('library-create-review'),
+    createStatus: doc.getElementById('library-create-status'),
+    createSubmit: doc.getElementById('library-create-submit'),
+    createRetry: doc.getElementById('library-create-retry'),
+    createEdit: doc.getElementById('library-create-edit'),
+    createCancel: doc.getElementById('library-create-cancel'),
     empty: doc.getElementById('library-empty'),
     list: doc.getElementById('library-list'),
     preview: doc.getElementById('library-preview'),
@@ -103,6 +151,17 @@ function libraryDom() {
     imagesList: doc.getElementById('library-images-list'),
     imagesEmpty: doc.getElementById('library-images-empty'),
     imagesStatus: doc.getElementById('library-images-status'),
+    history: doc.getElementById('library-history'),
+    historyTitle: doc.getElementById('library-history-title'),
+    historyStatus: doc.getElementById('library-history-status'),
+    historyWarning: doc.getElementById('library-history-warning'),
+    historyList: doc.getElementById('library-history-list'),
+    historyPreview: doc.getElementById('library-history-preview'),
+    historyPreviewTitle: doc.getElementById('library-history-preview-title'),
+    historyPreviewMeta: doc.getElementById('library-history-preview-meta'),
+    historyPreviewImages: doc.getElementById('library-history-preview-images'),
+    historyPreviewText: doc.getElementById('library-history-preview-text'),
+    historyRestore: doc.getElementById('library-history-restore'),
     imageFile: doc.getElementById('library-image-file'),
     confirm: doc.getElementById('library-confirm'),
     confirmHeading: doc.getElementById('library-confirm-heading'),
@@ -128,8 +187,17 @@ function formatModified(iso) {
 
 function libraryErrorMessage(response, body, fallback) {
   if (response && response.status === 401) return 'The staff access code was not accepted.';
+  const specific = ScriptLibrary && typeof ScriptLibrary.operationFailureMessage === 'function'
+    ? ScriptLibrary.operationFailureMessage(body)
+    : null;
+  if (specific) return specific;
   if (body && typeof body.error === 'string' && body.error) return body.error;
   return fallback;
+}
+
+function newRequestId() {
+  if (!ScriptLibrary || typeof ScriptLibrary.requestIdentity !== 'function') return null;
+  return ScriptLibrary.requestIdentity(cryptoApi);
 }
 
 async function readLibraryJson(response) {
@@ -137,14 +205,29 @@ async function readLibraryJson(response) {
   catch (err) { return null; }
 }
 
+function revealLibraryHome() {
+  const ui = libraryDom();
+  if (createSession) {
+    ui.create.hidden = false;
+    ui.createOpen.hidden = true;
+    ui.add.hidden = true;
+    ui.list.hidden = true;
+    ui.empty.hidden = true;
+    return;
+  }
+  ui.create.hidden = true;
+  ui.createOpen.hidden = false;
+  ui.add.hidden = false;
+  ui.list.hidden = false;
+  ui.empty.hidden = libraryEntries.length > 0;
+}
+
 function hideLibraryPreview() {
   const ui = libraryDom();
   ui.preview.hidden = true;
   ui.previewBody.replaceChildren();
-  ui.add.hidden = false;
-  ui.list.hidden = false;
-  ui.empty.hidden = libraryEntries.length > 0;
   revokePreviewUrls();
+  revealLibraryHome();
 }
 
 function hideLibraryImages() {
@@ -152,10 +235,9 @@ function hideLibraryImages() {
   ui.images.hidden = true;
   ui.imagesList.replaceChildren();
   libraryImagesScriptId = null;
-  ui.add.hidden = false;
-  ui.list.hidden = false;
-  ui.empty.hidden = libraryEntries.length > 0;
+  manageAsset = null;
   revokePreviewUrls();
+  revealLibraryHome();
 }
 
 function renderLibraryPreview(script) {
@@ -165,6 +247,8 @@ function renderLibraryPreview(script) {
   ui.list.hidden = true;
   ui.empty.hidden = true;
   ui.images.hidden = true;
+  ui.create.hidden = true;
+  ui.createOpen.hidden = true;
   ui.preview.hidden = false;
   ui.previewBody.replaceChildren();
   const heading = doc.createElement('h3');
@@ -198,6 +282,7 @@ function renderLibraryList() {
     title.textContent = entry.title || 'Untitled script';
     head.append(title);
     const isLive = entry.live || entry.id === liveShow.getLiveScriptId();
+    const headIsLive = savedHeadIsLive(entry, isLive);
     if (isLive) {
       const badge = doc.createElement('p');
       badge.className = 'library-live';
@@ -210,6 +295,12 @@ function renderLibraryList() {
     time.dateTime = entry.updatedAt || '';
     time.textContent = formatModified(entry.updatedAt);
     meta.append('Last modified ', time);
+    let createdNote = null;
+    if (entry.id === libraryHighlightId && !isLive) {
+      createdNote = doc.createElement('p');
+      createdNote.className = 'library-note';
+      createdNote.textContent = 'Just created. Not live. Open Edit to assign any uploaded pictures to scenes.';
+    }
     const actions = doc.createElement('div');
     actions.className = 'library-actions';
 
@@ -228,9 +319,10 @@ function renderLibraryList() {
     action('Preview', () => previewLibraryScript(entry.id));
     action('Edit', () => editLibraryScript(entry));
     action('Manage Images', () => openLibraryImages(entry));
+    action('Version History', () => openVersionHistory(entry.id, entry.title));
     action('Rename', () => showLibraryRename(item, entry));
     const liveButton = action('Set as Live', () => beginLibrarySetLive(entry));
-    if (isLive) {
+    if (headIsLive) {
       liveButton.disabled = true;
       liveButton.textContent = 'Already live';
       liveButton.setAttribute('aria-label', `Already live: ${entry.title || 'saved script'}`);
@@ -261,10 +353,20 @@ function renderLibraryList() {
       renameLibraryScript(entry, renameInput.value);
     });
 
-    item.append(head, meta, actions, rename);
+    item.append(head, meta);
+    if (createdNote) item.append(createdNote);
+    item.append(actions, rename);
     item._renameForm = rename;
     ui.list.append(item);
   });
+  if (createSession) {
+    ui.list.hidden = true;
+    ui.empty.hidden = true;
+    ui.add.hidden = true;
+    ui.create.hidden = false;
+    ui.createOpen.hidden = true;
+    ui.access.hidden = true;
+  }
 }
 
 function showLibraryRename(item, entry) {
@@ -282,12 +384,24 @@ async function openLibrary(options) {
   if (!enabled || isEditorOpen()) return;
   const ui = libraryDom();
   if (!ui.dialog.open) ui.dialog.showModal();
-  hideLibraryPreview();
   ui.images.hidden = true;
-  ui.empty.hidden = true;
+  ui.history.hidden = true;
   ui.confirm.hidden = true;
   ui.workspace.inert = false;
   const kept = options && options.status ? options.status : '';
+  const resumeCreate = Boolean(createSession && createSession.created);
+  if (resumeCreate) {
+    ui.preview.hidden = true;
+    ui.previewBody.replaceChildren();
+    revokePreviewUrls();
+    ui.add.hidden = true;
+    ui.list.hidden = true;
+    ui.empty.hidden = true;
+    ui.create.hidden = false;
+    ui.createOpen.hidden = true;
+  } else {
+    hideLibraryPreview();
+  }
   setLibraryStatus(kept || 'Loading saved scripts…', 'status');
   const access = await request('/api/library/access').then((response) => response.json()).catch(() => null);
   if (access && access.required && !staffToken()) {
@@ -295,13 +409,22 @@ async function openLibrary(options) {
     ui.add.hidden = true;
     ui.list.hidden = true;
     ui.empty.hidden = true;
+    ui.create.hidden = true;
+    ui.createOpen.hidden = true;
     setLibraryStatus('Enter the staff access code to open the script library.', 'status');
     ui.token.focus();
     return;
   }
   ui.access.hidden = true;
-  ui.add.hidden = false;
-  await refreshLibrary(kept);
+  if (!resumeCreate) ui.add.hidden = false;
+  await refreshLibrary(resumeCreate ? '' : kept);
+  if (resumeCreate && createSession && createSession.created) {
+    renderCreateForm();
+    const failed = createSession.results.some((item) => item.status === 'failed');
+    setCreateStatus(describeCreateResult(createSession), failed ? 'alert' : 'status');
+    if (!ui.createEdit.hidden) ui.createEdit.focus();
+    return;
+  }
   if (!kept) doc.getElementById('library-close').focus();
 }
 
@@ -315,6 +438,8 @@ async function refreshLibrary(keptStatus) {
       setStaffToken('');
       ui.access.hidden = false;
       ui.add.hidden = true;
+      ui.create.hidden = true;
+      ui.createOpen.hidden = true;
       setLibraryStatus('The staff access code was not accepted.', 'alert');
       ui.token.focus();
       return;
@@ -330,6 +455,14 @@ async function refreshLibrary(keptStatus) {
     if (body.liveId) liveShow.setLiveScriptId(body.liveId);
     else if (body.liveId === null) liveShow.setLiveScriptId(null);
     renderLibraryList();
+    if (!createSession && ui.preview.hidden && ui.images.hidden && ui.history.hidden) {
+      ui.access.hidden = true;
+      ui.add.hidden = false;
+      ui.create.hidden = true;
+      ui.createOpen.hidden = false;
+      ui.list.hidden = false;
+      ui.empty.hidden = libraryEntries.length > 0;
+    }
     if (keptStatus) setLibraryStatus(keptStatus, 'status');
     else if (!libraryEntries.length) setLibraryStatus('No saved scripts yet.', 'status');
     else setLibraryStatus('', 'status');
@@ -367,6 +500,10 @@ async function createLibraryScript(title, text, trackIfCurrent) {
       setLibraryStatus(libraryErrorMessage(response, body, 'The script was not added. Nothing already saved was replaced.'), 'alert');
       return null;
     }
+    if (body.tracked === true && body.unchanged === true) {
+      await refreshLibrary(`“${body.script.title}” already matches the live show. A second copy was not created. The live show was not changed.`);
+      return body.script;
+    }
     await refreshLibrary(`Saved “${body.script.title}” as a new library script. Scripts already in the library were not replaced.`);
     return body.script;
   } catch (err) {
@@ -399,29 +536,618 @@ async function saveCurrentLiveScript(event) {
   }
 }
 
-async function importLibraryFile() {
+function blankCreateSession() {
+  return {
+    script: null,
+    card: null,
+    scenes: [],
+    created: null,
+    results: [],
+    submitting: false,
+    creationAttempts: {},
+  };
+}
+
+function creationAttempt(session, title, text) {
+  const key = `${String(title)}\n${String(text)}`;
+  if (!session.creationAttempts) session.creationAttempts = {};
+  if (!Object.prototype.hasOwnProperty.call(session.creationAttempts, key)) {
+    session.creationAttempts[key] = { id: newRequestId(), sent: false };
+  }
+  return session.creationAttempts[key];
+}
+
+function objectUrlApi() {
+  return objectUrls || null;
+}
+
+function makeObjectUrl(file) {
+  const api = objectUrlApi();
+  if (!api || typeof api.createObjectURL !== 'function') return '';
+  try { return api.createObjectURL(file); }
+  catch (err) { return ''; }
+}
+
+function dropObjectUrl(url) {
+  if (!url) return;
+  const api = objectUrlApi();
+  if (!api || typeof api.revokeObjectURL !== 'function') return;
+  try { api.revokeObjectURL(url); }
+  catch (err) { /* The preview is already gone. */ }
+}
+
+function releaseCreateFiles(session) {
+  if (!session) return;
+  if (session.card) dropObjectUrl(session.card.url);
+  session.scenes.forEach((scene) => dropObjectUrl(scene.url));
+  session.card = null;
+  session.scenes = [];
+}
+
+function chosenFiles(input) {
+  const list = input && input.files ? input.files : [];
+  const files = [];
+  for (let index = 0; index < list.length; index += 1) files.push(list[index]);
+  return files;
+}
+
+function clearFileInput(input) {
+  if (!input) return;
+  try { input.value = ''; }
+  catch (err) { /* A test double may not accept a file-input reset. */ }
+}
+
+function setCreateStatus(message, tone) {
+  const status = libraryDom().createStatus;
+  status.dataset.tone = tone || 'status';
+  status.textContent = message || '';
+  status.setAttribute('role', tone === 'alert' ? 'alert' : 'status');
+}
+
+function uploadRecord(session, key) {
+  return session.results.find((item) => item.key === key) || null;
+}
+
+function uploadSucceeded(session, key) {
+  const record = uploadRecord(session, key);
+  return Boolean(record && record.status === 'uploaded');
+}
+
+function rememberUpload(session, record) {
+  session.results = session.results.filter((item) => item.key !== record.key).concat(record);
+}
+
+function pruneUploadResults(session) {
+  const keys = new Set();
+  if (session.card) keys.add('card');
+  session.scenes.forEach((scene) => keys.add(scene.key));
+  session.results = session.results.filter((item) => keys.has(item.key));
+}
+
+function createUploadQueue(session) {
+  const queue = [];
+  if (session.card && !uploadSucceeded(session, 'card')) {
+    queue.push({
+      key: 'card',
+      name: session.card.name,
+      file: session.card.file,
+      assetId: session.card.assetId,
+    });
+  }
+  session.scenes.forEach((scene) => {
+    if (uploadSucceeded(session, scene.key)) return;
+    queue.push({
+      key: scene.key,
+      name: scene.name,
+      file: scene.file,
+      assetId: scene.assetId,
+    });
+  });
+  return queue;
+}
+
+function imageDirectives(text) {
+  if (!ScriptLibrary || typeof ScriptLibrary.parseImageReference !== 'function') return [];
+  const found = [];
+  String(text || '').split(/\r?\n/).forEach((line) => {
+    const match = line.match(/^\s*@image:\s*(.*?)\s*$/);
+    if (!match) return;
+    found.push(ScriptLibrary.parseImageReference(match[1]));
+  });
+  return found;
+}
+
+function describeCreateResult(session) {
+  if (!session || !session.created) return '';
+  const lines = [`Created “${session.created.title}”. It is not the live show.`];
+  const uploaded = session.results.filter((item) => item.status === 'uploaded');
+  const failed = session.results.filter((item) => item.status === 'failed');
+  if (uploaded.length) {
+    lines.push(`Uploaded to this production only: ${uploaded.map((item) => item.name).join(', ')}.`);
+    lines.push('These pictures are not assigned to scenes. Open Edit and choose a picture for each scene.');
+  } else if (!failed.length) {
+    lines.push('No pictures were added. Open Edit if you want to assign images later.');
+  }
+  if (failed.length) {
+    lines.push(`Not uploaded: ${failed.map((item) => `${item.name} (${item.error})`).join('; ')}.`);
+    lines.push('The production was kept. Retry uploads the pictures that failed without creating another production. This is not an all-or-nothing save.');
+  }
+  const directives = imageDirectives(session.script && session.script.text);
+  const legacy = [];
+  const unresolved = [];
+  directives.forEach((parsed) => {
+    if (parsed.kind === 'legacy' && legacy.indexOf(parsed.path) === -1) legacy.push(parsed.path);
+    else if (parsed.kind === 'unknown') unresolved.push('unrecognized image line');
+    else if (parsed.kind === 'library' && parsed.scriptId !== session.created.id) {
+      unresolved.push('image from another production');
+    }
+  });
+  if (legacy.length) {
+    lines.push(`The script still names shared images: ${legacy.join(', ')}. Uploading a file with the same name does not change those lines.`);
+  }
+  if (unresolved.length) {
+    lines.push('Some image lines are still unresolved and were left unchanged.');
+  }
+  return lines.join(' ');
+}
+
+function createReviewText(session) {
+  const scriptName = session.script ? session.script.name : 'none selected';
+  const cardName = session.card ? session.card.name : 'none';
+  const sceneNames = session.scenes.length
+    ? session.scenes.map((scene) => scene.name).join(', ')
+    : 'none';
+  const waiting = session.created
+    ? ''
+    : ' Nothing is saved until you choose Create Production. The live show will not change.';
+  return `Script: ${scriptName}. Title card: ${cardName}. Scene images: ${sceneNames}.${waiting}`;
+}
+
+function renderCreateForm() {
+  const session = createSession;
+  if (!session) return;
   const ui = libraryDom();
-  const file = ui.file.files && ui.file.files[0];
-  ui.file.value = '';
-  if (!file) return;
-  if (!ui.title.value.trim()) {
-    setLibraryStatus('Enter a title, then choose the text file again.', 'alert');
-    ui.title.focus();
+  const locked = session.submitting || Boolean(session.created);
+  ui.createTitle.disabled = locked;
+  ui.createScript.disabled = locked;
+  ui.createCard.disabled = session.submitting;
+  ui.createScenes.disabled = session.submitting;
+  ui.createSubmit.disabled = session.submitting || Boolean(session.created);
+  ui.createCancel.disabled = session.submitting;
+  ui.createCancel.textContent = session.created ? 'Back to library' : 'Cancel';
+  ui.create.setAttribute('aria-busy', session.submitting ? 'true' : 'false');
+  ui.createScriptPicked.hidden = !session.script;
+  ui.createScriptName.textContent = session.script ? session.script.name : '';
+  ui.createScriptClear.disabled = locked;
+  const cardRecord = session.card ? uploadRecord(session, 'card') : null;
+  ui.createCardPicked.hidden = !session.card;
+  ui.createCardName.textContent = session.card
+    ? cardStatusText(session.card.name, cardRecord)
+    : '';
+  if (session.card && session.card.url) {
+    ui.createCardPreview.src = session.card.url;
+    ui.createCardPreview.alt = `Preview of ${session.card.name}`;
+  } else if (typeof ui.createCardPreview.removeAttribute === 'function') {
+    ui.createCardPreview.removeAttribute('src');
+    ui.createCardPreview.alt = '';
+  }
+  ui.createCardClear.disabled = session.submitting || Boolean(cardRecord && cardRecord.status === 'uploaded');
+  ui.createCardClear.hidden = Boolean(cardRecord && cardRecord.status === 'uploaded');
+  ui.createSceneList.replaceChildren();
+  session.scenes.forEach((scene) => {
+    const record = uploadRecord(session, scene.key);
+    const row = doc.createElement('div');
+    row.className = 'library-picked';
+    if (scene.url) {
+      const preview = doc.createElement('img');
+      preview.src = scene.url;
+      preview.alt = `Preview of ${scene.name}`;
+      row.append(preview);
+    }
+    const name = doc.createElement('p');
+    name.textContent = cardStatusText(scene.name, record);
+    const remove = doc.createElement('button');
+    remove.type = 'button';
+    remove.className = 'btn';
+    remove.textContent = 'Remove';
+    remove.setAttribute('aria-label', `Remove ${scene.name}`);
+    remove.disabled = session.submitting || Boolean(record && record.status === 'uploaded');
+    remove.hidden = Boolean(record && record.status === 'uploaded');
+    remove.addEventListener('click', () => removeCreateScene(scene.key));
+    row.append(name, remove);
+    ui.createSceneList.append(row);
+  });
+  const queue = createUploadQueue(session);
+  const failed = session.results.some((item) => item.status === 'failed');
+  ui.createRetry.hidden = !session.created || queue.length === 0;
+  ui.createRetry.disabled = session.submitting;
+  ui.createRetry.textContent = failed ? 'Retry failed images' : 'Upload remaining images';
+  ui.createEdit.hidden = !session.created;
+  ui.createEdit.disabled = session.submitting;
+  ui.createReview.textContent = createReviewText(session);
+}
+
+function cardStatusText(name, record) {
+  if (record && record.status === 'uploaded') return `${name} — uploaded, not assigned to a scene`;
+  if (record && record.status === 'failed') return `${name} — ${record.error}`;
+  return name;
+}
+
+function openCreateForm() {
+  if (createSession && createSession.submitting) return;
+  if (!createSession || createSession.created) return;
+  const ui = libraryDom();
+  ui.preview.hidden = true;
+  ui.images.hidden = true;
+  ui.add.hidden = true;
+  ui.list.hidden = true;
+  ui.empty.hidden = true;
+  ui.create.hidden = false;
+  ui.createOpen.hidden = true;
+  renderCreateForm();
+  setLibraryStatus('', 'status');
+  setCreateStatus('Choose a title and a script file. Files stay on this screen until you choose Create Production.', 'status');
+  ui.createTitle.focus();
+}
+
+function discardCreateDraft() {
+  releaseCreateFiles(createSession);
+  createSession = null;
+  createScriptToken += 1;
+  const ui = libraryDom();
+  ui.createTitle.value = '';
+  clearFileInput(ui.createScript);
+  clearFileInput(ui.createCard);
+  clearFileInput(ui.createScenes);
+  ui.createStatus.textContent = '';
+  ui.createStatus.dataset.tone = 'status';
+  ui.createReview.textContent = '';
+  ui.createSceneList.replaceChildren();
+  ui.createScriptPicked.hidden = true;
+  ui.createCardPicked.hidden = true;
+  ui.create.hidden = true;
+  ui.createOpen.hidden = false;
+  ui.create.setAttribute('aria-busy', 'false');
+}
+
+function finishCreateForm() {
+  if (!createSession || createSession.submitting) return;
+  const created = createSession.created;
+  const failed = createSession.results.filter((item) => item.status === 'failed');
+  discardCreateDraft();
+  revealLibraryHome();
+  if (created) {
+    const extra = failed.length
+      ? ` ${failed.length} image ${failed.length === 1 ? 'upload' : 'uploads'} did not finish. The production was kept.`
+      : ' Open Edit to assign pictures to scenes.';
+    setLibraryStatus(`“${created.title}” is in the library and is not live.${extra}`, failed.length ? 'alert' : 'status');
+  } else {
+    setLibraryStatus('Create Production was cancelled. Nothing was added.', 'status');
+  }
+  libraryDom().createOpen.focus();
+}
+
+function beginCreateForm() {
+  if (createSession && createSession.submitting) return;
+  if (createSession && createSession.created) {
+    openResumedCreateForm();
     return;
   }
+  if (!createSession) {
+    createSession = blankCreateSession();
+    const ui = libraryDom();
+    ui.createTitle.value = '';
+    clearFileInput(ui.createScript);
+    clearFileInput(ui.createCard);
+    clearFileInput(ui.createScenes);
+  }
+  openCreateForm();
+}
+
+function openResumedCreateForm() {
+  const ui = libraryDom();
+  ui.preview.hidden = true;
+  ui.images.hidden = true;
+  ui.add.hidden = true;
+  ui.list.hidden = true;
+  ui.empty.hidden = true;
+  ui.create.hidden = false;
+  ui.createOpen.hidden = true;
+  renderCreateForm();
+}
+
+async function onCreateScriptChosen() {
+  const ui = libraryDom();
+  const file = chosenFiles(ui.createScript)[0];
+  clearFileInput(ui.createScript);
+  if (!createSession || createSession.submitting || createSession.created) return;
+  if (!file) return;
+  const token = createScriptToken + 1;
+  createScriptToken = token;
   if (file.size > 5 * 1024 * 1024) {
-    setLibraryStatus('That file is too large. The library accepts a plain-text script up to 5 MB.', 'alert');
+    setCreateStatus('That file is too large. The library accepts a plain-text script up to 5 MB.', 'alert');
     return;
   }
   let text = '';
   try {
     text = await file.text();
   } catch (err) {
-    setLibraryStatus('That file could not be read. The live show was not changed.', 'alert');
+    if (createScriptToken !== token || !createSession) return;
+    setCreateStatus('That file could not be read. Nothing was created.', 'alert');
     return;
   }
-  const created = await createLibraryScript(ui.title.value, text, false);
-  if (created) ui.title.value = '';
+  if (createScriptToken !== token || !createSession || createSession.created) return;
+  createSession.script = { name: file.name || 'script.txt', text };
+  renderCreateForm();
+  setCreateStatus('Script file ready. It has not been uploaded.', 'status');
+}
+
+function onCreateCardChosen() {
+  const ui = libraryDom();
+  const file = chosenFiles(ui.createCard)[0];
+  clearFileInput(ui.createCard);
+  if (!createSession || createSession.submitting || !file) return;
+  if (uploadSucceeded(createSession, 'card')) {
+    setCreateStatus('The title card is already uploaded. Choosing another file did not replace it.', 'status');
+    return;
+  }
+  if (createSession.card) dropObjectUrl(createSession.card.url);
+  createSession.card = {
+    name: file.name || 'Image',
+    file,
+    url: makeObjectUrl(file),
+    assetId: newRequestId(),
+  };
+  createSession.results = createSession.results.filter((item) => item.key !== 'card');
+  renderCreateForm();
+  setCreateStatus('Title card ready. It has not been uploaded.', 'status');
+}
+
+function onCreateScenesChosen() {
+  const ui = libraryDom();
+  const files = chosenFiles(ui.createScenes);
+  clearFileInput(ui.createScenes);
+  if (!createSession || createSession.submitting || !files.length) return;
+  files.forEach((file) => {
+    createSceneKey += 1;
+    createSession.scenes.push({
+      key: `scene-${createSceneKey}`,
+      name: file.name || 'Image',
+      file,
+      url: makeObjectUrl(file),
+      assetId: newRequestId(),
+    });
+  });
+  renderCreateForm();
+  setCreateStatus('Scene images ready. They have not been uploaded.', 'status');
+}
+
+function clearCreateScript() {
+  if (!createSession || createSession.submitting || createSession.created) return;
+  createScriptToken += 1;
+  createSession.script = null;
+  renderCreateForm();
+  setCreateStatus('Script file removed. Nothing was created.', 'status');
+}
+
+function clearCreateCard() {
+  if (!createSession || createSession.submitting || !createSession.card) return;
+  if (uploadSucceeded(createSession, 'card')) return;
+  dropObjectUrl(createSession.card.url);
+  createSession.card = null;
+  createSession.results = createSession.results.filter((item) => item.key !== 'card');
+  renderCreateForm();
+  setCreateStatus('Title card removed. Nothing was uploaded.', 'status');
+}
+
+function removeCreateScene(key) {
+  if (!createSession || createSession.submitting) return;
+  if (uploadSucceeded(createSession, key)) return;
+  const scene = createSession.scenes.find((item) => item.key === key);
+  if (!scene) return;
+  dropObjectUrl(scene.url);
+  createSession.scenes = createSession.scenes.filter((item) => item.key !== key);
+  createSession.results = createSession.results.filter((item) => item.key !== key);
+  renderCreateForm();
+  setCreateStatus(`${scene.name} removed. Nothing was uploaded.`, 'status');
+}
+
+async function postCreateProduction(title, text) {
+  const attempt = creationAttempt(createSession, title, text);
+  if (attempt.sent && !attempt.id) {
+    setCreateStatus('This browser could not keep a stable creation id, so the production was not submitted again.', 'alert');
+    return { identityBlocked: true };
+  }
+  const headers = { 'Content-Type': 'application/json' };
+  if (attempt.id) headers['X-Creation-Request-Id'] = attempt.id;
+  attempt.sent = true;
+  const response = await libraryFetch('/api/library', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ title, text, trackIfCurrent: false }),
+  });
+  const body = await readLibraryJson(response);
+  if (response.status === 401) {
+    setStaffToken('');
+    const ui = libraryDom();
+    ui.access.hidden = false;
+    ui.create.hidden = true;
+    setLibraryStatus('The staff access code was not accepted.', 'alert');
+    setCreateStatus('The staff access code was not accepted. Nothing was created.', 'alert');
+    ui.token.focus();
+    return { staffRejected: true };
+  }
+  if (!response.ok || !body || !body.script || !body.script.id) {
+    setCreateStatus(libraryErrorMessage(response, body, 'The production was not created. The live show was not changed.'), 'alert');
+    return null;
+  }
+  if (createSession) createSession.creationAttempts = {};
+  return {
+    id: body.script.id,
+    title: body.script.title,
+    revision: body.script.revision,
+  };
+}
+
+async function postCreateAsset(scriptId, file, assetId) {
+  const headers = {
+    'Content-Type': file.type || 'application/octet-stream',
+    'X-Asset-Name': encodeURIComponent(file.name || 'Image'),
+  };
+  if (assetId) headers['X-Asset-Id'] = assetId;
+  const response = await libraryFetch(`/api/library/${scriptId}/assets`, {
+    method: 'POST',
+    headers,
+    body: file,
+  });
+  const body = await readLibraryJson(response);
+  if (response.status === 401) {
+    return { ok: false, status: 401, error: 'The staff access code was not accepted.' };
+  }
+  if (!response.ok || !body || !body.asset) {
+    return {
+      ok: false,
+      status: response.status,
+      error: libraryErrorMessage(response, body, 'That image was not uploaded.'),
+    };
+  }
+  return { ok: true, status: response.status, name: body.asset.name || file.name || 'Image' };
+}
+
+async function uploadQueuedAssets(session, retry) {
+  pruneUploadResults(session);
+  const queue = createUploadQueue(session);
+  for (let index = 0; index < queue.length; index += 1) {
+    const item = queue[index];
+    if (retry && !item.assetId) {
+      rememberUpload(session, {
+        key: item.key,
+        name: item.name,
+        status: 'failed',
+        error: 'This browser could not keep a stable image id, so that image was not uploaded again.',
+      });
+      continue;
+    }
+    setCreateStatus(`Uploading ${index + 1} of ${queue.length}: ${item.name}`, 'status');
+    try {
+      const outcome = await postCreateAsset(session.created.id, item.file, item.assetId);
+      if (outcome.status === 401) {
+        rememberUpload(session, {
+          key: item.key,
+          name: item.name,
+          status: 'failed',
+          error: outcome.error,
+        });
+        setStaffToken('');
+        const ui = libraryDom();
+        ui.access.hidden = false;
+        setLibraryStatus('The staff access code was not accepted.', 'alert');
+        return;
+      }
+      if (outcome.ok) {
+        rememberUpload(session, {
+          key: item.key,
+          name: outcome.name,
+          status: 'uploaded',
+          error: '',
+        });
+      } else {
+        rememberUpload(session, {
+          key: item.key,
+          name: item.name,
+          status: 'failed',
+          error: outcome.error,
+        });
+      }
+    } catch (err) {
+      rememberUpload(session, {
+        key: item.key,
+        name: item.name,
+        status: 'failed',
+        error: 'That image was not uploaded. The live show was not changed.',
+      });
+    }
+  }
+}
+
+async function runCreateSubmission(retry) {
+  if (!createSession || createSession.submitting) return;
+  if (retry && !createSession.created) return;
+  if (!retry && createSession.created) return;
+  const ui = libraryDom();
+  if (!retry) {
+    const title = ui.createTitle.value;
+    if (!String(title || '').trim()) {
+      setCreateStatus('Enter a production title.', 'alert');
+      ui.createTitle.focus();
+      return;
+    }
+    if (!createSession.script) {
+      setCreateStatus('Choose a .txt script file. Choosing the file does not create a production.', 'alert');
+      ui.createScript.focus();
+      return;
+    }
+    const checked = ScriptEditor.validate(createSession.script.text);
+    if (!checked.ok) {
+      setCreateStatus(checked.errors.map((error) => error.message).join(' '), 'alert');
+      return;
+    }
+  } else if (!createUploadQueue(createSession).length) {
+    return;
+  }
+  if (!libraryGuard.tryStart()) {
+    setCreateStatus('Wait for the current library action to finish.', 'alert');
+    return;
+  }
+  createSession.submitting = true;
+  renderCreateForm();
+  let staffRejected = false;
+  try {
+    if (!createSession.created) {
+      setCreateStatus('Creating the production…', 'status');
+      const created = await postCreateProduction(ui.createTitle.value, createSession.script.text);
+      if (!created || created.staffRejected || created.identityBlocked) {
+        staffRejected = Boolean(created && created.staffRejected);
+        return;
+      }
+      createSession.created = created;
+      libraryHighlightId = created.id;
+    }
+    await uploadQueuedAssets(createSession, retry);
+    const failures = createSession.results.filter((item) => item.status === 'failed');
+    const short = failures.length
+      ? `Created “${createSession.created.title}”, but ${failures.length} image ${failures.length === 1 ? 'upload' : 'uploads'} failed. The production was kept and is not live.`
+      : `Created “${createSession.created.title}”. It is not the live show.`;
+    await refreshLibrary(short);
+    setCreateStatus(describeCreateResult(createSession), failures.length ? 'alert' : 'status');
+  } catch (err) {
+    const kept = createSession && createSession.created
+      ? `“${createSession.created.title}” was created and kept. The live show was not changed.`
+      : 'The production was not created. The live show was not changed.';
+    setCreateStatus(kept, 'alert');
+  } finally {
+    if (createSession) createSession.submitting = false;
+    libraryGuard.finish();
+    renderCreateForm();
+    if (staffRejected) {
+      ui.access.hidden = false;
+      ui.create.hidden = true;
+      ui.token.focus();
+      return;
+    }
+    if (createSession && createSession.created) {
+      if (!ui.createRetry.hidden) ui.createRetry.focus();
+      else ui.createEdit.focus();
+    }
+  }
+}
+
+function openCreatedInEditor() {
+  if (!createSession || !createSession.created || createSession.submitting) return;
+  const entry = createSession.created;
+  const failed = createSession.results.some((item) => item.status === 'failed');
+  if (!failed) finishCreateForm();
+  editLibraryScript(entry);
 }
 
 async function previewLibraryScript(id) {
@@ -466,6 +1192,15 @@ async function renameLibraryScript(entry, title) {
       body: JSON.stringify({ title, expectedRevision: entry.revision }),
     });
     const body = await readLibraryJson(response);
+    const partial = ScriptLibrary.partialSaveOutcome(body);
+    if (partial) {
+      if (partial.titleSaved && body.script) {
+        await refreshLibrary(partial.message);
+        return;
+      }
+      setLibraryStatus(partial.message, 'alert');
+      return;
+    }
     if (!response.ok || !body || !body.script) {
       setLibraryStatus(libraryErrorMessage(response, body, 'The title was not changed.'), 'alert');
       return;
@@ -478,15 +1213,24 @@ async function renameLibraryScript(entry, title) {
   }
 }
 
+function savedHeadIsLive(entry, productionIsLive) {
+  if (entry && entry.liveVersionId && entry.versionId) {
+    return entry.liveVersionId === entry.versionId;
+  }
+  return Boolean(productionIsLive);
+}
+
 function beginLibrarySetLive(entry) {
-  if (entry.live || entry.id === liveShow.getLiveScriptId()) return;
+  const productionIsLive = Boolean(entry && (entry.live || entry.id === liveShow.getLiveScriptId()));
+  if (savedHeadIsLive(entry, productionIsLive)) return;
   if (!libraryGuard.tryStart()) return;
   libraryGuard.finish();
   libraryPendingId = entry.id;
   libraryPendingRevision = ScriptLibrary.reviewedLiveRevision(entry, libraryReviewed);
   libraryPendingReview = false;
   const ui = libraryDom();
-  const content = ScriptLibrary.liveSwitchConfirmContent(libraryCurrentTitle(), entry.title);
+  const noLiveYet = !liveShow.getLiveScriptId() && !libraryLiveIdCached;
+  const content = ScriptLibrary.liveSwitchConfirmContent(noLiveYet ? 'No script is live yet' : libraryCurrentTitle(), entry.title);
   ui.confirmBody.replaceChildren();
   ui.confirmStatus.textContent = '';
   ui.confirmStatus.classList.remove('editor-error');
@@ -502,6 +1246,7 @@ function beginLibrarySetLive(entry) {
     notes.append(item);
   });
   ui.confirmBody.append(message, notes);
+  ui.confirm.dataset.mode = '';
   ui.confirmYes.textContent = ScriptLibrary.setLiveRequestState(false).label;
   ui.confirmYes.disabled = false;
   ui.confirmNo.disabled = false;
@@ -516,6 +1261,9 @@ function hideLibraryConfirm() {
   libraryPendingRevision = '';
   libraryPendingReview = false;
   libraryPendingAsset = null;
+  ui.confirm.dataset.mode = '';
+  ui.confirm.dataset.sourceVersionId = '';
+  ui.confirm.dataset.expectedVersionId = '';
   ui.confirm.hidden = true;
   ui.confirmStatus.textContent = '';
   ui.confirmStatus.classList.remove('editor-error');
@@ -533,6 +1281,7 @@ function beginRemoveLibraryImage(asset) {
   ui.confirmBody.replaceChildren();
   ui.confirmStatus.textContent = '';
   ui.confirmStatus.classList.remove('editor-error');
+  ui.confirm.dataset.mode = '';
   ui.confirmHeading.textContent = 'Remove this image?';
   const message = doc.createElement('p');
   message.className = 'editor-confirm-message';
@@ -637,6 +1386,8 @@ async function openLibraryImages(entry) {
   ui.add.hidden = true;
   ui.list.hidden = true;
   ui.empty.hidden = true;
+  ui.create.hidden = true;
+  ui.createOpen.hidden = true;
   ui.images.hidden = false;
   ui.imagesTitle.textContent = `Images for ${entry.title || 'this production'}`;
   setImageStatus('Loading images…', 'status');
@@ -650,24 +1401,37 @@ async function uploadLibraryImage() {
   ui.imageFile.value = '';
   if (!file || !libraryImagesScriptId) return;
   if (!libraryGuard.tryStart()) return;
+  const signature = manageFileSignature(file);
+  let assetId = null;
+  if (manageAsset && manageAsset.failed && manageAsset.signature === signature && manageAsset.id) {
+    assetId = manageAsset.id;
+  } else {
+    assetId = newRequestId();
+  }
+  manageAsset = { id: assetId, signature, failed: false };
   setImageStatus('Uploading image…', 'status');
   try {
+    const headers = {
+      'Content-Type': file.type || 'application/octet-stream',
+      'X-Asset-Name': encodeURIComponent(file.name || 'Image'),
+    };
+    if (assetId) headers['X-Asset-Id'] = assetId;
     const response = await libraryFetch(`/api/library/${libraryImagesScriptId}/assets`, {
       method: 'POST',
-      headers: {
-        'Content-Type': file.type || 'application/octet-stream',
-        'X-Asset-Name': encodeURIComponent(file.name || 'Image'),
-      },
+      headers,
       body: file,
     });
     const body = await readLibraryJson(response);
     if (!response.ok || !body || !body.asset) {
+      if (manageAsset) manageAsset.failed = true;
       setImageStatus(libraryErrorMessage(response, body, 'That image was not uploaded.'), 'alert');
       return;
     }
+    manageAsset = null;
     setImageStatus(`Uploaded “${body.asset.name}”. The live show was not changed.`, 'status');
     await refreshLibraryImages();
   } catch (err) {
+    if (manageAsset) manageAsset.failed = true;
     setImageStatus('That image was not uploaded. The live show was not changed.', 'alert');
   } finally {
     libraryGuard.finish();
@@ -730,6 +1494,434 @@ async function reviewLatestBeforeSetLive() {
   }
 }
 
+function shortVersionId(id) {
+  if (typeof id !== 'string' || id.length < 13) return 'Unknown version';
+  return `${id.slice(0, 8)}…${id.slice(-4)}`;
+}
+
+function originLabel(origin) {
+  if (origin === 'original') return 'Original';
+  if (origin === 'migrated') return 'Migrated';
+  if (origin === 'edited') return 'Edited';
+  return '';
+}
+
+function historyOrder(versions) {
+  return versions.slice().sort((left, right) => {
+    if (left.createdAt !== right.createdAt) {
+      if (!left.createdAt) return 1;
+      if (!right.createdAt) return -1;
+      return left.createdAt < right.createdAt ? 1 : -1;
+    }
+    if (left.versionId === right.versionId) return 0;
+    return left.versionId < right.versionId ? 1 : -1;
+  });
+}
+
+function revokeHistoryUrls() {
+  if (!objectUrls) {
+    historyObjectUrls.length = 0;
+    return;
+  }
+  historyObjectUrls.splice(0).forEach((url) => {
+    try { objectUrls.revokeObjectURL(url); } catch (err) { /* The preview is already gone. */ }
+  });
+}
+
+function setHistoryStatus(message, tone) {
+  const status = libraryDom().historyStatus;
+  status.dataset.tone = tone || 'status';
+  status.textContent = message || '';
+  status.setAttribute('role', tone === 'alert' ? 'alert' : 'status');
+}
+
+function hideVersionHistory() {
+  const ui = libraryDom();
+  revokeHistoryUrls();
+  historyProductionId = null;
+  historyDetail = null;
+  ui.history.hidden = true;
+  ui.historyPreview.hidden = true;
+  ui.historyList.replaceChildren();
+  ui.historyWarning.hidden = true;
+  ui.historyWarning.textContent = '';
+  if (ui.historyPreviewText) ui.historyPreviewText.textContent = '';
+  if (ui.historyPreviewImages) ui.historyPreviewImages.replaceChildren();
+}
+
+function versionMarks(version) {
+  const marks = [];
+  if (version.savedHead) marks.push('Saved head');
+  if (version.live) marks.push('Live now');
+  if (version.previousLive) marks.push('Previous live');
+  const origin = originLabel(version.origin);
+  if (origin) marks.push(origin);
+  return marks;
+}
+
+function versionImageNote(version) {
+  if (!version || version.imageBytesImmutable !== false) return '';
+  if (version.legacyImagePolicy === 'shared-images') {
+    return 'Uses a shared image. Historical replay is not guaranteed.';
+  }
+  return 'Image bytes are not an immutable snapshot.';
+}
+
+function renderHistoryList() {
+  const ui = libraryDom();
+  const listing = historyListing;
+  ui.historyList.replaceChildren();
+  ui.historyPreview.hidden = true;
+  revokeHistoryUrls();
+  if (!listing || !Array.isArray(listing.versions)) return;
+  const excluded = (Array.isArray(listing.orphans) && listing.orphans.length)
+    || (Array.isArray(listing.diagnostics) && listing.diagnostics.length);
+  ui.historyWarning.hidden = !excluded;
+  ui.historyWarning.textContent = excluded
+    ? 'Some incomplete or damaged versions were excluded from history.'
+    : '';
+  historyOrder(listing.versions.filter((version) => version && version.committed !== false)).forEach((version) => {
+    const card = doc.createElement('article');
+    card.className = 'history-version';
+    const title = doc.createElement('h4');
+    title.className = 'library-title';
+    title.textContent = shortVersionId(version.versionId);
+    title.title = version.versionId || '';
+    const when = doc.createElement('p');
+    when.className = 'library-meta';
+    when.textContent = version.createdAt
+      ? `Created ${formatModified(version.createdAt)}`
+      : 'Creation time was not recorded';
+    const marks = doc.createElement('p');
+    marks.className = 'history-marks';
+    versionMarks(version).forEach((label) => {
+      const mark = doc.createElement('span');
+      mark.className = 'history-mark';
+      mark.textContent = label;
+      marks.append(mark);
+    });
+    const identity = doc.createElement('p');
+    identity.className = 'library-note';
+    identity.textContent = `Version id ${version.versionId}`;
+    card.append(title, when, marks, identity);
+    const imageNote = versionImageNote(version);
+    if (imageNote) {
+      const warning = doc.createElement('p');
+      warning.className = 'library-note';
+      warning.textContent = imageNote;
+      card.append(warning);
+    }
+    const actions = doc.createElement('div');
+    actions.className = 'library-actions';
+    const preview = doc.createElement('button');
+    preview.type = 'button';
+    preview.className = 'btn';
+    preview.textContent = 'Preview';
+    preview.setAttribute('aria-label', `Preview version ${shortVersionId(version.versionId)} of ${historyTitle || 'this production'}`);
+    preview.disabled = historyBusy;
+    preview.addEventListener('click', () => previewHistoricalVersion(version.versionId));
+    const restore = doc.createElement('button');
+    restore.type = 'button';
+    restore.className = 'btn';
+    restore.textContent = 'Restore as New Saved Version';
+    restore.setAttribute('aria-label', `Restore version ${shortVersionId(version.versionId)} of ${historyTitle || 'this production'} as a new saved version`);
+    restore.disabled = historyBusy;
+    restore.addEventListener('click', () => beginHistoryRestore(version.versionId));
+    actions.append(preview, restore);
+    card.append(actions);
+    ui.historyList.append(card);
+  });
+}
+
+async function loadVersionHistory(keptStatus) {
+  const ui = libraryDom();
+  const productionId = historyProductionId;
+  if (!productionId) return;
+  setHistoryStatus(keptStatus || 'Loading version history…', 'status');
+  let response;
+  let body;
+  try {
+    response = await libraryFetch(`/api/library/${productionId}/versions`);
+    body = await readLibraryJson(response);
+  } catch (err) {
+    setHistoryStatus('Version history could not be loaded. The live show was not changed.', 'alert');
+    return;
+  }
+  if (historyProductionId !== productionId) return;
+  if (response.status === 404) {
+    historyListing = null;
+    ui.historyList.replaceChildren();
+    ui.historyWarning.hidden = true;
+    setHistoryStatus('Version history is not available on this library. The saved scripts and the live show were not changed.', 'status');
+    return;
+  }
+  if (!response.ok || !body || body.ok !== true || !Array.isArray(body.versions)) {
+    setHistoryStatus(libraryErrorMessage(response, body, 'Version history could not be loaded. The live show was not changed.'), 'alert');
+    return;
+  }
+  historyListing = body;
+  renderHistoryList();
+  if (!keptStatus) setHistoryStatus('', 'status');
+}
+
+async function openVersionHistory(productionId, title) {
+  if (!enabled || !productionId) return;
+  const ui = libraryDom();
+  if (!ui.dialog.open) ui.dialog.showModal();
+  ui.confirm.hidden = true;
+  ui.workspace.inert = false;
+  ui.preview.hidden = true;
+  ui.images.hidden = true;
+  ui.add.hidden = true;
+  ui.list.hidden = true;
+  ui.empty.hidden = true;
+  ui.create.hidden = true;
+  ui.createOpen.hidden = true;
+  historyProductionId = productionId;
+  historyTitle = title || 'this production';
+  historyDetail = null;
+  ui.history.hidden = false;
+  ui.historyTitle.textContent = `Version History: ${historyTitle}`;
+  ui.historyPreview.hidden = true;
+  const back = doc.getElementById('library-history-back');
+  if (back) back.focus();
+  await loadVersionHistory('');
+}
+
+function hideHistoricalPreview() {
+  const ui = libraryDom();
+  revokeHistoryUrls();
+  historyDetail = null;
+  ui.historyPreview.hidden = true;
+  ui.historyPreviewText.textContent = '';
+  ui.historyPreviewImages.replaceChildren();
+  ui.historyPreviewMeta.textContent = '';
+  renderHistoryList();
+  const back = doc.getElementById('library-history-back');
+  if (back) back.focus();
+}
+
+function previewImageStatus(images) {
+  if (!images) return 'Image status was not reported.';
+  const lines = [];
+  if (images.imageBytesImmutable === false) {
+    lines.push('Historical image replay is not guaranteed.');
+  }
+  (images.sharedImages || []).forEach((image) => {
+    lines.push(`Shared image ${image.reference || 'reference'}: the file can still change, and it was not copied into this version.`);
+  });
+  (images.ownedImages || []).forEach((image) => {
+    lines.push(image.available
+      ? `Owned image ${shortVersionId(image.assetId)} is available from this production.`
+      : `Owned image ${shortVersionId(image.assetId)} is missing or damaged.`);
+  });
+  if (!lines.length) lines.push('This version does not add an image warning.');
+  return lines.join(' ');
+}
+
+async function previewHistoricalVersion(versionId) {
+  const ui = libraryDom();
+  const productionId = historyProductionId;
+  if (!productionId || !versionId || historyBusy) return;
+  setHistoryStatus('Loading the historical preview…', 'status');
+  let response;
+  let body;
+  try {
+    response = await libraryFetch(`/api/library/${productionId}/versions/${versionId}`);
+    body = await readLibraryJson(response);
+  } catch (err) {
+    setHistoryStatus('The historical version could not be previewed. The live show was not changed.', 'alert');
+    return;
+  }
+  if (historyProductionId !== productionId) return;
+  if (!response.ok || !body || !body.version || typeof body.version.text !== 'string') {
+    setHistoryStatus(libraryErrorMessage(response, body, 'The historical version could not be previewed. The live show was not changed.'), 'alert');
+    return;
+  }
+  historyDetail = body;
+  revokeHistoryUrls();
+  ui.historyPreview.hidden = false;
+  ui.historyPreviewTitle.textContent = `Historical preview: ${shortVersionId(versionId)}`;
+  ui.historyPreviewMeta.textContent = [
+    historyTitle,
+    versionMarks(body.version).join(', ') || 'Saved version',
+    `Version id ${versionId}`,
+    previewImageStatus(body.images),
+  ].join('. ') + '.';
+  ui.historyPreviewText.textContent = body.version.text;
+  ui.historyPreviewImages.replaceChildren();
+  const owned = body.images && Array.isArray(body.images.ownedImages) ? body.images.ownedImages : [];
+  for (let index = 0; index < owned.length; index += 1) {
+    const image = owned[index];
+    if (!image || !image.available || !image.assetId) continue;
+    try {
+      const asset = await libraryFetch(`/api/library/${productionId}/assets/${image.assetId}`);
+      if (!asset.ok || historyProductionId !== productionId) continue;
+      const blob = await asset.blob();
+      const url = objectUrls.createObjectURL(blob);
+      historyObjectUrls.push(url);
+      const picture = doc.createElement('img');
+      picture.alt = `Owned image ${shortVersionId(image.assetId)} for this historical version`;
+      picture.src = url;
+      ui.historyPreviewImages.append(picture);
+    } catch (err) {
+      const missing = doc.createElement('p');
+      missing.className = 'library-note';
+      missing.textContent = `Owned image ${shortVersionId(image.assetId)} could not be shown.`;
+      ui.historyPreviewImages.append(missing);
+    }
+  }
+  setHistoryStatus('This preview is read only. The saved head and the live show were not changed.', 'status');
+  ui.historyPreviewText.focus();
+}
+
+function beginHistoryRestore(versionId) {
+  const listing = historyListing;
+  const source = listing && listing.versions && listing.versions.find((version) => version.versionId === versionId);
+  if (!source || !historyProductionId || !listing || !listing.savedHeadVersionId) {
+    setHistoryStatus('That saved version could not be selected. The live show was not changed.', 'alert');
+    return;
+  }
+  if (!libraryGuard.tryStart()) return;
+  libraryGuard.finish();
+  libraryPendingId = null;
+  libraryPendingAsset = null;
+  libraryPendingReview = false;
+  historyDetail = historyDetail && historyDetail.version && historyDetail.version.versionId === versionId
+    ? historyDetail
+    : { version: source };
+  const ui = libraryDom();
+  ui.confirmBody.replaceChildren();
+  ui.confirmStatus.textContent = '';
+  ui.confirmStatus.classList.remove('editor-error');
+  ui.confirmHeading.textContent = 'Restore this saved version?';
+  const message = doc.createElement('p');
+  message.className = 'editor-confirm-message';
+  message.textContent = `Restore ${shortVersionId(versionId)} into ${historyTitle}.`;
+  const notes = doc.createElement('ul');
+  notes.className = 'editor-confirm-notes';
+  [
+    'A new saved version is created when the text differs. If it already matches the saved head, another version is not created.',
+    'The selected version and the other saved versions stay as they are.',
+    'The saved head of this production can change.',
+    'The live show stays as it is. Actor and Audience screens will not switch to the restored version.',
+  ].forEach((note) => {
+    const item = doc.createElement('li');
+    item.textContent = note;
+    notes.append(item);
+  });
+  ui.confirmBody.append(message, notes);
+  ui.confirmYes.textContent = 'Restore as New Saved Version';
+  ui.confirmYes.disabled = false;
+  ui.confirmNo.disabled = false;
+  ui.workspace.inert = true;
+  ui.confirm.hidden = false;
+  ui.confirmYes.focus();
+  ui.confirm.dataset.mode = 'restore-saved';
+  ui.confirm.dataset.sourceVersionId = versionId;
+  ui.confirm.dataset.expectedVersionId = listing.savedHeadVersionId;
+}
+
+function restoreFailureMessage(response, body) {
+  const code = body && body.code;
+  if (response && response.status === 404 && (!body || !body.code)) {
+    return 'Version history is not available on this library. The saved scripts and the live show were not changed.';
+  }
+  if (code === 'conflict') {
+    return 'Another save changed the saved head after you opened this history. This restore was not repeated. Review the updated head, then confirm again if you still want to restore the same version. The live show was not changed.';
+  }
+  if (code === 'legacy-image') {
+    return 'This version can be previewed, but it still uses a shared images/ file. Restore did not copy that image or rewrite the script. The saved head and the live show were not changed.';
+  }
+  if (code === 'orphan-version') {
+    return 'That version is incomplete and is not part of saved history. It was not restored, and the live show was not changed.';
+  }
+  if (code === 'missing-version' || code === 'missing-production') {
+    return 'That saved version could not be found. Nothing was restored, and the live show was not changed.';
+  }
+  if (code === 'missing-asset' || code === 'corrupt-asset') {
+    return `${body.error || 'A required image could not be verified.'} The saved head and the live show were not changed.`;
+  }
+  if (code === 'foreign-asset') {
+    return 'An image in that version belongs to another production. It was not copied, and the live show was not changed.';
+  }
+  if (code === 'invalid-script') {
+    return `${body.error || 'That historical script is not valid.'} Nothing was restored, and the live show was not changed.`;
+  }
+  if (code === 'version-exists') {
+    return 'That new version id was already used and was not overwritten. Another copy was not created. The live show was not changed.';
+  }
+  if (code === 'indeterminate' || code === 'unconfirmed-head' || code === 'storage-failure') {
+    return 'The server did not confirm the result. This restore was not reported as rolled back. The same new version id will be kept if you try this restoration again. The live show was not changed.';
+  }
+  if (response && response.status === 401) return 'The staff access code was not accepted.';
+  return libraryErrorMessage(response, body, 'The saved version was not restored. The live show was not changed.');
+}
+
+async function runHistoryRestore() {
+  const ui = libraryDom();
+  if (ui.confirm.dataset.mode !== 'restore-saved' || historyBusy) return;
+  const productionId = historyProductionId;
+  const sourceVersionId = ui.confirm.dataset.sourceVersionId;
+  const expectedVersionId = ui.confirm.dataset.expectedVersionId;
+  if (!productionId || !sourceVersionId || !expectedVersionId) return;
+  if (historyRestoreSource !== sourceVersionId || !historyRestoreId) {
+    historyRestoreId = newRequestId();
+    historyRestoreSource = sourceVersionId;
+  }
+  if (!historyRestoreId) {
+    ui.confirmStatus.classList.add('editor-error');
+    ui.confirmStatus.textContent = 'A new version id could not be created. Nothing was restored, and the live show was not changed.';
+    return;
+  }
+  if (!libraryGuard.tryStart()) return;
+  historyBusy = true;
+  ui.confirmYes.disabled = true;
+  ui.confirmNo.disabled = true;
+  ui.confirm.setAttribute('aria-busy', 'true');
+  ui.confirmYes.textContent = 'Restoring…';
+  const attemptId = historyRestoreId;
+  try {
+    const response = await libraryFetch(`/api/library/${productionId}/versions/${sourceVersionId}/restore`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Version-Id': attemptId,
+      },
+      body: JSON.stringify({ expectedVersionId }),
+    });
+    const body = await readLibraryJson(response);
+    if (!response.ok || !body || body.ok !== true) {
+      ui.confirmStatus.classList.add('editor-error');
+      ui.confirmStatus.textContent = restoreFailureMessage(response, body);
+      ui.confirmYes.disabled = true;
+      ui.confirmNo.disabled = false;
+      ui.confirmNo.focus();
+      if (body && body.code === 'conflict') await loadVersionHistory('');
+      return;
+    }
+    historyRestoreId = null;
+    historyRestoreSource = null;
+    const unchanged = body.unchanged === true;
+    const message = unchanged
+      ? 'This text is already the saved head. Another version was not created. The live show was not changed.'
+      : `Saved a new version from ${shortVersionId(sourceVersionId)}. It is the saved head now and it is not live. Actor and Audience screens were not changed.`;
+    hideLibraryConfirm();
+    await refreshLibrary(message);
+    if (historyProductionId === productionId) await loadVersionHistory(message);
+    noteSavedHead(productionId, { unchanged, message, savedHeadVersionId: body.savedHeadVersionId });
+  } catch (err) {
+    ui.confirmStatus.classList.add('editor-error');
+    ui.confirmStatus.textContent = 'The server did not confirm the result. This restore was not reported as rolled back. The same new version id will be kept if you try this restoration again. The live show was not changed.';
+    ui.confirmYes.disabled = true;
+    ui.confirmNo.disabled = false;
+  } finally {
+    historyBusy = false;
+    libraryGuard.finish();
+    ui.confirm.setAttribute('aria-busy', 'false');
+  }
+}
+
 function closeLibrary() {
   const ui = libraryDom();
   if (!ui.confirm.hidden) {
@@ -737,9 +1929,20 @@ function closeLibrary() {
     hideLibraryConfirm();
     return;
   }
+  if (createSession && createSession.submitting) return;
+  if (createSession && !createSession.created) {
+    finishCreateForm();
+    return;
+  }
   hideLibraryPreview();
   hideLibraryImages();
+  hideVersionHistory();
   if (ui.dialog.open) ui.dialog.close();
+  if (isEditorOpen()) {
+    const historyButton = doc.getElementById('editor-version-history');
+    if (historyButton) historyButton.focus();
+    return;
+  }
   doc.getElementById('btn-script-library').focus();
 }
 
@@ -749,7 +1952,19 @@ function bindLibrary() {
   doc.getElementById('library-close').addEventListener('click', closeLibrary);
   doc.getElementById('library-token-continue').addEventListener('click', continueLibraryAccess);
   ui.add.addEventListener('submit', saveCurrentLiveScript);
-  ui.file.addEventListener('change', importLibraryFile);
+  ui.createOpen.addEventListener('click', beginCreateForm);
+  ui.create.addEventListener('submit', (event) => {
+    event.preventDefault();
+    return runCreateSubmission(false);
+  });
+  ui.createCancel.addEventListener('click', finishCreateForm);
+  ui.createRetry.addEventListener('click', () => runCreateSubmission(true));
+  ui.createEdit.addEventListener('click', openCreatedInEditor);
+  ui.createScript.addEventListener('change', onCreateScriptChosen);
+  ui.createCard.addEventListener('change', onCreateCardChosen);
+  ui.createScenes.addEventListener('change', onCreateScenesChosen);
+  ui.createScriptClear.addEventListener('click', clearCreateScript);
+  ui.createCardClear.addEventListener('click', clearCreateCard);
   doc.getElementById('library-preview-back').addEventListener('click', () => {
     hideLibraryPreview();
     setLibraryStatus('', 'status');
@@ -766,9 +1981,21 @@ function bindLibrary() {
     hideLibraryConfirm();
   });
   ui.confirmYes.addEventListener('click', () => {
-    if (libraryPendingAsset) runRemoveLibraryImage();
+    if (ui.confirm.dataset.mode === 'restore-saved') runHistoryRestore();
+    else if (libraryPendingAsset) runRemoveLibraryImage();
     else if (libraryPendingReview) reviewLatestBeforeSetLive();
     else runLibrarySetLive();
+  });
+  doc.getElementById('library-history-back').addEventListener('click', () => {
+    hideVersionHistory();
+    revealLibraryHome();
+    setLibraryStatus('', 'status');
+    doc.getElementById('library-close').focus();
+  });
+  doc.getElementById('library-history-preview-back').addEventListener('click', hideHistoricalPreview);
+  ui.historyRestore.addEventListener('click', () => {
+    const version = historyDetail && historyDetail.version;
+    if (version) beginHistoryRestore(version.versionId);
   });
   ui.confirm.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
@@ -803,6 +2030,7 @@ function bindLibrary() {
       if (config.openEditor) openEditor = config.openEditor;
       if (config.editorIsOpen) isEditorOpen = config.editorIsOpen;
       if (config.showControllerNotice) showControllerNotice = config.showControllerNotice;
+      if (config.noteSavedHead) noteSavedHead = config.noteSavedHead;
       if (config.revokePreviewUrls) revokePreviewUrls = config.revokePreviewUrls;
       if (config.showResolvedImage) showResolvedImage = config.showResolvedImage;
       if (config.appendSlidePreview) appendSlidePreview = config.appendSlidePreview;
@@ -814,6 +2042,7 @@ function bindLibrary() {
     return {
       init,
       open: openLibrary,
+      openHistory: openVersionHistory,
       isOpen,
       isEnabled,
       fetch: libraryFetch,

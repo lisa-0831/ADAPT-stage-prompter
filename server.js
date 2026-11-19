@@ -12,6 +12,7 @@ const {
 } = require('./script-library');
 const { registerHttpRoutes } = require('./server/http-routes');
 const { registerLiveSocketHandlers } = require('./server/live-socket');
+const { detectStorageMode, StorageModeError } = require('./server/storage-mode');
 const {
   commitLiveFiles,
   recoverLiveFiles,
@@ -55,6 +56,54 @@ function createPrompterServer(options = {}) {
   const libraryDir = options.libraryDir
     || process.env.SCRIPT_LIBRARY_DIR
     || path.join(path.dirname(scriptFile), 'data', 'library');
+  const journalDir = options.journalDir
+    || path.join(path.dirname(scriptFile), 'data', 'live-journal');
+  // Decide the storage mode before opening the library, recovering the
+  // journal, adopting script.txt, or creating a network server.
+  // A committed marker is not permission to start. Versioned startup is
+  // returned only for a fixture token or a persistent-root token created
+  // from an authorization file. Headers, query parameters, and environment
+  // variables cannot create either token.
+  const storageMode = detectStorageMode({ libraryDir });
+  if (storageMode.mode !== 'legacy') {
+    const runtime = require('./server/versioned-runtime');
+    const storagePaths = {
+      libraryDir,
+      scriptFile,
+      previousFile,
+      journalDir,
+    };
+    const fixtureOk = runtime.fixtureAuthorizationAccepted(options.versionedFixture, storagePaths);
+    const persistentOk = runtime.persistentAuthorizationAccepted(options.persistentRoot, storagePaths);
+    if (fixtureOk && persistentOk) {
+      throw new StorageModeError(
+        'ambiguous-authorization',
+        'Refusing to start. Versioned startup received both a fixture token and a persistent-root token.',
+      );
+    }
+    if (!fixtureOk && !persistentOk) {
+      throw new StorageModeError(
+        'unsupported-versioned-storage',
+        'Refusing to start. This library has a committed migration.json, and this server cannot load versioned storage yet. It will not read script.txt as the show, change the library, or listen for clients. Leave the marker in place.',
+      );
+    }
+    return runtime.bootAuthorizedVersionedServer({
+      scriptFile,
+      previousFile,
+      libraryDir,
+      journalDir,
+      staffToken: options.staffToken,
+      imageMaxBytes: options.imageMaxBytes,
+      staticRoot: __dirname,
+      versionedFixture: options.versionedFixture,
+      persistentRoot: options.persistentRoot,
+      now: options.now,
+      createId: options.createId,
+      failSynchronization: options.failSynchronization,
+      deferSynchronization: options.deferSynchronization === true,
+      allowFaults: options.allowFaults === true,
+    });
+  }
   const staffToken = options.staffToken !== undefined
     ? options.staffToken
     : (process.env.PROMPTER_STAFF_TOKEN || '');
@@ -64,8 +113,6 @@ function createPrompterServer(options = {}) {
     : (Number.isInteger(configuredLimit) && configuredLimit > 0 ? configuredLimit : 10 * 1024 * 1024);
   const library = createScriptLibrary({ dir: libraryDir, maxImageBytes: imageMaxBytes });
   const previousMetaFile = `${previousFile}.meta.json`;
-  const journalDir = options.journalDir
-    || path.join(path.dirname(scriptFile), 'data', 'live-journal');
   let libraryReady = false;
   const livePaths = {
     scriptFile,
@@ -312,7 +359,17 @@ function createPrompterServer(options = {}) {
 
 if (require.main === module) {
   const PORT = process.env.PORT || 3000;
-  const { server } = createPrompterServer();
+  let created;
+  try {
+    created = createPrompterServer();
+  } catch (err) {
+    if (err && err.name === 'StorageModeError') {
+      console.error(`[server] ${err.message}`);
+      process.exit(1);
+    }
+    throw err;
+  }
+  const { server } = created;
   server.listen(PORT, '0.0.0.0', () => {
     const { networkInterfaces } = require('os');
     const nets = networkInterfaces();

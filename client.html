@@ -11,6 +11,10 @@
 <div id="app">
   <div id="stage">
     <div id="connecting"><p>Connecting…</p></div>
+    <div id="waiting-show" hidden>
+      <p id="waiting-show-title">The performance script has not been loaded yet.</p>
+      <p id="waiting-show-setup" hidden>No script is live. Open Script Library to create a production. Saving it does not put it on stage. Set as Live does.</p>
+    </div>
     <div id="role-label"></div>
     <div id="slide-title"></div>
     <div id="title-image-overlay">
@@ -50,7 +54,7 @@
       <button class="btn" id="btn-case" type="button" aria-pressed="false" title="Switch to sentence case">AA</button>
       <button class="btn" id="btn-edit-script" type="button" aria-haspopup="dialog" aria-controls="script-editor" title="Edit the current script one scene at a time. The show does not change until you publish.">Edit Script</button>
       <button class="btn" id="btn-script-library" type="button" aria-haspopup="dialog" aria-controls="script-library" title="Save, preview, and choose from more than one script. The live show changes only when you set a script live.">Script Library</button>
-      <button class="btn" id="btn-upload-toggle" type="button" title="Paste a whole script and send it live immediately.">📄 Replace Script</button>
+      <button class="btn" id="btn-upload-toggle" type="button" title="Replace Script publishes this text. On a versioned server it saves a new version of the live production and then activates that version. It is not a temporary live-only change.">📄 Replace Script</button>
       <button class="btn danger" id="btn-exit">Exit</button>
     </div>
     <p id="controller-notice" role="status" aria-live="polite" hidden></p>
@@ -62,7 +66,10 @@
         <strong>[NAME]</strong> on its own line = character name shown in sidebar &nbsp;·&nbsp;
         <strong>{…}</strong> = stage direction (italic brown) &nbsp;·&nbsp;
         <strong>##…##</strong> = lyrics (dark green)&nbsp;·&nbsp;
-        <strong>&lt;…&gt;</strong> = sing-along (pink)
+        <strong>&lt;…&gt;</strong> = sing-along (pink)<br>
+        Replace Script keeps this text as the published show. It is not a temporary live-only paste.
+        A versioned server saves a new version of the live production, activates that version, and resets the cue only when it says the cue was reset.
+        Connected screens change only when the server says they were synchronized.
       </p>
       <textarea id="script-textarea" placeholder="# Scene 1&#10;[DOROTHY]&#10;Line of dialogue...&#10;---&#10;# Scene 2&#10;..."></textarea>
       <div class="ctrl-row">
@@ -98,7 +105,7 @@
   <p id="script-editor-help" class="editor-help">
     Choose a scene and edit the lines. Save a draft to keep the work in this browser.
     The live show does not change until you publish.
-    Replace Script is different: it pastes a whole script and goes live immediately.
+    Replace Script is separate: it publishes the pasted text. On a versioned server that is a new version of the live production, then an activation. It is not a temporary live-only change.
   </p>
   <p id="editor-status" role="status" aria-live="polite"></p>
   <p id="editor-dirty" role="status" aria-live="polite"></p>
@@ -126,6 +133,7 @@
     <button type="button" class="btn" id="editor-preview-btn" aria-expanded="false" aria-controls="editor-preview">Preview</button>
     <button type="button" class="btn primary" id="editor-publish">Publish Script</button>
     <button type="button" class="btn" id="editor-restore" hidden>Restore Previous Script</button>
+    <button type="button" class="btn" id="editor-version-history" hidden>Version History</button>
     <button type="button" class="btn" id="editor-close">Close</button>
   </div>
   </div>
@@ -165,18 +173,69 @@
     <form id="library-add">
       <label for="library-new-title">Title</label>
       <input id="library-new-title" name="title" maxlength="120" autocomplete="off" autocapitalize="off" required>
-      <p class="library-note">Adding a script creates a new saved copy. It does not replace a script already in the list.</p>
+      <p class="library-note">This saves a copy of the script that is on stage now. It does not replace a script already in the list.</p>
       <div class="ctrl-row">
         <button type="submit" class="btn primary" id="library-save-live">Save current live script</button>
       </div>
-      <label for="library-file">Import a plain-text script</label>
-      <input id="library-file" type="file" accept=".txt,text/plain">
     </form>
-    <p id="library-empty" hidden>No saved scripts yet. Save the current live script, or import a plain-text file.</p>
+    <div class="ctrl-row">
+      <button type="button" class="btn" id="library-create-open">Create Production</button>
+    </div>
+    <form id="library-create" hidden aria-labelledby="library-create-heading">
+      <h3 id="library-create-heading">Create Production</h3>
+      <p class="library-note" id="library-create-note">Choosing files only prepares this form. Nothing is saved until you choose Create Production, and the live show does not change.</p>
+      <p id="library-create-status" role="status" aria-live="polite" data-tone="status"></p>
+      <label for="library-create-name">Production title</label>
+      <input id="library-create-name" maxlength="120" autocomplete="off" autocapitalize="off">
+      <label for="library-create-script">Script file (.txt)</label>
+      <input id="library-create-script" type="file" accept=".txt,text/plain">
+      <div id="library-create-script-picked" class="library-picked" hidden>
+        <p id="library-create-script-name"></p>
+        <button type="button" class="btn" id="library-create-script-clear">Remove script</button>
+      </div>
+      <label for="library-create-card">Title card (optional)</label>
+      <input id="library-create-card" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp">
+      <p class="library-note" id="library-create-card-hint">A title card is stored with this production. It is not assigned to a scene until you choose it in Edit.</p>
+      <div id="library-create-card-picked" class="library-picked" hidden>
+        <img id="library-create-card-preview" alt="">
+        <p id="library-create-card-name"></p>
+        <button type="button" class="btn" id="library-create-card-clear">Remove title card</button>
+      </div>
+      <label for="library-create-scenes">Additional scene images (optional)</label>
+      <input id="library-create-scenes" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" multiple>
+      <div id="library-create-scene-list"></div>
+      <p id="library-create-review" class="library-note"></p>
+      <div class="ctrl-row">
+        <button type="submit" class="btn primary" id="library-create-submit">Create Production</button>
+        <button type="button" class="btn" id="library-create-retry" hidden>Retry failed images</button>
+        <button type="button" class="btn" id="library-create-edit" hidden>Open in Editor</button>
+        <button type="button" class="btn" id="library-create-cancel">Cancel</button>
+      </div>
+    </form>
+    <p id="library-empty" hidden>No saved scripts yet. Save the current live script, or create a production.</p>
     <div id="library-list" aria-live="polite"></div>
     <div id="library-preview" hidden>
       <button type="button" class="btn" id="library-preview-back">Back to library</button>
       <div id="library-preview-body" tabindex="-1"></div>
+    </div>
+    <div id="library-history" hidden>
+      <button type="button" class="btn" id="library-history-back">Back to library</button>
+      <h3 id="library-history-title">Version History</h3>
+      <p class="library-note" id="library-history-note">These are saved versions of this production, newest creation time first. A missing creation time is listed after dated versions. Preview does not change the live show. Restore as New Saved Version keeps every older version and does not set the result live.</p>
+      <p id="library-history-status" role="status" aria-live="polite"></p>
+      <p id="library-history-warning" class="library-note" hidden></p>
+      <div id="library-history-list"></div>
+      <div id="library-history-preview" hidden>
+        <h3 id="library-history-preview-title">Historical preview</h3>
+        <p class="library-note">Read only. This text is not in the editor and it is not on stage.</p>
+        <p id="library-history-preview-meta" class="library-note"></p>
+        <div id="library-history-preview-images"></div>
+        <pre id="library-history-preview-text" tabindex="0"></pre>
+        <div class="ctrl-row">
+          <button type="button" class="btn" id="library-history-preview-back">Back to versions</button>
+          <button type="button" class="btn primary" id="library-history-restore">Restore as New Saved Version</button>
+        </div>
+      </div>
     </div>
     <div id="library-images" hidden>
       <button type="button" class="btn" id="library-images-back">Back to library</button>
@@ -369,6 +428,26 @@ PrompterStage.init({
       : PrompterLiveShow.getLiveState();
   },
 });
+function showWaitingState(awaiting) {
+  const panel = document.getElementById('waiting-show');
+  const setup = document.getElementById('waiting-show-setup');
+  if (panel) panel.hidden = !awaiting;
+  if (setup) setup.hidden = !awaiting || !isController;
+  if (!isController) return;
+  ['btn-edit-script', 'btn-upload-toggle', 'btn-prev', 'btn-next', 'btn-prev-slide', 'btn-next-slide', 'slide-select', 'btn-case'].forEach((id) => {
+    const control = document.getElementById(id);
+    if (control) control.disabled = awaiting;
+  });
+  const notice = document.getElementById('controller-notice');
+  if (!notice) return;
+  if (awaiting) {
+    notice.hidden = false;
+    notice.textContent = 'No script is live. Create a production in Script Library, then choose Set as Live. Saving a production does not activate it.';
+  } else if (notice.textContent.indexOf('No script is live') === 0) {
+    notice.textContent = '';
+    notice.hidden = true;
+  }
+}
 PrompterConnection.init({
   isActor,
   connDot: dom.connDot,
@@ -376,6 +455,7 @@ PrompterConnection.init({
   onScriptApplied() {
     PrompterEditor.noteScriptRevision();
   },
+  onAwaitingLive: showWaitingState,
 });
 PrompterConnection.connect();
 
@@ -495,11 +575,13 @@ if (isController) {
     revokePreviewUrls,
     showResolvedImage,
     appendSlidePreview,
+    openVersionHistory: (productionId, title) => PrompterLibrary.openHistory(productionId, title),
   });
   PrompterLibrary.init({
     openEditor: (entry) => PrompterEditor.open(entry),
     editorIsOpen: () => PrompterEditor.isOpen(),
     showControllerNotice: (message) => PrompterEditor.showNotice(message),
+    noteSavedHead: (productionId, detail) => PrompterEditor.noteSavedHead(productionId, detail),
     revokePreviewUrls,
     showResolvedImage,
     appendSlidePreview,

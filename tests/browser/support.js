@@ -18,7 +18,19 @@ async function openShow(browser, baseURL, role, viewport, options) {
     reducedMotion: (options && options.reducedMotion) || 'reduce',
     viewport: viewport || { width: 1280, height: 800 },
   });
+  if (options && options.staffToken) {
+    await context.addInitScript((token) => {
+      sessionStorage.setItem('prompter-staff-token', token);
+    }, options.staffToken);
+  }
   const page = await context.newPage();
+  const sockets = [];
+  page.on('websocket', (socket) => {
+    socket.on('framereceived', (event) => {
+      const payload = typeof event.payload === 'string' ? event.payload : '';
+      try { sockets.push(JSON.parse(payload)); } catch (err) { /* Non-JSON frames are not show messages. */ }
+    });
+  });
   const errors = [];
   page.on('pageerror', (error) => errors.push(String(error)));
   page.on('console', (message) => {
@@ -33,7 +45,7 @@ async function openShow(browser, baseURL, role, viewport, options) {
   await page.goto(`${baseURL}${suffix}`);
   if (role === 'nope') await page.waitForURL(/role=viewer/);
   await expect(page.locator('#connecting')).toBeHidden();
-  return { context, page, errors };
+  return { context, page, errors, sockets };
 }
 
 function assertQuiet(pages) {

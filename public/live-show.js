@@ -12,6 +12,7 @@
     let liveState = null;
     let scriptRevision = null;
     let liveScriptId = null;
+    let awaitingLive = false;
 
     function getSlides() {
       return slides;
@@ -38,6 +39,14 @@
     // Stores a server script message. Does not clear the live cue and does
     // not decide whether an Actor returns to Follow Live. An omitted
     // liveScriptId leaves the current id in place. null clears it.
+    function setAwaitingLive(value) {
+      awaitingLive = value === true;
+    }
+
+    function isAwaitingLive() {
+      return awaitingLive;
+    }
+
     function applyScript(message) {
       const scriptChanged = scriptRevision !== null && message.revision !== scriptRevision;
       slides = message.slides;
@@ -58,6 +67,8 @@
       getRevision,
       getLiveScriptId,
       setLiveScriptId,
+      setAwaitingLive,
+      isAwaitingLive,
       applyScript,
       applyState,
     };

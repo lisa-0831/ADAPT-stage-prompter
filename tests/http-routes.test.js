@@ -71,6 +71,7 @@ test('composed http routes serve the page, keep the staff token on the library, 
     headers: {
       'Content-Type': 'application/json',
       'X-Staff-Token': 'stage-staff',
+      'X-Creation-Request-Id': '11111111-1111-4111-8111-111111111111',
     },
     body: JSON.stringify({
       title: 'Other',
@@ -93,7 +94,10 @@ test('composed http routes serve the page, keep the staff token on the library, 
 
   const published = await fetch(`${base}/script`, {
     method: 'POST',
-    headers: { 'Content-Type': 'text/plain' },
+    headers: {
+      'Content-Type': 'text/plain',
+      'X-Version-Id': 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1',
+    },
     body: '# Opening\n[ADA]\nUPDATED LINE\n',
   });
   assert.equal(published.status, 200);

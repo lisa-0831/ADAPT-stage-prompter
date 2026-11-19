@@ -1,9 +1,62 @@
+
+# Dependencies and generated test files
 node_modules/
 .DS_Store
-script.previous.txt
-script.previous.txt.meta.json
-data/
 playwright-report/
 test-results/
 blob-report/
 tests/browser/.runtime/
+
+# Credentials and runtime configuration
+.env
+.env.*
+!.env.example
+runtime-authorization.json
+migration-authorization.json
+backup-manifest.json
+.writer.lock
+
+# Backups
+/backups/
+/runtime-backups/
+
+# ==================================================
+# Library: commit seed data, ignore runtime data
+# ==================================================
+
+# Ignore all data by default
+/data/*
+
+# Library seed metadata
+!/data/library/
+/data/library/*
+!/data/library/index.json
+!/data/library/seed.json
+
+# Legacy scripts (optional migration source)
+!/data/library/scripts/
+/data/library/scripts/*
+!/data/library/scripts/*.txt
+
+# Versioned productions (supports new production IDs)
+!/data/library/productions/
+/data/library/productions/*
+!/data/library/productions/*/
+/data/library/productions/*/*
+
+# Production metadata
+!/data/library/productions/*/metadata.json
+
+# Production-owned images
+!/data/library/productions/*/assets/
+/data/library/productions/*/assets/*
+!/data/library/productions/*/assets/manifest.json
+!/data/library/productions/*/assets/*.jpg
+
+# Production version history
+!/data/library/productions/*/versions/
+/data/library/productions/*/versions/*
+!/data/library/productions/*/versions/*/
+/data/library/productions/*/versions/*/*
+!/data/library/productions/*/versions/*/script.txt
+!/data/library/productions/*/versions/*/version.json

@@ -127,6 +127,70 @@ test('a failed upload shows the existing alert and leaves the panel open', async
   assert.equal(calls[0].options.body, '# Scene\nLine');
 });
 
+test('replace script keeps one version id and describes a versioned result', async () => {
+  const calls = [];
+  const alerts = [];
+  const ui = elements();
+  let posts = 0;
+  const versionA = 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1';
+  const versionB = 'cccccccc-cccc-4ccc-8ccc-ccccccccccc2';
+  let issued = 0;
+  const workflow = createReplaceScript({
+    fetch(url, options) {
+      calls.push({ url, options: options || null });
+      if (!options) return Promise.resolve({ ok: true, text: () => Promise.resolve('CURRENT') });
+      posts += 1;
+      if (posts === 1) return Promise.resolve({ ok: false });
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({
+          ok: true,
+          synchronized: false,
+          resetPosition: false,
+          versionId: versionA,
+        }),
+      });
+    },
+    alert(message) { alerts.push(message); },
+    ScriptLibrary: require('../script-library-model'),
+    crypto: { randomUUID: () => (issued++ === 0 ? versionA : versionB) },
+  });
+  workflow.init({ elements: ui });
+  ui.textarea.value = '# Scene\nLine';
+  await ui.submit.onclick();
+  ui.textarea.value = '# Scene\nLine';
+  await ui.submit.onclick();
+  assert.equal(calls[0].options.headers['X-Version-Id'], versionA);
+  assert.equal(calls[1].options.headers['X-Version-Id'], versionA);
+  assert.match(alerts.at(-1), /new version of the live production/);
+  assert.match(alerts.at(-1), /Connected screens have not been updated/);
+  assert.match(alerts.at(-1), /did not reset the cue/);
+  assert.equal(alerts.some((message) => message === 'Upload failed — check server.'), true);
+
+  ui.textarea.value = '# Scene\nChanged';
+  calls.length = 0;
+  let nextId = 0;
+  const changedIds = [versionB, 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'];
+  const changed = createReplaceScript({
+    fetch(url, options) {
+      calls.push(options);
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true, synchronized: true }) });
+    },
+    alert(message) { alerts.push(message); },
+    ScriptLibrary: require('../script-library-model'),
+    crypto: { randomUUID: () => changedIds[nextId++] },
+  });
+  const next = elements();
+  changed.init({ elements: next });
+  next.textarea.value = '# Scene\nOne';
+  await next.submit.onclick();
+  next.textarea.value = '# Scene\nTwo';
+  await next.submit.onclick();
+  assert.equal(calls[0].headers['X-Version-Id'], versionB);
+  assert.equal(calls[1].headers['X-Version-Id'], changedIds[1]);
+  assert.notEqual(calls[0].headers['X-Version-Id'], calls[1].headers['X-Version-Id']);
+});
+
 test('separate replace panels do not share a request or a textarea', async () => {
   const first = harness();
   const second = harness();

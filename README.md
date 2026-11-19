@@ -6,35 +6,57 @@ A real-time shared script display — all devices stay in sync automatically.
 
 ## Quick Start
 
-### 1. Install dependencies (one time)
+### 1. Install dependencies
 
 ```bash
 npm install
 ```
 
+Node.js and Perl are required. Perl provides the file lock. The suites were run with Node.js v24.18.0.
+
 ### 2. Start the server
 
 ```bash
-node server.js
+npm start
 ```
 
-The terminal will print your local network address, e.g.:
+This repository already contains a Versioned Library. WELCOME is the production under `data/library/productions/`. The first start copies that seed into a durable directory on this computer and opens WELCOME as the live show. It does not run a Legacy migration, and it does not ask for `npm run setup`.
+
+A later start uses the same directory. It does not reset saved productions, versions, pictures, or which show is live. If that directory already has unrelated files, startup stops and does not delete them.
+
+The default directory is:
+
+| System | Location |
+| --- | --- |
+| macOS | `~/Library/Application Support/ADAPT Stage Prompter` |
+| Windows | `%LOCALAPPDATA%\ADAPT Stage Prompter` |
+| Linux | `~/.local/share/adapt-stage-prompter` |
+
+`library/` inside that directory is the show data. `config/` holds the local authorization file, mode `0600`. Those files are created on this computer. They are not in Git.
+
+ADAPT IT can choose another disk:
+
+```bash
+ADAPT_PROMPTER_HOME=/var/lib/adapt-stage-prompter npm start
+```
+
+`ADAPT_PROMPTER_DATA`, `ADAPT_PROMPTER_CONFIG`, and `ADAPT_PROMPTER_BACKUP` override the three directories separately. A path inside this checkout is refused. Startup also refuses `~/ADAPT-stage-prompter-data`, `~/ADAPT-stage-prompter-config`, and `~/ADAPT-stage-prompter-backups`.
+
+The server listens on this computer only:
 
 ```
-🎭  Stage Prompter running on port 3000
-   Local:   http://localhost:3000
-   Network: http://192.168.1.42:3000
+Controller: http://127.0.0.1:3000/?role=controller
+Actor:      http://127.0.0.1:3000/?role=actor
+Audience:   http://127.0.0.1:3000/?role=audience
 ```
 
-### 3. Open on devices
+`PORT=8080 npm start` changes the port. The address stays `127.0.0.1`. Phones and other computers cannot open that address. Reaching them from a venue network is a separate hosting decision in [Security Considerations and User Experience Trade-offs](#security-considerations-and-user-experience-trade-offs). An example path is not approval to put the server on a network.
 
-| Role                                    | URL                                         |
-| --------------------------------------- | ------------------------------------------- |
-| **Controller** (person advancing lines) | `http://192.168.1.42:3000/?role=controller` |
-| **Actor** (independent reading controls) | `http://192.168.1.42:3000/?role=actor`      |
-| **Audience** (live script, no controls) | `http://192.168.1.42:3000/?role=audience`   |
+Saved productions, saved versions, production-owned images, and which show is live stay in the durable directory when the Node process stops. The current cue position does not. Text typed in the browser but not saved does not. Details are in [docs/migration/local-persistent-handoff.md](docs/migration/local-persistent-handoff.md).
 
-All devices must be on the same Wi-Fi network.
+`npm run start:legacy` is the older checkout server. It can listen on the network. It is not a fallback for `npm start`, and it is not the installed library.
+
+`npm run setup` remains available for an older Legacy library that is not this seed. A normal installation does not need it. It is not approval to migrate a production library.
 
 Captions scale with the space on each screen. Audience text is the largest, so it
 stays readable when projected. Actor and Controller text is slightly smaller so
@@ -237,8 +259,9 @@ The library keeps more than one script on the server. The live show still uses o
    - **Set as Live** uses the saved copy. Save to the library first when the editor still has newer typing.
 8. **Rename** changes the title. The script text and pictures stay the same.
 9. **Set as Live** asks you to confirm. The window names the script that is live now and the script that will replace it. It stays open until the server accepts the change. Every connected screen then receives the selected script and that production's pictures. Actors who were browsing are returned to Live when the script itself changes. The cue starts at the beginning, because this is a different production.
+10. **Version History** shows the saved versions of that production. Preview reads one version on the Controller only. It does not move the live cue. Restore copies an older version into a new saved version. It does not by itself change the show that is live.
 
-The first time the server starts, the current `script.txt` is copied into the library if that text is not already saved. Starting the server again does not create a second copy of the same text. The saved scripts remain after a restart, and the server remembers which one was set live.
+The first `npm start` installs WELCOME from the seed in this repository. WELCOME is live. Starting again does not create a second copy of the same text. Shows saved after that stay in the durable directory, including after the Node process stops.
 
 ### How the old script buttons relate to the library
 
@@ -253,45 +276,61 @@ The first time the server starts, the current `script.txt` is copied into the li
 
 ---
 
-## Storage and deployment
+## Storage, restart, and backup
 
-Saved scripts and their pictures are files, not a database. They are stored in `data/library/` next to `script.txt`:
+`npm start` uses the durable directory described above. The first start creates it from the seed in this repository. A later start reuses it. `SCRIPT_LIBRARY_DIR`, `SCRIPT_FILE`, and `PREVIOUS_SCRIPT_FILE` do not select that directory.
 
-- `data/library/index.json` stores titles, ids, dates, and which script is live
-- `data/library/scripts/` stores the script text
-- `data/library/assets/<script-id>/` stores that production's pictures and a small `manifest.json` with the picture's display name, type, size, and date
+The Git repository holds the starting library:
 
-`script.txt` is still the live show. `script.previous.txt` is still the one-step backup used by **Restore Previous Script**. `script.previous.txt.meta.json` remembers which saved production that backup belonged to, so its pictures still resolve.
+- `data/library/productions/` holds WELCOME, its versions, and its pictures
+- `data/library/seed.json` records the hashes and which version of WELCOME is initially live
+- `script.txt`, `script.previous.txt`, and `images/` remain so older history can still find the shared pictures
 
-The `data/` folder is not part of git. Do not commit uploaded scripts or pictures. On a production machine, keep `data/library/` on a disk that survives restarts and deploys. Copy that whole folder, plus `script.txt`, `script.previous.txt`, and `script.previous.txt.meta.json`, when you make a backup. You can move the library with:
+New saves go to the durable directory, not back into this checkout. Do not commit that directory, its authorization file, a backup, or a staff code.
 
-```bash
-SCRIPT_LIBRARY_DIR=/var/lib/stage-prompter/library node server.js
-```
+Stopping the Node process and starting it again keeps saved productions, saved versions, production-owned pictures, and which show is live. It does not keep the cue the Controller was on, and it does not keep typing that was not saved.
 
-`SCRIPT_FILE` and `PREVIOUS_SCRIPT_FILE` still choose the live file and the previous-script backup. When `SCRIPT_LIBRARY_DIR` is not set, the library is created beside the live script file. A path on a temporary disk is wiped on the next deploy, so point `SCRIPT_LIBRARY_DIR` at storage that outlives the process. `PROMPTER_IMAGE_MAX_BYTES` changes the per-image limit. The default is 10 MB.
+Backups are an operator responsibility. Copy the durable directory only while the server is stopped, or use `scripts/backup-storage.js` on a directory ADAPT IT has approved. A backup is not a substitute for deciding who may control the show. Restoring an old backup puts back the shows from that copy and drops edits made after it.
 
-### Security limitation
+`npm run start:legacy` (`node server.js`) still opens the files in the checkout and can listen on the network. It refuses to start when it finds a committed `migration.json`. It is not the installed library. `PROMPTER_IMAGE_MAX_BYTES` changes the per-image limit. The default is 10 MB.
 
-The Controller page is not a login. `?role=controller` only changes what that browser shows. It does not authorize anyone.
+Moving an installed library to another disk is described in [docs/migration/local-persistent-handoff.md](docs/migration/local-persistent-handoff.md).
 
-**Edit Script**, **Replace Script**, and **Restore Previous Script** use `POST /script`, which has no password. Anyone who can reach the server can replace the live script. This is the same exposure the app already had.
+## Security Considerations and User Experience Trade-offs
 
-Library files are not in the public file list. A browser cannot open `data/library/` as a web address. Unpublished script text and pictures are available through the library address, not as a static file.
+This section describes risks that are still present. Writing them down does not remove them. This release does not add a login screen, a PIN, a new role, or a new step in the Controller, Actor, or Audience pages. Choosing a mitigation is a decision for ADAPT IT before any deployment beyond this computer. The comparison below is decision support. It is not a security certification, and a successful local test is not one either.
 
-Pictures for the show that is live now can be loaded by Controller, Actor, and Audience screens. That is the same exposure as the live script text. Pictures that belong to a production which is not currently in the live script are not served on that public address. Uploading, listing, and deleting pictures use the library address and, when a staff code is set, require that code. The code is sent as a header. It is not placed in the image address.
+The production gate in [docs/migration/m9c3-go-no-go.md](docs/migration/m9c3-go-no-go.md) remains **NO-GO**. `npm start` stays on `127.0.0.1`. Do not treat a configuration example as permission to bind `0.0.0.0`, open a tunnel, or put the server on the public internet.
 
-Set a shared staff code before anyone outside the trusted Wi-Fi can reach the server:
+### What is true in this release
 
-```bash
-PROMPTER_STAFF_TOKEN="choose-a-long-private-code" node server.js
-```
+The server does not know who is holding a device.
 
-When that code is set, every library request must include it. The Controller asks for the code and keeps it in that browser tab. The code is not written into the page. Do not commit the code or put it in the README.
+- Opening `?role=controller`, `?role=actor`, or `?role=audience` only changes that browser. The server accepts the same commands from any of them. Audience has no buttons, but a person who can reach the server can still send the commands another way.
+- Replace Script, Publish Script, and Restore Previous Script use `POST /script`. That request has no password. Anyone who can reach the server can change the live show or put the previous show back.
+- Cue changes use a WebSocket. `navigate`, `goto`, and `reloadScript` have no password. Anyone who can open the socket can move the cue for every connected screen.
+- Saved productions and their pictures use the library address. If `PROMPTER_STAFF_TOKEN` is not set, those requests are open. If it is set, one shared code covers the library only. It does not cover `POST /script` or the cue commands. An empty code leaves the library open. This release does not turn that code on, and it does not add accounts.
+- The live script and the pictures in the live show are readable by every connected screen, including Audience. That is how the show works. Pictures that belong to a production which is not live are not on that public picture address. The shared files in `images/` are still available to anyone who can open the server.
+- `npm start` accepts connections only from this computer. `npm run start:legacy` can listen on every network interface. Using that command, a tunnel, or a public address would expose the open commands above. The application speaks ordinary HTTP and WebSocket. It does not provide HTTPS by itself.
 
-Without `PROMPTER_STAFF_TOKEN`, anyone who can reach the server can read and change every saved script and its pictures. That is a blocking limitation for a public deployment. Keep the server on trusted Wi-Fi, and do not put it on the public internet. The staff code is one shared passphrase, not separate accounts. The live show, including the pictures named in the live script, is still sent to every connected screen, including Audience. `POST /script` remains open even when the staff code is set, so Replace Script and Publish Script are not protected by that code.
+The practical result is that this computer is a single-operator console. A venue network, a VPN, or the public internet is a different system, and the application cannot tell a controller from anyone else who can reach it.
 
-Script text is not written into the server log. Error messages do not return a saved script.
+### Ways ADAPT IT could reduce that exposure
+
+None of these is risk-free. They can be combined. Network limits and a login solve different problems. HTTPS protects the connection. Backups protect the files. Neither decides who is allowed to move the cue.
+
+| Option | What users would notice | What it would not solve |
+| --- | --- | --- |
+| Restricted venue network | The pages stay the same. Devices must be on the approved Wi-Fi or wired network. | Anyone on that network can still act as Controller. A guest network or a misconfigured firewall removes the limit. |
+| VPN | Each device connects to the VPN before the show. The pages can stay the same after that. | A lost laptop that is already on the VPN can still control the show. Someone has to enroll every device. |
+| IT login gateway | Users may sign in once at the network or proxy. The prompter pages can stay as they are. | The application still treats every signed-in browser as able to send every command, unless the gateway blocks the privileged ones. |
+| One shared Controller code | Staff type one code. Actor and Audience can stay as they are only if the code is limited to privileged actions. A code that covers the whole site also stops Audience until someone enters it. | The code can be shared, written down, or left in a browser. It does not show which person acted. The current optional library code does not cover publish or the cue. |
+| Individual accounts | Each person signs in. Joining the show takes longer. Someone must create, remove, and reset accounts. | Accounts do not help if the server is still open on the public internet without HTTPS, or if a signed-in browser is left unlocked. |
+| Server checks for privileged actions | Audience and Actor can stay login-free. Controller actions such as publish, restore, and moving the shared cue ask for a verified role. This is the possible later Security S2B change. It is not in this release. | It still needs a way to verify the controller, and it does not encrypt the network by itself. |
+
+More devices than this computer require a hosting choice first: this computer only, a restricted venue network, private remote access, or the public internet. Those are different risks. The endpoint list, the full comparison, and the IT checklist are in [docs/migration/security-ux-decisions.md](docs/migration/security-ux-decisions.md).
+
+Security S2B remains a separate branch if ADAPT later chooses application-level authorization. This branch does not add it.
 
 ---
 
@@ -307,7 +346,7 @@ Script text is not written into the server log. Error messages do not return a s
 ## Running on a different port
 
 ```bash
-PORT=8080 node server.js
+PORT=8080 npm start
 ```
 
-Library location and the optional staff code are described in [Storage and deployment](#storage-and-deployment).
+That changes the port and still listens on `127.0.0.1`. Library location and the optional staff code are described in [Storage and deployment](#storage-and-deployment).

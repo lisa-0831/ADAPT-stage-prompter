@@ -32,16 +32,26 @@ function registerLiveSocketHandlers(deps) {
 
   deps.wss.on('connection', (ws) => {
     console.log('[ws] Client connected');
-    ws.send(JSON.stringify({
+    const awaitingLive = typeof deps.getAwaitingLive === 'function' && deps.getAwaitingLive() === true;
+    const scriptMessage = {
       type: 'script',
       slides: deps.getSlides(),
       revision: deps.getScriptRevision(),
       liveScriptId: deps.getLiveScriptId(),
-    }));
-    ws.send(JSON.stringify({
+    };
+    const stateMessage = {
       type: 'state',
       state: deps.getState(),
-    }));
+    };
+    if (awaitingLive) {
+      scriptMessage.awaitingLive = true;
+      scriptMessage.slides = [];
+      scriptMessage.revision = null;
+      scriptMessage.liveScriptId = null;
+      stateMessage.awaitingLive = true;
+    }
+    ws.send(JSON.stringify(scriptMessage));
+    ws.send(JSON.stringify(stateMessage));
 
     ws.on('message', (raw) => {
       let msg;
@@ -69,9 +79,28 @@ function registerLiveSocketHandlers(deps) {
           }
           deps.broadcast({ type: 'state', state: deps.getState() });
           break;
-        case 'reloadScript':
-          deps.loadScript();
+        case 'reloadScript': {
+          let result;
+          try {
+            result = deps.loadScript();
+          } catch (err) {
+            result = {
+              ok: false,
+              code: err && err.code ? err.code : 'reload-failed',
+              error: 'The live script could not be reloaded.',
+            };
+          }
+          if (result && result.ok === false) {
+            try {
+              ws.send(JSON.stringify({
+                type: 'error',
+                code: result.code || 'reload-failed',
+                error: result.error || 'The live script could not be reloaded.',
+              }));
+            } catch (err) { /* The client may already be gone. */ }
+          }
           break;
+        }
         default:
           break;
       }

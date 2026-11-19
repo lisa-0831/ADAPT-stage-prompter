@@ -4,7 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "node server.js",
+    "setup": "node scripts/setup.js",
+    "start": "node scripts/start-installed.js",
+    "start:local": "node scripts/start-installed.js",
+    "start:legacy": "node server.js",
     "test": "node --test",
     "test:browser": "playwright test"
   },
