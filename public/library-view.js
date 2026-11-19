@@ -55,11 +55,16 @@ let libraryPendingRevision = '';
 let libraryPendingReview = false;
 let libraryReviewed = null;
 let libraryPendingAsset = null;
+let libraryPendingDelete = null;
+let libraryDeleteTrigger = null;
+let libraryDeleteBusy = false;
 let libraryImagesScriptId = null;
 const libraryGuard = ScriptEditor.createPublishGuard();
 let createSession = null;
 let createScriptToken = 0;
 let createSceneKey = 0;
+let filePickerOpen = false;
+let filePickerRelease = null;
 let libraryHighlightId = null;
 let manageAsset = null;
 let historyProductionId = null;
@@ -205,19 +210,23 @@ async function readLibraryJson(response) {
   catch (err) { return null; }
 }
 
+function hideAddForm(ui, hidden) {
+  if (ui && ui.add) ui.add.hidden = hidden;
+}
+
 function revealLibraryHome() {
   const ui = libraryDom();
   if (createSession) {
     ui.create.hidden = false;
     ui.createOpen.hidden = true;
-    ui.add.hidden = true;
+    hideAddForm(ui, true);
     ui.list.hidden = true;
     ui.empty.hidden = true;
     return;
   }
   ui.create.hidden = true;
   ui.createOpen.hidden = false;
-  ui.add.hidden = false;
+  hideAddForm(ui, false);
   ui.list.hidden = false;
   ui.empty.hidden = libraryEntries.length > 0;
 }
@@ -243,7 +252,7 @@ function hideLibraryImages() {
 function renderLibraryPreview(script) {
   revokePreviewUrls();
   const ui = libraryDom();
-  ui.add.hidden = true;
+  hideAddForm(ui, true);
   ui.list.hidden = true;
   ui.empty.hidden = true;
   ui.images.hidden = true;
@@ -321,6 +330,12 @@ function renderLibraryList() {
     action('Manage Images', () => openLibraryImages(entry));
     action('Version History', () => openVersionHistory(entry.id, entry.title));
     action('Rename', () => showLibraryRename(item, entry));
+    const deleteButton = action('Delete', () => beginDeleteProduction(entry, deleteButton));
+    if (isLive) {
+      deleteButton.disabled = true;
+      deleteButton.setAttribute('aria-label', `Delete unavailable while ${entry.title || 'this production'} is live. Set another production as Live first.`);
+      deleteButton.title = 'Set another production as Live before deleting this one.';
+    }
     const liveButton = action('Set as Live', () => beginLibrarySetLive(entry));
     if (headIsLive) {
       liveButton.disabled = true;
@@ -362,7 +377,7 @@ function renderLibraryList() {
   if (createSession) {
     ui.list.hidden = true;
     ui.empty.hidden = true;
-    ui.add.hidden = true;
+    hideAddForm(ui, true);
     ui.create.hidden = false;
     ui.createOpen.hidden = true;
     ui.access.hidden = true;
@@ -394,7 +409,7 @@ async function openLibrary(options) {
     ui.preview.hidden = true;
     ui.previewBody.replaceChildren();
     revokePreviewUrls();
-    ui.add.hidden = true;
+    hideAddForm(ui, true);
     ui.list.hidden = true;
     ui.empty.hidden = true;
     ui.create.hidden = false;
@@ -406,7 +421,7 @@ async function openLibrary(options) {
   const access = await request('/api/library/access').then((response) => response.json()).catch(() => null);
   if (access && access.required && !staffToken()) {
     ui.access.hidden = false;
-    ui.add.hidden = true;
+    hideAddForm(ui, true);
     ui.list.hidden = true;
     ui.empty.hidden = true;
     ui.create.hidden = true;
@@ -416,7 +431,7 @@ async function openLibrary(options) {
     return;
   }
   ui.access.hidden = true;
-  if (!resumeCreate) ui.add.hidden = false;
+  if (!resumeCreate) hideAddForm(ui, false);
   await refreshLibrary(resumeCreate ? '' : kept);
   if (resumeCreate && createSession && createSession.created) {
     renderCreateForm();
@@ -437,7 +452,7 @@ async function refreshLibrary(keptStatus) {
     if (response.status === 401) {
       setStaffToken('');
       ui.access.hidden = false;
-      ui.add.hidden = true;
+      hideAddForm(ui, true);
       ui.create.hidden = true;
       ui.createOpen.hidden = true;
       setLibraryStatus('The staff access code was not accepted.', 'alert');
@@ -457,7 +472,7 @@ async function refreshLibrary(keptStatus) {
     renderLibraryList();
     if (!createSession && ui.preview.hidden && ui.images.hidden && ui.history.hidden) {
       ui.access.hidden = true;
-      ui.add.hidden = false;
+      hideAddForm(ui, false);
       ui.create.hidden = true;
       ui.createOpen.hidden = false;
       ui.list.hidden = false;
@@ -779,7 +794,7 @@ function openCreateForm() {
   const ui = libraryDom();
   ui.preview.hidden = true;
   ui.images.hidden = true;
-  ui.add.hidden = true;
+  hideAddForm(ui, true);
   ui.list.hidden = true;
   ui.empty.hidden = true;
   ui.create.hidden = false;
@@ -827,6 +842,42 @@ function finishCreateForm() {
   libraryDom().createOpen.focus();
 }
 
+function armFilePicker() {
+  filePickerOpen = true;
+  if (filePickerRelease) {
+    clearTimeout(filePickerRelease);
+    filePickerRelease = null;
+  }
+}
+
+function releaseFilePicker() {
+  if (!filePickerOpen) return;
+  if (filePickerRelease) clearTimeout(filePickerRelease);
+  filePickerRelease = setTimeout(() => {
+    filePickerOpen = false;
+    filePickerRelease = null;
+  }, 300);
+}
+
+function settleFilePicker() {
+  filePickerOpen = false;
+  if (filePickerRelease) {
+    clearTimeout(filePickerRelease);
+    filePickerRelease = null;
+  }
+}
+
+function watchFilePicker(input) {
+  if (!input || typeof input.addEventListener !== 'function') return;
+  input.addEventListener('click', armFilePicker);
+  input.addEventListener('cancel', (event) => {
+    if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
+    armFilePicker();
+    releaseFilePicker();
+  });
+  input.addEventListener('change', settleFilePicker);
+}
+
 function beginCreateForm() {
   if (createSession && createSession.submitting) return;
   if (createSession && createSession.created) {
@@ -848,7 +899,7 @@ function openResumedCreateForm() {
   const ui = libraryDom();
   ui.preview.hidden = true;
   ui.images.hidden = true;
-  ui.add.hidden = true;
+  hideAddForm(ui, true);
   ui.list.hidden = true;
   ui.empty.hidden = true;
   ui.create.hidden = false;
@@ -1136,6 +1187,13 @@ async function runCreateSubmission(retry) {
       return;
     }
     if (createSession && createSession.created) {
+      const failed = createSession.results.some((item) => item.status === 'failed');
+      if (!failed) {
+        const message = describeCreateResult(createSession);
+        finishCreateForm();
+        if (message) setLibraryStatus(message, 'status');
+        return;
+      }
       if (!ui.createRetry.hidden) ui.createRetry.focus();
       else ui.createEdit.focus();
     }
@@ -1255,19 +1313,134 @@ function beginLibrarySetLive(entry) {
   ui.confirmYes.focus();
 }
 
+function restoreConfirmAction(ui) {
+  ui.confirmYes.classList.remove('danger');
+  ui.confirmYes.classList.add('primary');
+  ui.confirmYes.textContent = 'Set as Live';
+}
+
 function hideLibraryConfirm() {
   const ui = libraryDom();
+  const returnFocus = ui.confirm.dataset.mode === 'delete-production' ? libraryDeleteTrigger : null;
   libraryPendingId = null;
   libraryPendingRevision = '';
   libraryPendingReview = false;
   libraryPendingAsset = null;
+  libraryPendingDelete = null;
+  libraryDeleteTrigger = null;
   ui.confirm.dataset.mode = '';
   ui.confirm.dataset.sourceVersionId = '';
   ui.confirm.dataset.expectedVersionId = '';
   ui.confirm.hidden = true;
   ui.confirmStatus.textContent = '';
   ui.confirmStatus.classList.remove('editor-error');
+  restoreConfirmAction(ui);
   ui.workspace.inert = false;
+  if (returnFocus && typeof returnFocus.focus === 'function') returnFocus.focus();
+}
+
+function beginDeleteProduction(entry, trigger) {
+  const productionIsLive = Boolean(entry && (entry.live || entry.id === liveShow.getLiveScriptId()));
+  if (productionIsLive || libraryDeleteBusy) return;
+  if (!libraryGuard.tryStart()) return;
+  libraryGuard.finish();
+  const title = entry.title || 'Untitled script';
+  libraryPendingDelete = {
+    id: entry.id,
+    title,
+    generation: entry.generation,
+    revision: entry.revision || '',
+  };
+  libraryDeleteTrigger = trigger || null;
+  libraryPendingId = null;
+  libraryPendingRevision = '';
+  libraryPendingReview = false;
+  libraryPendingAsset = null;
+  const ui = libraryDom();
+  ui.confirmBody.replaceChildren();
+  ui.confirmStatus.textContent = '';
+  ui.confirmStatus.classList.remove('editor-error');
+  ui.confirmHeading.textContent = `Permanently delete '${title}'?`;
+  const removed = doc.createElement('p');
+  removed.className = 'editor-confirm-message';
+  removed.textContent = 'This will delete the production, all saved versions, and its associated images from this library.';
+  const permanent = doc.createElement('p');
+  permanent.className = 'editor-confirm-message';
+  permanent.textContent = 'This action cannot be undone in the app.';
+  ui.confirmBody.append(removed, permanent);
+  ui.confirm.dataset.mode = 'delete-production';
+  ui.confirmYes.classList.remove('primary');
+  ui.confirmYes.classList.add('danger');
+  ui.confirmYes.textContent = 'Delete Permanently';
+  ui.confirmNo.textContent = 'Cancel';
+  ui.confirmYes.disabled = false;
+  ui.confirmNo.disabled = false;
+  ui.workspace.inert = true;
+  ui.confirm.hidden = false;
+  ui.confirmNo.focus();
+}
+
+async function runDeleteProduction() {
+  if (libraryDeleteBusy || !libraryPendingDelete || !libraryGuard.tryStart()) return;
+  libraryDeleteBusy = true;
+  const pending = libraryPendingDelete;
+  const ui = libraryDom();
+  ui.confirmYes.disabled = true;
+  ui.confirmNo.disabled = true;
+  ui.confirm.setAttribute('aria-busy', 'true');
+  ui.confirmYes.textContent = 'Deleting…';
+  try {
+    const response = await libraryFetch(`/api/library/${pending.id}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        expectedGeneration: pending.generation,
+        expectedRevision: pending.revision,
+      }),
+    });
+    const body = await readLibraryJson(response);
+    if (response.status === 401) {
+      setStaffToken('');
+      libraryDeleteTrigger = null;
+      hideLibraryConfirm();
+      ui.access.hidden = false;
+      hideAddForm(ui, true);
+      ui.list.hidden = true;
+      ui.empty.hidden = true;
+      ui.create.hidden = true;
+      ui.createOpen.hidden = true;
+      setLibraryStatus('The staff access code was not accepted.', 'alert');
+      ui.token.focus();
+      return;
+    }
+    if (!response.ok) {
+      ui.confirmStatus.classList.add('editor-error');
+      ui.confirmStatus.textContent = libraryErrorMessage(response, body, 'That production was not deleted. The live show was not changed.');
+      ui.confirmYes.disabled = false;
+      ui.confirmNo.disabled = false;
+      ui.confirmYes.textContent = 'Delete Permanently';
+      ui.confirmNo.focus();
+      if (body && body.code === 'missing-production') await refreshLibrary('');
+      return;
+    }
+    const title = pending.title;
+    libraryDeleteTrigger = null;
+    hideLibraryConfirm();
+    await refreshLibrary(`Permanently deleted “${title}” from this library. This cannot be undone in the app. The live show was not changed.`);
+    const close = doc.getElementById('library-close');
+    if (close) close.focus();
+  } catch (err) {
+    ui.confirmStatus.classList.add('editor-error');
+    ui.confirmStatus.textContent = 'That production was not deleted. The live show was not changed.';
+    ui.confirmYes.disabled = false;
+    ui.confirmNo.disabled = false;
+    ui.confirmYes.textContent = 'Delete Permanently';
+    ui.confirmNo.focus();
+  } finally {
+    libraryDeleteBusy = false;
+    libraryGuard.finish();
+    ui.confirm.setAttribute('aria-busy', 'false');
+  }
 }
 
 function beginRemoveLibraryImage(asset) {
@@ -1383,7 +1556,7 @@ async function openLibraryImages(entry) {
   const ui = libraryDom();
   hideLibraryPreview();
   libraryImagesScriptId = entry.id;
-  ui.add.hidden = true;
+  hideAddForm(ui, true);
   ui.list.hidden = true;
   ui.empty.hidden = true;
   ui.create.hidden = true;
@@ -1672,7 +1845,7 @@ async function openVersionHistory(productionId, title) {
   ui.workspace.inert = false;
   ui.preview.hidden = true;
   ui.images.hidden = true;
-  ui.add.hidden = true;
+  hideAddForm(ui, true);
   ui.list.hidden = true;
   ui.empty.hidden = true;
   ui.create.hidden = true;
@@ -1951,7 +2124,7 @@ function bindLibrary() {
   doc.getElementById('btn-script-library').addEventListener('click', () => openLibrary());
   doc.getElementById('library-close').addEventListener('click', closeLibrary);
   doc.getElementById('library-token-continue').addEventListener('click', continueLibraryAccess);
-  ui.add.addEventListener('submit', saveCurrentLiveScript);
+  if (ui.add) ui.add.addEventListener('submit', saveCurrentLiveScript);
   ui.createOpen.addEventListener('click', beginCreateForm);
   ui.create.addEventListener('submit', (event) => {
     event.preventDefault();
@@ -1960,6 +2133,10 @@ function bindLibrary() {
   ui.createCancel.addEventListener('click', finishCreateForm);
   ui.createRetry.addEventListener('click', () => runCreateSubmission(true));
   ui.createEdit.addEventListener('click', openCreatedInEditor);
+  watchFilePicker(ui.createScript);
+  watchFilePicker(ui.createCard);
+  watchFilePicker(ui.createScenes);
+  watchFilePicker(ui.imageFile);
   ui.createScript.addEventListener('change', onCreateScriptChosen);
   ui.createCard.addEventListener('change', onCreateCardChosen);
   ui.createScenes.addEventListener('change', onCreateScenesChosen);
@@ -1981,6 +2158,8 @@ function bindLibrary() {
     hideLibraryConfirm();
   });
   ui.confirmYes.addEventListener('click', () => {
+    if (ui.confirm.getAttribute('aria-busy') === 'true') return;
+    if (ui.confirm.dataset.mode === 'delete-production') return runDeleteProduction();
     if (ui.confirm.dataset.mode === 'restore-saved') runHistoryRestore();
     else if (libraryPendingAsset) runRemoveLibraryImage();
     else if (libraryPendingReview) reviewLatestBeforeSetLive();
@@ -2006,6 +2185,9 @@ function bindLibrary() {
   });
   ui.dialog.addEventListener('cancel', (event) => {
     event.preventDefault();
+    // The system file window's Cancel arrives as a cancel event on this dialog.
+    // That is separate from this form's Cancel button and from Escape on the page.
+    if (filePickerOpen) return;
     closeLibrary();
   });
 }

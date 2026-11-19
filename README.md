@@ -247,21 +247,21 @@ The library keeps more than one script on the server. The live show still uses o
 
 1. Open the Controller: `http://localhost:3000/?role=controller`
 2. Click **Script Library**.
-3. To keep the show that is live now, type a title and click **Save current live script**. This adds a new saved script. It does not replace one already in the list.
-4. To add a different production, type a title and choose a plain-text `.txt` file. PDF and Word files are not imported here.
-5. **Preview** reads a saved script on the Controller only. The live cue does not move. Actor and Audience screens do not change. Pictures in that preview come from the production being previewed.
-6. **Manage Images** uploads JPEG, PNG, or WebP pictures for that production only. Two productions can use the same file name. Removing a picture asks you to confirm, and a picture that is still used by a scene stays until you remove it from the scene and save.
-7. **Edit** opens that saved script in the script editor.
+3. Click **Create Production**. The library list is replaced by a form for a production title, a plain-text `.txt` script, an optional title card, and optional extra scene images. Nothing is saved until you click **Create Production** on that form. **Cancel** returns to the list and does not add a production. A completed production is saved in the library and is not live. PDF and Word files are not imported here.
+4. **Preview** reads a saved script on the Controller only. The live cue does not move. Actor and Audience screens do not change. Pictures in that preview come from the production being previewed.
+5. **Manage Images** uploads JPEG, PNG, or WebP pictures for that production only. Two productions can use the same file name. Removing a picture asks you to confirm, and a picture that is still used by a scene stays until you remove it from the scene and save.
+6. **Edit** opens that saved script in the script editor.
    - **Save Draft** keeps unfinished edits in this browser. A draft belongs to that saved script and its revision, so it cannot replace a different production.
    - **Choose image** on a scene uses a picture uploaded for that production. You do not type a file path.
    - **Save to Library** writes the edit, including the chosen picture, back to that saved script. The live show does not change.
    - If the saved script changed after you opened it, your edit is not written over the newer copy.
    - **Set as Live** uses the saved copy. Save to the library first when the editor still has newer typing.
-8. **Rename** changes the title. The script text and pictures stay the same.
+7. **Rename** changes the title. The script text and pictures stay the same.
+8. **Delete** asks you to confirm, and the dialog names the production. **Cancel** leaves it in place. **Delete Permanently** removes that production, its saved versions, and its pictures from this library. The app has no undo. A backup, or the starting seed kept in Git, can still contain a copy. The production that is live cannot be deleted. Set another production live first. Deleting a different production does not change the live show.
 9. **Set as Live** asks you to confirm. The window names the script that is live now and the script that will replace it. It stays open until the server accepts the change. Every connected screen then receives the selected script and that production's pictures. Actors who were browsing are returned to Live when the script itself changes. The cue starts at the beginning, because this is a different production.
 10. **Version History** shows the saved versions of that production. Preview reads one version on the Controller only. It does not move the live cue. Restore copies an older version into a new saved version. It does not by itself change the show that is live.
 
-The first `npm start` installs WELCOME from the seed in this repository. WELCOME is live. Starting again does not create a second copy of the same text. Shows saved after that stay in the durable directory, including after the Node process stops.
+The first `npm start` installs WELCOME from the seed in this repository. WELCOME is live. Starting again does not create a second copy of the same text. Shows saved after that stay in the durable directory, including after the Node process stops. A production removed with **Delete Permanently** stays removed. A later start does not copy that production back from the seed. The seed in Git is left as it is.
 
 ### How the old script buttons relate to the library
 
@@ -272,6 +272,7 @@ The first `npm start` installs WELCOME from the seed in this repository. WELCOME
 | **Restore Previous Script** | Puts back the previous live file, as before. It does not delete library scripts or their pictures. The restored show uses the pictures named in that previous script. |
 | **Save to Library** | Updates only the saved script you are editing, including which picture each scene uses. |
 | **Manage Images** | Adds or removes pictures for one saved production. It does not change the live show. |
+| **Delete** | Removes one saved production, its versions, and its pictures from this library after confirmation. It does not change the live show, and it cannot remove the production that is live. |
 | **Set as Live** | Copies that saved script into the live show and shows that production's pictures. A different production starts at the first cue. Setting the same production live again keeps the current cue. |
 
 ---

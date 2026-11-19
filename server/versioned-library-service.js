@@ -53,6 +53,7 @@ const HTTP_ADAPTER_CONTRACT = Object.freeze({
     'POST /api/library/:id/assets': 'uploadAsset. 201. Same asset id and bytes is the stored asset. Different bytes is 409 conflict.',
     'GET /api/library/:id/assets/:assetId': 'readAsset. Staff only. 404 when missing, foreign, or corrupt.',
     'DELETE /api/library/:id/assets/:assetId': 'deleteAsset. 409 when a retained version or live activation needs it.',
+    'DELETE /api/library/:id': 'deleteProduction. Staff only. Removes that production directory, its versions, and its owned assets from the active library. Refuses the live production. Clears previousActivation when it names that production. Does not remove the Git seed, shared images/, other productions, the live mirror, or runtime authorization. 200. 409 when the production is live, the request is stale, or a live journal is unfinished.',
     'GET /api/live/assets/:productionId/:assetId': 'readLiveAsset. 404 unless the verified live script names that production and asset.',
     'POST /api/library/:id/live': 'setLiveVersion of the saved head after assessVersionForActivation. 409 when the head, live generation, or image readiness does not match.',
     'GET /script': 'Verified compatibility mirror text. text/plain.',
@@ -74,6 +75,48 @@ function fail(code, error, extra) {
 function insideStrict(child, parent) {
   const relative = path.relative(parent, child);
   return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
+}
+
+function contained(parent, child) {
+  const relative = path.relative(parent, child);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+function fsyncDirectory(dir) {
+  let fd;
+  try {
+    fd = fs.openSync(dir, 'r');
+    fs.fsyncSync(fd);
+  } catch (err) {
+    // Directory fsync is not available on every filesystem.
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+
+function writeAtomicFile(filePath, bytes) {
+  const payload = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
+  const dir = path.dirname(filePath);
+  const tmp = path.join(dir, `.${path.basename(filePath)}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`);
+  const fd = fs.openSync(tmp, 'wx');
+  try {
+    fs.writeSync(fd, payload);
+    fs.fsyncSync(fd);
+  } catch (err) {
+    try { fs.closeSync(fd); } catch (_) { /* The descriptor may already be closed. */ }
+    try { fs.unlinkSync(tmp); } catch (_) { /* The temp file may already be gone. */ }
+    throw err;
+  }
+  fs.closeSync(fd);
+  fs.renameSync(tmp, filePath);
+  fsyncDirectory(dir);
+}
+
+function deleteFailure(stage) {
+  const error = new Error(`Injected failure at ${stage}.`);
+  error.code = 'injected-failure';
+  error.stage = stage;
+  return error;
 }
 
 function lstatIfExists(filePath) {
@@ -167,6 +210,7 @@ function refusedService(result) {
     listAssets: method,
     readAsset: method,
     deleteAsset: method,
+    deleteProduction: method,
     assessProduction: method,
     assessVersionForActivation: method,
     readProductionDetail: method,
@@ -1368,6 +1412,363 @@ function createVersionedLibraryService(options) {
     });
   }
 
+  function journalBlocksDeletion() {
+    const names = ['pending', 'committed'];
+    for (let index = 0; index < names.length; index += 1) {
+      const dir = path.join(journal.real, 'versioned-live', names[index]);
+      const stat = lstatIfExists(dir);
+      if (!stat) continue;
+      if (stat.isSymbolicLink() || !stat.isDirectory()) {
+        return fail('corrupt-journal', 'The live journal is not a real directory. Nothing was deleted.');
+      }
+      let entries;
+      try {
+        entries = fs.readdirSync(dir);
+      } catch (err) {
+        return fail('corrupt-journal', 'The live journal could not be read. Nothing was deleted.');
+      }
+      if (entries.length) {
+        return fail('journal-conflict', 'An unfinished live update is still recorded. Finish recovery before deleting a production. Nothing was deleted.');
+      }
+    }
+    return { ok: true };
+  }
+
+  function designatedLiveId(record) {
+    if (!record.ok) return record;
+    if (record.present) return { ok: true, productionId: record.productionId, record };
+    const installation = readInstallation();
+    if (!installation.ok) return installation;
+    if (installation.kind === 'pending-install' && installation.marker) {
+      const id = canonicalId(installation.marker.productionId);
+      if (!id) return fail('invalid-live-state', 'The installation marker has no production. Nothing was deleted.');
+      return { ok: true, productionId: id, record, designated: true };
+    }
+    return { ok: true, productionId: null, record };
+  }
+
+  function inspectOwnedTree(dirReal) {
+    const stat = lstatIfExists(dirReal);
+    if (!stat || stat.isSymbolicLink() || !stat.isDirectory()) {
+      return fail('unsafe-path', 'That production path is not a real directory. Nothing was deleted.');
+    }
+    let real;
+    try {
+      real = fs.realpathSync(dirReal);
+    } catch (err) {
+      return fail('unsafe-path', 'That production path could not be resolved. Nothing was deleted.');
+    }
+    const pending = [real];
+    while (pending.length) {
+      const current = pending.pop();
+      if (!contained(real, current)) {
+        return fail('unsafe-path', 'That production tree leaves its directory. Nothing was deleted.');
+      }
+      let names;
+      try {
+        names = fs.readdirSync(current);
+      } catch (err) {
+        return fail('storage-failure', 'That production directory could not be read. Nothing was deleted.');
+      }
+      for (let index = 0; index < names.length; index += 1) {
+        const child = path.join(current, names[index]);
+        const childStat = lstatIfExists(child);
+        if (!childStat) continue;
+        if (childStat.isSymbolicLink()) continue;
+        if (childStat.isDirectory()) {
+          let childReal;
+          try {
+            childReal = fs.realpathSync(child);
+          } catch (err) {
+            return fail('unsafe-path', 'A production directory could not be resolved. Nothing was deleted.');
+          }
+          if (!contained(real, childReal)) {
+            return fail('unsafe-path', 'A production directory leaves its tree. Nothing was deleted.');
+          }
+          pending.push(childReal);
+          continue;
+        }
+        if (!childStat.isFile()) {
+          return fail('unsafe-path', 'A production entry is not a file. Nothing was deleted.');
+        }
+        let fileReal;
+        try {
+          fileReal = fs.realpathSync(child);
+        } catch (err) {
+          return fail('unsafe-path', 'A production file could not be resolved. Nothing was deleted.');
+        }
+        if (!contained(real, fileReal)) {
+          return fail('unsafe-path', 'A production file leaves its tree. Nothing was deleted.');
+        }
+      }
+    }
+    return { ok: true, real };
+  }
+
+function removeOwnedTree(dirReal, failAt, progress) {
+  function unlinkOwned(filePath) {
+    fs.unlinkSync(filePath);
+    progress.unlinked += 1;
+    if (failAt === 'after-first-unlink' && progress.unlinked === 1) throw deleteFailure('after-first-unlink');
+  }
+    function walk(current) {
+      const stat = lstatIfExists(current);
+      if (!stat) return;
+      if (stat.isSymbolicLink()) {
+        unlinkOwned(current);
+        return;
+      }
+      if (!stat.isDirectory()) {
+        if (!stat.isFile()) throw Object.assign(new Error('unexpected production entry'), { code: 'unsafe-path' });
+        const fileReal = fs.realpathSync(current);
+        if (!contained(dirReal, fileReal)) {
+          throw Object.assign(new Error('production file escaped'), { code: 'unsafe-path' });
+        }
+        unlinkOwned(current);
+        return;
+      }
+      const real = fs.realpathSync(current);
+      if (!contained(dirReal, real)) {
+        throw Object.assign(new Error('production directory escaped'), { code: 'unsafe-path' });
+      }
+      fs.readdirSync(real).forEach((name) => walk(path.join(real, name)));
+      const again = lstatIfExists(real);
+      if (again && again.isDirectory() && !again.isSymbolicLink()) fs.rmdirSync(real);
+    }
+    walk(dirReal);
+    return progress.unlinked;
+  }
+
+  function clearPreviousActivation(productionId, record, failAt) {
+    if (!record.present || !record.previousActivation || record.previousActivation.productionId !== productionId) {
+      return { ok: true, changed: false, before: null };
+    }
+    const filePath = path.join(library.real, 'live-state.json');
+    const read = readNoFollow(filePath, 1024 * 1024);
+    if (!read.bytes) return fail('invalid-live-state', 'live-state.json could not be read. Nothing was deleted.');
+    let state;
+    try {
+      state = JSON.parse(read.bytes.toString('utf8'));
+    } catch (err) {
+      return fail('invalid-live-state', 'live-state.json could not be read. Nothing was deleted.');
+    }
+    if (
+      canonicalId(state.productionId) !== record.productionId
+      || canonicalId(state.versionId) !== record.versionId
+      || state.contentHash !== record.contentHash
+      || state.generation !== record.generation
+    ) {
+      return fail('stale-live', 'The live version changed after this delete was prepared. Nothing was deleted.');
+    }
+    const next = Object.assign({}, state, { previousActivation: null });
+    const nextBytes = Buffer.from(`${JSON.stringify(next, null, 2)}\n`, 'utf8');
+    if (failAt === 'before-live-state') throw deleteFailure('before-live-state');
+    writeAtomicFile(filePath, nextBytes);
+    if (failAt === 'after-live-state') {
+      try { writeAtomicFile(filePath, read.bytes); } catch (err) { /* The original live pointer could not be restored. */ }
+      throw deleteFailure('after-live-state');
+    }
+    const checked = readLiveRecord();
+    if (
+      !checked.ok
+      || !checked.present
+      || checked.previousActivation
+      || checked.productionId !== record.productionId
+      || checked.versionId !== record.versionId
+      || checked.contentHash !== record.contentHash
+      || checked.generation !== record.generation
+    ) {
+      try { writeAtomicFile(filePath, read.bytes); } catch (err) { /* The original bytes could not be put back. */ }
+      return fail('storage-failure', 'The previous activation could not be cleared. The production was not deleted.');
+    }
+    return { ok: true, changed: true, before: read.bytes, filePath };
+  }
+
+  function restoreLiveBytes(cleared) {
+    if (!cleared || !cleared.changed || !cleared.before || !cleared.filePath) return;
+    try { writeAtomicFile(cleared.filePath, cleared.before); } catch (err) { /* Leave the cleared pointer if the copy cannot be restored. */ }
+  }
+
+  function forgetLegacyCopy(productionId) {
+    const scriptsDir = path.join(library.real, 'scripts');
+    const scriptPath = path.join(scriptsDir, `${productionId}.txt`);
+    const scriptStat = lstatIfExists(scriptPath);
+    if (scriptStat && scriptStat.isFile() && !scriptStat.isSymbolicLink()) {
+      const scriptReal = fs.realpathSync(scriptPath);
+      const scriptsReal = fs.realpathSync(scriptsDir);
+      if (contained(scriptsReal, scriptReal) && path.basename(scriptReal) === `${productionId}.txt`) {
+        fs.unlinkSync(scriptPath);
+      }
+    }
+    const indexPath = path.join(library.real, 'index.json');
+    const indexStat = lstatIfExists(indexPath);
+    if (!indexStat || indexStat.isSymbolicLink() || !indexStat.isFile()) return;
+      const indexReal = fs.realpathSync(indexPath);
+      if (!contained(library.real, indexReal) || path.basename(indexReal) !== 'index.json') return;
+    const read = readNoFollow(indexPath, 1024 * 1024);
+    if (!read.bytes) return;
+    let index;
+    try {
+      index = JSON.parse(read.bytes.toString('utf8'));
+    } catch (err) {
+      return;
+    }
+    if (!index || typeof index !== 'object' || Array.isArray(index) || !Array.isArray(index.scripts)) return;
+    const next = Object.assign({}, index, {
+      scripts: index.scripts.filter((entry) => !entry || canonicalId(entry.id) !== productionId),
+    });
+    if (canonicalId(index.liveId) === productionId) next.liveId = null;
+    writeAtomicFile(indexPath, Buffer.from(`${JSON.stringify(next, null, 2)}\n`, 'utf8'));
+  }
+
+  function deleteProduction(input) {
+    return exclusive(() => {
+      const body = input || {};
+      const failAt = body.failAt || '';
+      const productionId = canonicalId(body.productionId);
+      if (!productionId) return fail('invalid-id', 'That production id is not valid. Nothing was deleted.');
+      const loaded = store.readProduction(productionId);
+      if (!loaded.ok) {
+        return fail(
+          loaded.code === 'missing-parent' ? 'missing-production' : (loaded.code || 'missing-production'),
+          loaded.code === 'missing-production' || loaded.code === 'missing-parent'
+            ? 'That production could not be found. Nothing was deleted.'
+            : (loaded.error || 'That production could not be read. Nothing was deleted.'),
+        );
+      }
+      const head = store.readVersion(productionId, loaded.production.headVersionId);
+      if (!head.ok) {
+        return fail(
+          head.code === 'missing-parent' ? 'missing-version' : (head.code || 'corrupt-version'),
+          'The saved head could not be read. Nothing was deleted.',
+        );
+      }
+      if (Object.prototype.hasOwnProperty.call(body, 'expectedGeneration')) {
+        if (!Number.isInteger(body.expectedGeneration) || body.expectedGeneration < 1) {
+          return fail('generation-required', 'A delete needs the production generation it was based on. Nothing was deleted.');
+        }
+        if (body.expectedGeneration !== loaded.production.generation) {
+          return fail('conflict', 'This production changed after you asked to delete it. Nothing was deleted.', {
+            generation: loaded.production.generation,
+          });
+        }
+      }
+      if (typeof body.expectedRevision === 'string' && body.expectedRevision !== '' && body.expectedRevision !== head.version.contentHash) {
+        return fail('conflict', 'This production changed after you asked to delete it. Nothing was deleted.', {
+          generation: loaded.production.generation,
+          contentHash: head.version.contentHash,
+        });
+      }
+      const blocked = journalBlocksDeletion();
+      if (!blocked.ok) return blocked;
+      const liveId = designatedLiveId(readLiveRecord());
+      if (!liveId.ok) return liveId;
+      if (liveId.productionId === productionId) {
+        return fail('live-production', 'This production is live. Set another production as Live before deleting it. Nothing was deleted.');
+      }
+      const catalog = path.join(library.real, 'productions');
+      const catalogStat = lstatIfExists(catalog);
+      if (!catalogStat || catalogStat.isSymbolicLink() || !catalogStat.isDirectory()) {
+        return fail('unsafe-path', 'The productions directory is not a real directory. Nothing was deleted.');
+      }
+      const catalogReal = fs.realpathSync(catalog);
+      const source = path.join(catalogReal, productionId);
+      const inspected = inspectOwnedTree(source);
+      if (!inspected.ok) return inspected;
+      if (!insideStrict(inspected.real, catalogReal) || path.basename(inspected.real) !== productionId) {
+        return fail('unsafe-path', 'That production path is outside the library. Nothing was deleted.');
+      }
+      if (failAt === 'before-delete') {
+        return fail('storage-failure', 'The production was not deleted. The live show was not changed.', { stage: 'before-delete' });
+      }
+      let cleared;
+      try {
+        cleared = clearPreviousActivation(productionId, liveId.record, failAt);
+      } catch (err) {
+        if (err && err.code === 'injected-failure') {
+          return fail('storage-failure', 'The production was not deleted. The live show was not changed.', {
+            stage: err.stage,
+          });
+        }
+        return fail('storage-failure', 'The previous activation could not be updated. The production was not deleted.');
+      }
+      if (!cleared.ok) return cleared;
+      const tempName = `.deleting-${productionId}.${process.pid}.${crypto.randomBytes(4).toString('hex')}`;
+      const tempDir = path.join(catalogReal, tempName);
+      let renamed = false;
+      const progress = { unlinked: 0 };
+      try {
+        fs.renameSync(source, tempDir);
+        renamed = true;
+        fsyncDirectory(catalogReal);
+        if (failAt === 'after-rename' || failAt === 'during-remove') throw deleteFailure(failAt);
+        const moved = inspectOwnedTree(tempDir);
+        if (!moved.ok) {
+          const error = new Error(moved.error);
+          error.code = moved.code;
+          throw error;
+        }
+        removeOwnedTree(moved.real, failAt, progress);
+        fsyncDirectory(catalogReal);
+      } catch (err) {
+        const originalBack = !lstatIfExists(source) && lstatIfExists(tempDir) && progress.unlinked === 0;
+        if (originalBack) {
+          try {
+            fs.renameSync(tempDir, source);
+            fsyncDirectory(catalogReal);
+            renamed = false;
+          } catch (restoreErr) {
+            return fail('delete-incomplete', 'The production could not be fully removed and could not be put back. It is no longer listed. Other productions were not changed.');
+          }
+        }
+        if (!renamed) {
+          restoreLiveBytes(cleared);
+          const code = err && err.code === 'unsafe-path' ? 'unsafe-path' : 'storage-failure';
+          return fail(code, 'The production was not deleted. The live show was not changed.', {
+            stage: err && err.stage ? err.stage : null,
+          });
+        }
+        return fail('delete-incomplete', 'The production could not be fully removed. It is no longer listed. Other productions were not changed. The live show was not changed.');
+      }
+      if (lstatIfExists(source) || lstatIfExists(tempDir)) {
+        return fail('delete-incomplete', 'The deleted production could not be confirmed. Other productions were not changed.');
+      }
+      const gone = store.readProduction(productionId);
+      if (gone.ok) {
+        return fail('delete-incomplete', 'The deleted production could still be read. Other productions were not changed.');
+      }
+      try {
+        forgetLegacyCopy(productionId);
+      } catch (err) {
+        return {
+          ok: true,
+          deleted: true,
+          confirmed: true,
+          productionId,
+          title: loaded.production.title,
+          previousActivationCleared: Boolean(cleared.changed),
+          legacyCopyRemoved: false,
+        };
+      }
+      const after = readLiveRecord();
+      if (!after.ok) {
+        return fail('delete-incomplete', 'The production was removed, but live state could not be confirmed. The live production was not switched.');
+      }
+      if (after.present && after.productionId === productionId) {
+        return fail('delete-incomplete', 'The live production was still this production after the delete.');
+      }
+      return {
+        ok: true,
+        deleted: true,
+        confirmed: true,
+        productionId,
+        title: loaded.production.title,
+        previousActivationCleared: Boolean(cleared.changed),
+        legacyCopyRemoved: true,
+      };
+    });
+  }
+
   return {
     ok: true,
     libraryReal: library.real,
@@ -1380,6 +1781,7 @@ function createVersionedLibraryService(options) {
     listAssets: (productionId) => exclusive(() => assets.listAssets(productionId)),
     readAsset: (productionId, assetId) => exclusive(() => assets.readAsset(productionId, assetId)),
     deleteAsset: (input) => exclusive(() => assets.deleteAsset(input)),
+    deleteProduction,
     assessProduction,
     assessVersionForActivation,
     readProductionDetail,

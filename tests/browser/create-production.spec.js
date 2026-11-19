@@ -67,6 +67,45 @@ test('choosing create-production files sends nothing until submit, and cancel cl
   }
 });
 
+test('cancelling the system file window stays on create production', async ({ browser, prompter }) => {
+  const controller = await openShow(browser, prompter.baseURL, 'controller');
+  const pages = [controller];
+
+  try {
+    await openCreate(controller.page);
+    await controller.page.locator('#library-create-name').fill('Hamlet');
+    await controller.page.locator('#library-create-script').setInputFiles({
+      name: 'hamlet.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('# Scene\nHello\n'),
+    });
+    await expect(controller.page.locator('#library-create-review')).toContainText('hamlet.txt');
+    for (const id of ['library-create-script', 'library-create-card', 'library-create-scenes']) {
+      await controller.page.evaluate((inputId) => {
+        const input = document.getElementById(inputId);
+        const dialog = document.getElementById('script-library');
+        input.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        input.dispatchEvent(new Event('cancel', { bubbles: true, cancelable: true }));
+        dialog.dispatchEvent(new Event('cancel', { bubbles: true, cancelable: true }));
+        dialog.dispatchEvent(new Event('cancel', { bubbles: true, cancelable: true }));
+      }, id);
+      await expect(controller.page.locator('#library-create')).toBeVisible();
+      await expect(controller.page.locator('#script-library')).toBeVisible();
+      await expect(controller.page.locator('#library-create-name')).toHaveValue('Hamlet');
+    }
+    await expect(controller.page.locator('#library-create-review')).toContainText('hamlet.txt');
+    await controller.page.waitForTimeout(350);
+    await controller.page.evaluate(() => {
+      document.getElementById('script-library').dispatchEvent(new Event('cancel', { bubbles: true, cancelable: true }));
+    });
+    await expect(controller.page.locator('#library-create')).toBeHidden();
+    await expect(controller.page.locator('#script-library')).toBeVisible();
+    await expect(controller.page.locator('#library-status')).toContainText('Nothing was added');
+  } finally {
+    await closeShows(pages);
+  }
+});
+
 test('create production asks for a title and a script before it sends a request', async ({ browser, prompter }) => {
   const controller = await openShow(browser, prompter.baseURL, 'controller');
   const pages = [controller];
@@ -108,12 +147,14 @@ test('text-only create adds a library production and leaves the live show alone'
       buffer: Buffer.from(SCRIPT),
     });
     await controller.page.locator('#library-create-submit').click();
-    await expect(controller.page.locator('#library-create-status')).toContainText('not the live show');
-    await expect(controller.page.locator('#library-create-status')).toContainText('No pictures were added');
-    await expect(controller.page.locator('#library-create-status')).toContainText('images/Title_Card.jpeg');
+    await expect(controller.page.locator('#library-create')).toBeHidden();
+    await expect(controller.page.locator('#library-status')).toContainText('not the live show');
+    await expect(controller.page.locator('#library-status')).toContainText('No pictures were added');
+    await expect(controller.page.locator('#library-status')).toContainText('images/Title_Card.jpeg');
+    await expect(controller.page.getByRole('heading', { name: 'Hamlet' })).toBeVisible();
     expect(posts).toEqual(['/api/library']);
 
-    await controller.page.locator('#library-create-edit').click();
+    await controller.page.getByRole('button', { name: 'Edit Hamlet' }).click();
     await expect(controller.page.locator('#editor-status')).toContainText('saved script');
     await expect(controller.page.locator('#editor-scene-image-label')).toContainText('Title_Card.jpeg');
     await controller.page.locator('#editor-close').click();
@@ -162,7 +203,8 @@ test('a second create click does not create another production', async ({ browse
     await controller.page.locator('#library-create-submit').click();
     await expect(controller.page.locator('#library-create-submit')).toBeDisabled();
     await controller.page.locator('#library-create-submit').click({ force: true, timeout: 1000 }).catch(() => {});
-    await expect(controller.page.locator('#library-create-status')).toContainText('not the live show');
+    await expect(controller.page.locator('#library-create')).toBeHidden();
+    await expect(controller.page.locator('#library-status')).toContainText('not the live show');
     expect(createPosts).toBe(1);
     await expect(audience.page.locator('#slide-title')).toHaveText('Opening');
     assertQuiet(pages);
@@ -218,8 +260,9 @@ test('optional images stay on the new production and a failed one can be retried
     expect(posts.filter((pathname) => pathname === '/api/library')).toEqual(['/api/library']);
 
     await controller.page.locator('#library-create-retry').click();
-    await expect(controller.page.locator('#library-create-status')).toContainText('Uploaded to this production only');
-    await expect(controller.page.locator('#library-create-status')).not.toContainText('Not uploaded');
+    await expect(controller.page.locator('#library-create')).toBeHidden();
+    await expect(controller.page.locator('#library-status')).toContainText('Uploaded to this production only');
+    await expect(controller.page.locator('#library-status')).not.toContainText('Not uploaded');
     expect(posts.filter((pathname) => pathname === '/api/library')).toEqual(['/api/library']);
 
     const listed = await controller.page.request.get(`${prompter.baseURL}/api/library`);
@@ -284,7 +327,8 @@ test('escape closes the create form without a request, and a bad staff code does
     await controller.page.locator('#library-token-continue').click();
     await expect(controller.page.locator('#library-create')).toBeVisible();
     await controller.page.locator('#library-create-submit').click();
-    await expect(controller.page.locator('#library-create-status')).toContainText('not the live show');
+    await expect(controller.page.locator('#library-create')).toBeHidden();
+    await expect(controller.page.locator('#library-status')).toContainText('not the live show');
     await controller.page.locator('#library-create-submit').click({ force: true }).catch(() => {});
     const after = await controller.page.request.get(`${prompter.baseURL}/api/library`, {
       headers: { 'X-Staff-Token': 'stage-staff' },

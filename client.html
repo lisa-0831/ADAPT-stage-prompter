@@ -170,16 +170,8 @@
       <p class="library-note">This code stays in this browser tab. It is not the name of a script.</p>
       <button type="button" class="btn primary" id="library-token-continue">Continue</button>
     </div>
-    <form id="library-add">
-      <label for="library-new-title">Title</label>
-      <input id="library-new-title" name="title" maxlength="120" autocomplete="off" autocapitalize="off" required>
-      <p class="library-note">This saves a copy of the script that is on stage now. It does not replace a script already in the list.</p>
-      <div class="ctrl-row">
-        <button type="submit" class="btn primary" id="library-save-live">Save current live script</button>
-      </div>
-    </form>
     <div class="ctrl-row">
-      <button type="button" class="btn" id="library-create-open">Create Production</button>
+      <button type="button" class="btn primary" id="library-create-open">Create Production</button>
     </div>
     <form id="library-create" hidden aria-labelledby="library-create-heading">
       <h3 id="library-create-heading">Create Production</h3>
@@ -212,7 +204,7 @@
         <button type="button" class="btn" id="library-create-cancel">Cancel</button>
       </div>
     </form>
-    <p id="library-empty" hidden>No saved scripts yet. Save the current live script, or create a production.</p>
+    <p id="library-empty" hidden>No saved scripts yet. Create a production.</p>
     <div id="library-list" aria-live="polite"></div>
     <div id="library-preview" hidden>
       <button type="button" class="btn" id="library-preview-back">Back to library</button>

@@ -71,6 +71,7 @@ const STATUS = {
   'activation-not-ready': 409,
   'unresolved-image': 409,
   'in-use': 409,
+  'live-production': 409,
   'dangling-reference': 409,
   'version-exists': 409,
   'wrong-production': 409,
@@ -104,6 +105,7 @@ const STATUS = {
   'writer-lock-lost': 503,
   'lock-unsupported': 503,
   'storage-failure': 503,
+  'delete-incomplete': 503,
 };
 
 function staffTokensMatch(provided, expected) {
@@ -635,6 +637,33 @@ function registerVersionedHttpRoutes(options) {
     if (!asset) return undefined;
     if (!asset.ok) return res.status(404).type('text/plain').send('Not found');
     return sendAsset(res, asset);
+  });
+
+  app.delete('/api/library/:id', requireStaff, async (req, res) => {
+    const productionId = canonicalRouteId(req.params.id);
+    if (!productionId) {
+      return res.status(400).json({
+        ok: false,
+        code: 'invalid-id',
+        error: 'That production id is not valid. Nothing was deleted.',
+      });
+    }
+    const body = jsonBody(req);
+    const request = { productionId, failAt: faultAt(req) };
+    if (Object.prototype.hasOwnProperty.call(body, 'expectedGeneration')) {
+      request.expectedGeneration = body.expectedGeneration;
+    }
+    if (typeof body.expectedRevision === 'string') request.expectedRevision = body.expectedRevision;
+    const removed = await invoke(res, () => service.deleteProduction(request));
+    if (!removed) return undefined;
+    if (!removed.ok) return sendError(res, removed);
+    return res.json({
+      ok: true,
+      deleted: true,
+      productionId: removed.productionId,
+      title: removed.title || '',
+      previousActivationCleared: Boolean(removed.previousActivationCleared),
+    });
   });
 
   app.delete('/api/library/:id/assets/:assetId', requireStaff, async (req, res) => {

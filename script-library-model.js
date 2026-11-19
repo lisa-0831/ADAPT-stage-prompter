@@ -87,6 +87,12 @@
     if (code === 'legacy-image' || code === 'invalid-image-reference' || code === 'foreign-asset' || code === 'dangling-reference' || code === 'invalid-image') {
       return `An image reference blocked this action. ${detail || 'The image is not valid for this production.'} The live show was not changed.`;
     }
+    if (code === 'live-production') {
+      return 'This production is live. Set another production as Live before deleting it. Nothing was deleted.';
+    }
+    if (code === 'delete-incomplete') {
+      return detail || 'The production could not be fully removed. It is no longer listed. Other productions were not changed.';
+    }
     if (code === 'saved-head-differs') {
       return 'The live show is already stored on this production, and the saved copy is a different version. The saved copy and the live text are both still there. A second production was not created, and neither copy was changed.';
     }

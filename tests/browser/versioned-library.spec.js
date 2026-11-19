@@ -62,8 +62,8 @@ test('versioned create waits for submit, stays offstage, and retries one creatio
       controller.page.locator('#library-create-submit').click(),
       controller.page.locator('#library-create-submit').click(),
     ]);
-    await expect(controller.page.locator('#library-create-status')).toContainText('not the live show');
-    await controller.page.locator('#library-create-cancel').click();
+    await expect(controller.page.locator('#library-create')).toBeHidden();
+    await expect(controller.page.locator('#library-status')).toContainText('not the live show');
     await expect(controller.page.getByRole('heading', { name: 'New Room' })).toBeVisible();
     await expect(audience.page.locator('#lines-current .script-line')).toHaveText(fixture.spoken);
     expect(posts.filter((post) => post.pathname === '/api/library')).toHaveLength(1);
@@ -90,8 +90,8 @@ test('versioned create waits for submit, stays offstage, and retries one creatio
     await controller.page.locator('#library-create-submit').click();
     await expect(controller.page.locator('#library-create-status')).toContainText('was not created');
     await controller.page.locator('#library-create-submit').click();
-    await expect(controller.page.locator('#library-create-status')).toContainText('not the live show');
-    await controller.page.locator('#library-create-cancel').click();
+    await expect(controller.page.locator('#library-create')).toBeHidden();
+    await expect(controller.page.locator('#library-status')).toContainText('not the live show');
     await expect(controller.page.getByRole('heading', { name: 'Second Room' })).toBeVisible();
     const creates = posts.filter((post) => post.pathname === '/api/library');
     expect(creates).toHaveLength(3);
@@ -238,8 +238,8 @@ test('an unresolved shared image cannot be set live, and a failed upload retries
     await expect(controller.page.locator('#library-create-status')).toContainText('Not uploaded: bad.png');
     const first = posts.find((post) => post.pathname.endsWith('/assets'));
     await controller.page.locator('#library-create-retry').click();
-    await expect(controller.page.locator('#library-create-status')).toContainText('Uploaded to this production only');
-    await controller.page.locator('#library-create-cancel').click();
+    await expect(controller.page.locator('#library-create')).toBeHidden();
+    await expect(controller.page.locator('#library-status')).toContainText('Uploaded to this production only');
     const retries = posts.filter((post) => post.pathname.endsWith('/assets'));
     expect(retries).toHaveLength(2);
     expect(retries[1].pathname).toBe(first.pathname);

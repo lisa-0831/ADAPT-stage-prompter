@@ -236,6 +236,10 @@ test('the create production form names its fields and actions', () => {
   assert.match(html, /id="library-create-status"/);
   assert.match(html, /aria-labelledby="library-create-heading"/);
   assert.equal(html.includes('id="library-file"'), false);
+  assert.equal(html.includes('id="library-new-title"'), false);
+  assert.equal(html.includes('id="library-save-live"'), false);
+  assert.equal(html.includes('id="library-add"'), false);
+  assert.match(html, /id="library-create-open"/);
 });
 
 test('choosing a script, a title card, or scene images sends no request', async () => {
@@ -320,15 +324,18 @@ test('an explicit submit creates one production and does not change live', async
   assert.equal(calls.some((call) => call.url === '/script'), false);
   assert.equal(live.id, LIVE);
   assert.equal(live.setIds.includes(NEW_ID), false);
-  assert.match(ids['library-create-status'].textContent, /not the live show/);
-  assert.match(ids['library-create-status'].textContent, /No pictures were added/);
-  assert.match(ids['library-create-status'].textContent, /images\/Title_Card\.jpeg/);
-  assert.match(ids['library-create-status'].textContent, /does not change those lines/);
+  assert.equal(ids['library-create'].hidden, true);
+  assert.equal(ids['library-list'].hidden, false);
+  assert.match(ids['library-status'].textContent, /not the live show/);
+  assert.match(ids['library-status'].textContent, /No pictures were added/);
+  assert.match(ids['library-status'].textContent, /images\/Title_Card\.jpeg/);
+  assert.match(ids['library-status'].textContent, /does not change those lines/);
 
   await submit(ids);
   assert.equal(postsTo(calls, '/api/library').length, 1);
 
-  listen(ids['library-create-edit'], 'click')();
+  const createdEdit = buttonLabeled(ids['library-list'], 'Edit');
+  listen(createdEdit, 'click')();
   assert.equal(opened[0].id, NEW_ID);
   assert.equal(opened[0].title, 'Hamlet');
   assert.equal(ids['library-create'].hidden, true);
@@ -370,7 +377,8 @@ test('repeated create clicks send one production request', async () => {
   await first;
   await second;
   assert.equal(postsTo(calls, '/api/library').length, 1);
-  assert.match(ids['library-create-status'].textContent, /not the live show/);
+  assert.equal(ids['library-create'].hidden, true);
+  assert.match(ids['library-status'].textContent, /not the live show/);
 });
 
 test('selected images are uploaded only to the new production', async () => {
@@ -412,9 +420,10 @@ test('selected images are uploaded only to the new production', async () => {
   ]);
   assert.equal(uploads.some((call) => call.url.includes(LIVE)), false);
   assert.equal(live.id, LIVE);
-  assert.match(ids['library-create-status'].textContent, /Uploaded to this production only: Title_Card\.jpeg, scene-a\.png, scene-b\.png/);
-  assert.match(ids['library-create-status'].textContent, /not assigned to scenes/);
-  assert.match(ids['library-create-status'].textContent, /images\/Title_Card\.jpeg/);
+  assert.equal(ids['library-create'].hidden, true);
+  assert.match(ids['library-status'].textContent, /Uploaded to this production only: Title_Card\.jpeg, scene-a\.png, scene-b\.png/);
+  assert.match(ids['library-status'].textContent, /not assigned to scenes/);
+  assert.match(ids['library-status'].textContent, /images\/Title_Card\.jpeg/);
   assert.equal(postsTo(calls, '/api/library').length, 1);
   assert.equal(postsTo(calls, '/api/library')[0].json.text, SCRIPT);
 });
@@ -462,9 +471,9 @@ test('a failed image upload is reported and retried without another production',
     .filter((call) => call.url.endsWith('/assets'))
     .map((call) => decodeURIComponent(call.assetName));
   assert.deepEqual(assetNames, ['good.png', 'bad.png', 'bad.png']);
-  assert.match(ids['library-create-status'].textContent, /Uploaded to this production only: good\.png, bad\.png/);
-  assert.doesNotMatch(ids['library-create-status'].textContent, /Not uploaded/);
-  assert.equal(ids['library-create-retry'].hidden, true);
+  assert.equal(ids['library-create'].hidden, true);
+  assert.match(ids['library-status'].textContent, /Uploaded to this production only: good\.png, bad\.png/);
+  assert.doesNotMatch(ids['library-status'].textContent, /Not uploaded/);
 });
 
 test('a rejected staff code does not create a production, and the draft can be submitted once', async () => {
@@ -498,7 +507,38 @@ test('a rejected staff code does not create a production, and the draft can be s
   assert.equal(attempts, 2);
   assert.equal(postsTo(calls, '/api/library').length, 2);
   assert.equal(postsTo(calls, '/api/library')[1].json.trackIfCurrent, false);
-  assert.match(ids['library-create-status'].textContent, /not the live show/);
+  assert.equal(ids['library-create'].hidden, true);
+  assert.match(ids['library-status'].textContent, /not the live show/);
+});
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+test('cancelling the system file window stays on the create form', async () => {
+  const { ids, calls } = harness();
+  ids['script-library'].open = true;
+  openForm(ids);
+  ids['library-create-name'].value = 'Hamlet';
+  await choose(ids, 'library-create-script', [file('hamlet.txt', SCRIPT)]);
+
+  ['library-create-script', 'library-create-card', 'library-create-scenes', 'library-image-file'].forEach((id) => {
+    listen(ids[id], 'click')();
+    listen(ids[id], 'cancel')({ stopPropagation() {}, preventDefault() {} });
+    listen(ids['script-library'], 'cancel')({ preventDefault() {} });
+    listen(ids['script-library'], 'cancel')({ preventDefault() {} });
+    assert.equal(ids['library-create'].hidden, false, id);
+    assert.equal(ids['script-library'].open, true, id);
+  });
+  assert.equal(ids['library-create-name'].value, 'Hamlet');
+  assert.match(ids['library-create-review'].textContent, /hamlet\.txt/);
+  assert.equal(calls.length, 0);
+
+  await delay(350);
+  listen(ids['script-library'], 'cancel')({ preventDefault() {} });
+  assert.equal(ids['library-create'].hidden, true);
+  assert.equal(ids['script-library'].open, true);
+  assert.match(ids['library-status'].textContent, /Nothing was added/);
 });
 
 test('escape cancels an unsent form and stays in the library', async () => {
@@ -544,7 +584,8 @@ test('escape during creation does not drop the in-flight production', async () =
   release();
   await pending;
   assert.equal(postsTo(calls, '/api/library').length, 1);
-  assert.match(ids['library-create-status'].textContent, /not the live show/);
+  assert.equal(ids['library-create'].hidden, true);
+  assert.match(ids['library-status'].textContent, /not the live show/);
 });
 
 test('saving the current live script still saves that script and does not use the create form', async () => {
@@ -646,7 +687,8 @@ test('create production reuses one request id until the content or the form chan
   assert.equal(createdPosts.length, 3);
   assert.equal(createdPosts[2].creationId, CREATE_B);
   assert.equal(createdPosts[2].json.title, 'Macbeth');
-  assert.match(ids['library-create-status'].textContent, /not the live show/);
+  assert.equal(ids['library-create'].hidden, true);
+  assert.match(ids['library-status'].textContent, /not the live show/);
   await submit(ids);
   assert.equal(postsTo(calls, '/api/library').length, 3);
 
@@ -926,4 +968,127 @@ test('version history lists committed versions and a missing endpoint stays off 
   assert.match(missing.ids['library-history-status'].textContent, /not available on this library/);
   assert.doesNotMatch(missing.ids['library-history-status'].textContent, /corrupt/);
   assert.equal(missing.live.id, LIVE);
+});
+
+function labeledButtons(root, label) {
+  const found = [];
+  walk(root, (el) => {
+    if (el.textContent === label) found.push(el);
+  });
+  return found;
+}
+
+test('delete asks before removing a production and leaves the live production alone', async () => {
+  const liveScript = {
+    id: LIVE,
+    title: 'Opening',
+    revision: 'rev-live',
+    generation: 2,
+    live: true,
+    updatedAt: '2026-01-02T15:04:00.000Z',
+  };
+  const other = {
+    id: NEW_ID,
+    title: 'Hamlet',
+    revision: 'rev-hamlet',
+    generation: 4,
+    live: false,
+    updatedAt: '2026-01-02T15:04:00.000Z',
+  };
+  let scripts = [liveScript, other];
+  let release = null;
+  const { library, ids, calls, live } = harness((call) => {
+    if (call.url === '/api/library/access') return jsonResponse(200, { required: false });
+    if (call.method === 'DELETE' && call.url === `/api/library/${NEW_ID}`) {
+      return new Promise((resolve) => {
+        release = () => {
+          scripts = [liveScript];
+          resolve(jsonResponse(200, { ok: true, deleted: true, productionId: NEW_ID, title: 'Hamlet' }));
+        };
+      });
+    }
+    if (call.method === 'GET' && call.url === '/api/library') {
+      return jsonResponse(200, { ok: true, liveId: LIVE, scripts });
+    }
+    return jsonResponse(200, { ok: true, liveId: LIVE, scripts });
+  });
+  await library.open();
+  const deletes = labeledButtons(ids['library-list'], 'Delete');
+  assert.equal(deletes.length, 2);
+  const liveDelete = deletes.find((button) => button.attrs['aria-label'].includes('Opening'));
+  const otherDelete = deletes.find((button) => button.attrs['aria-label'] === 'Delete Hamlet');
+  assert.equal(liveDelete.disabled, true);
+  assert.match(liveDelete.attrs['aria-label'], /Set another production as Live first/);
+  listen(liveDelete, 'click')();
+  assert.equal(ids['library-confirm'].hidden, true);
+  assert.equal(calls.some((call) => call.method === 'DELETE'), false);
+
+  listen(otherDelete, 'click')();
+  assert.equal(ids['library-confirm'].hidden, false);
+  assert.equal(ids['library-confirm-heading'].textContent, "Permanently delete 'Hamlet'?");
+  const warning = [];
+  walk(ids['library-confirm-body'], (el) => { if (el.textContent) warning.push(el.textContent); });
+  assert.match(warning.join('\n'), /all saved versions/);
+  assert.match(warning.join('\n'), /cannot be undone in the app/);
+  assert.equal(ids['library-confirm-yes'].textContent, 'Delete Permanently');
+  assert.equal(ids['library-confirm-no'].textContent, 'Cancel');
+  assert.equal(ids['library-confirm-no'].focused, true);
+  listen(ids['library-confirm-no'], 'click')();
+  assert.equal(ids['library-confirm'].hidden, true);
+  assert.equal(calls.some((call) => call.method === 'DELETE'), false);
+  assert.equal(otherDelete.focused, true);
+  assert.equal(labeledButtons(ids['library-list'], 'Delete').length, 2);
+
+  listen(otherDelete, 'click')();
+  const first = listen(ids['library-confirm-yes'], 'click')();
+  const second = listen(ids['library-confirm-yes'], 'click')();
+  assert.equal(calls.filter((call) => call.method === 'DELETE').length, 1);
+  const sent = calls.find((call) => call.method === 'DELETE');
+  assert.equal(sent.url, `/api/library/${NEW_ID}`);
+  assert.equal(sent.json.expectedGeneration, 4);
+  assert.equal(sent.json.expectedRevision, 'rev-hamlet');
+  assert.equal(ids['library-confirm-yes'].disabled, true);
+  assert.equal(ids['library-confirm'].getAttribute('aria-busy'), 'true');
+  release();
+  await first;
+  await second;
+  assert.equal(calls.filter((call) => call.method === 'DELETE').length, 1);
+  assert.equal(ids['library-confirm'].hidden, true);
+  assert.match(ids['library-status'].textContent, /Permanently deleted “Hamlet”/);
+  assert.match(ids['library-status'].textContent, /cannot be undone in the app/);
+  assert.match(ids['library-status'].textContent, /live show was not changed/);
+  assert.equal(labeledButtons(ids['library-list'], 'Delete').length, 1);
+  assert.equal(live.id, LIVE);
+  assert.equal(ids['library-close'].focused, true);
+});
+
+test('a refused live delete stays in the dialog and does not remove the production', async () => {
+  const script = {
+    id: NEW_ID,
+    title: 'Hamlet',
+    revision: 'rev-hamlet',
+    generation: 1,
+    updatedAt: '2026-01-02T15:04:00.000Z',
+  };
+  const { library, ids, calls, live } = harness((call) => {
+    if (call.url === '/api/library/access') return jsonResponse(200, { required: false });
+    if (call.method === 'DELETE') {
+      return jsonResponse(409, {
+        ok: false,
+        code: 'live-production',
+        error: 'This production is live. Set another production as Live before deleting it. Nothing was deleted.',
+      });
+    }
+    if (call.url === '/api/library') return jsonResponse(200, libraryList(script));
+    return jsonResponse(200, { ok: true });
+  });
+  await library.open();
+  listen(buttonLabeled(ids['library-list'], 'Delete'), 'click')();
+  await listen(ids['library-confirm-yes'], 'click')();
+  assert.equal(calls.filter((call) => call.method === 'DELETE').length, 1);
+  assert.equal(ids['library-confirm'].hidden, false);
+  assert.match(ids['library-confirm-status'].textContent, /Set another production as Live/);
+  assert.match(ids['library-confirm-status'].textContent, /Nothing was deleted/);
+  assert.equal(buttonLabeled(ids['library-list'], 'Hamlet').textContent, 'Hamlet');
+  assert.equal(live.id, LIVE);
 });

@@ -105,8 +105,8 @@ test('a fresh library waits, then the first Set as Live reaches every screen', a
     expect(fs.existsSync(path.join(fixture.libraryDir, 'productions'))).toBe(false);
     await controller.page.locator('#library-create-name').fill('Opening Night');
     await controller.page.locator('#library-create-submit').click();
-    await expect(controller.page.locator('#library-create-status')).toContainText('not the live show');
-    await controller.page.locator('#library-create-cancel').click();
+    await expect(controller.page.locator('#library-create')).toBeHidden();
+    await expect(controller.page.locator('#library-status')).toContainText('not the live show');
     await expect(controller.page.locator('#waiting-show')).toBeVisible();
     await expect(audience.page.locator('#waiting-show')).toBeVisible();
     expect(fs.existsSync(path.join(fixture.libraryDir, 'live-state.json'))).toBe(false);
