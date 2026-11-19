@@ -1,4 +1,5 @@
 const test = require('node:test');
+const { assertCheckoutSeedIntact } = require('./support/checkout-seed');
 const assert = require('node:assert/strict');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -35,7 +36,6 @@ const REAL_FILES = [
   'script.previous.txt.meta.json',
   'data/library/index.json',
   'data/library/scripts/2d0f0937-fc36-4d27-a31e-d047c2fd5623.txt',
-  'data/library/scripts/ee04e849-90d4-4eeb-b2a6-562b06067a32.txt',
   'images/Title_Card.jpeg',
   'images/Cap_Back2.jpeg',
   'images/Cap_Back3.jpeg',
@@ -209,6 +209,10 @@ function stopAt(stage) {
 }
 
 function assertDormant(root) {
+  if (path.resolve(root) === REPO) {
+    assertCheckoutSeedIntact(REPO);
+    return;
+  }
   ACTIVATION.forEach((relative) => {
     assert.equal(fs.existsSync(path.join(root, relative)), false, relative);
   });
@@ -631,9 +635,7 @@ test('leaves fixture library scripts and the index unchanged', (t) => {
 
 test('does not write a live pointer, migration marker, or journal', (t) => {
   const realBefore = realFingerprint();
-  ACTIVATION.forEach((relative) => {
-    assert.equal(fs.existsSync(path.join(REPO, relative)), false, relative);
-  });
+  assertCheckoutSeedIntact(REPO);
   const built = stageFixture(t);
   const result = stageBuilt(built);
   assert.equal(result.ok, true);

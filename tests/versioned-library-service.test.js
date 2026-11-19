@@ -1,4 +1,5 @@
 const test = require('node:test');
+const { assertCheckoutSeedIntact } = require('./support/checkout-seed');
 const assert = require('node:assert/strict');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -39,9 +40,8 @@ const REAL_FILES = {
   'script.txt': 'ab07d71d986cb25fe9a3afc3de8077a359a2f1356bb765d9e948e252a419e5d0',
   'script.previous.txt': 'ab07d71d986cb25fe9a3afc3de8077a359a2f1356bb765d9e948e252a419e5d0',
   'script.previous.txt.meta.json': 'f3c9f57f43645b30dcaa81eb419ba80819b6927423622ac307d8ceb886024230',
-  'data/library/index.json': 'ee9d8f81ff66b174d6806bc5a43250449aae8dc21b6799e0d9d95dcf633762f7',
+  'data/library/index.json': '6c71ace24d5e026e9848983a28b2b57fc116ecd687e889f64998ee2d1b16e449',
   'data/library/scripts/2d0f0937-fc36-4d27-a31e-d047c2fd5623.txt': 'ab07d71d986cb25fe9a3afc3de8077a359a2f1356bb765d9e948e252a419e5d0',
-  'data/library/scripts/ee04e849-90d4-4eeb-b2a6-562b06067a32.txt': '44f27efa4ff652dfe0be20d967cd385a149a8ee0f13e16b250caa5dc9d09ca47',
   'images/Title_Card.jpeg': 'da924c3aaf284c9e5f9eb65bd9ec78ac11d13293b39626e362c04e00c80d508e',
   'images/Cap_Back2.jpeg': 'ecf446be1bdc76be16dea4c24ba5188fa42c360c626927d247175820818bec1b',
   'images/Cap_Back3.jpeg': '11a6309fd758a094d8e5b4c82af9001163d8253ab2b173b5cad907068a8a41f5',
@@ -645,7 +645,5 @@ test('legacy creation and startup stay in place while repository bytes stay unch
   Object.keys(REAL_FILES).forEach((file) => {
     assert.equal(hashFile(path.join(REPO, file)), REAL_FILES[file], file);
   });
-  ['data/library/migration.json', 'data/library/live-state.json', 'data/library/productions', 'data/live-journal'].forEach((file) => {
-    assert.equal(fs.existsSync(path.join(REPO, file)), false, file);
-  });
+  assertCheckoutSeedIntact(REPO);
 });

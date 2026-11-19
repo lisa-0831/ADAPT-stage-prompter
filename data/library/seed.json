@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "kind": "adapt-versioned-seed",
+  "productions": [
+    {
+      "id": "2d0f0937-fc36-4d27-a31e-d047c2fd5623",
+      "title": "WELCOME TO ADAPT COMMUNITY NETWORK’S",
+      "headVersionId": "ec466c0e-e4dc-451e-a80d-b80a29c9b945"
+    }
+  ],
+  "live": {
+    "schema": 2,
+    "state": "committed",
+    "migrationId": "21326a68-53ee-4551-adb6-0ecf8e88fe2a",
+    "productionId": "2d0f0937-fc36-4d27-a31e-d047c2fd5623",
+    "versionId": "ec466c0e-e4dc-451e-a80d-b80a29c9b945",
+    "contentHash": "98a9ba9124f31caf4368154c6b8f9d9ec1cac144f069c07dc6c9a49918a6a795",
+    "sourceScriptHash": "ab07d71d986cb25fe9a3afc3de8077a359a2f1356bb765d9e948e252a419e5d0"
+  },
+  "files": {
+    "productions/2d0f0937-fc36-4d27-a31e-d047c2fd5623/assets/008393ff-bb2c-409e-ba11-032c1858b4ff.jpg": "11a6309fd758a094d8e5b4c82af9001163d8253ab2b173b5cad907068a8a41f5",
+    "productions/2d0f0937-fc36-4d27-a31e-d047c2fd5623/assets/37892661-2450-46a0-b6b2-e56e9ce64a65.jpg": "6d786f25b3ee1e49f5cb8a40625f4c152e58e416645059eef5578a4b21419410",
+    "productions/2d0f0937-fc36-4d27-a31e-d047c2fd5623/assets/669fdc80-e9aa-4e86-81ba-19de879a5705.jpg": "ecf446be1bdc76be16dea4c24ba5188fa42c360c626927d247175820818bec1b",
+    "productions/2d0f0937-fc36-4d27-a31e-d047c2fd5623/assets/fc7b02fc-c40d-4b80-9797-917385e0cba2.jpg": "da924c3aaf284c9e5f9eb65bd9ec78ac11d13293b39626e362c04e00c80d508e",
+    "productions/2d0f0937-fc36-4d27-a31e-d047c2fd5623/assets/manifest.json": "8338eb9417bc487b4ac5763ed150f0d79b0e8e1284015471e542d4cf0e37c1b2",
+    "productions/2d0f0937-fc36-4d27-a31e-d047c2fd5623/metadata.json": "3852e7c5f5d317996dba16c88fbf519da0ed45ce0b1ae4c029a0ec34c696bfba",
+    "productions/2d0f0937-fc36-4d27-a31e-d047c2fd5623/versions/5d7e83b1-d687-4195-8bcd-c69fd5a42e69/script.txt": "ab07d71d986cb25fe9a3afc3de8077a359a2f1356bb765d9e948e252a419e5d0",
+    "productions/2d0f0937-fc36-4d27-a31e-d047c2fd5623/versions/5d7e83b1-d687-4195-8bcd-c69fd5a42e69/version.json": "e3391b7772c7d2f3fdc84a03df7270658cb121cbf72f5f778e2e5901d7cc07b3",
+    "productions/2d0f0937-fc36-4d27-a31e-d047c2fd5623/versions/ec466c0e-e4dc-451e-a80d-b80a29c9b945/script.txt": "98a9ba9124f31caf4368154c6b8f9d9ec1cac144f069c07dc6c9a49918a6a795",
+    "productions/2d0f0937-fc36-4d27-a31e-d047c2fd5623/versions/ec466c0e-e4dc-451e-a80d-b80a29c9b945/version.json": "a608f20e86a54d110ee0d469a63e37f4a14f8401636fd49db68a0888c43a28b2"
+  },
+  "checkoutFiles": {
+    "script.txt": "ab07d71d986cb25fe9a3afc3de8077a359a2f1356bb765d9e948e252a419e5d0",
+    "script.previous.txt": "ab07d71d986cb25fe9a3afc3de8077a359a2f1356bb765d9e948e252a419e5d0",
+    "script.previous.txt.meta.json": "f3c9f57f43645b30dcaa81eb419ba80819b6927423622ac307d8ceb886024230",
+    "images/Title_Card.jpeg": "da924c3aaf284c9e5f9eb65bd9ec78ac11d13293b39626e362c04e00c80d508e",
+    "images/Cap_Back2.jpeg": "ecf446be1bdc76be16dea4c24ba5188fa42c360c626927d247175820818bec1b",
+    "images/Cap_Back3.jpeg": "11a6309fd758a094d8e5b4c82af9001163d8253ab2b173b5cad907068a8a41f5",
+    "images/Cap_Back4.jpeg": "6d786f25b3ee1e49f5cb8a40625f4c152e58e416645059eef5578a4b21419410"
+  }
+}

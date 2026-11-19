@@ -1,11 +1,11 @@
 # WELCOME TO ADAPT COMMUNITY NETWORK’S
-@image: images/Title_Card.jpeg
-{AN IMMERSIVe} 
+@image: library:2d0f0937-fc36-4d27-a31e-d047c2fd5623/fc7b02fc-c40d-4b80-9797-917385e0cba2
+{AN IMMERSIVE} 
 <SING-A-LONG!>
 ---
 # KANSAS PLACE IN BROOKLYN, NEW YORK
 
-@image: images/Cap_Back2.jpeg
+@image: library:2d0f0937-fc36-4d27-a31e-d047c2fd5623/669fdc80-e9aa-4e86-81ba-19de879a5705
 ## SOMEWHERE OVER THE RAINBOW, 
 WAY UP HIGH, 
 THERE'S A LAND THAT I HEARD OF ONCE IN A LULLABY. 
@@ -412,7 +412,7 @@ GET 'EM UP, GET 'EM UP, EASE ON DOWN THE ROAD
 
 # THE MAN MADE OF TIN
 
-@image: images/Cap_Back3.jpeg
+@image: library:2d0f0937-fc36-4d27-a31e-d047c2fd5623/008393ff-bb2c-409e-ba11-032c1858b4ff
 [TIN MAN] 
 OIIIIIL. I DON’T GOT NO DAMN OIL.
  
@@ -599,7 +599,7 @@ THERE'S NO PLACE LIKE HOME? ##
 
 # THE CASTLE
  
-@image: images/Cap_Back4.jpeg
+@image: library:2d0f0937-fc36-4d27-a31e-d047c2fd5623/37892661-2450-46a0-b6b2-e56e9ce64a65
 [ELPHABA]
 WELCOME TO MY CASTLE. HAVE SOME POPPY TEA. IT WILL HELP US ALL CALM DOWN. 
  
@@ -768,7 +768,7 @@ OH, BUT I WILL MISS YOU ALL SO MUCH.
 ---
 # THE HOT AIR BALLOON
 
-@image: images/Title_Card.jpeg
+@image: library:2d0f0937-fc36-4d27-a31e-d047c2fd5623/fc7b02fc-c40d-4b80-9797-917385e0cba2
  
 ##DEFYING GRAVITY
 [DOROTHY]

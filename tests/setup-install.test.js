@@ -10,7 +10,9 @@ const path = require('path');
 const { spawn } = require('child_process');
 
 const { runSetup, listLegacyFiles } = require('../scripts/setup');
-const { defaultHome, protectedRoots, REPO_ROOT } = require('../scripts/install-paths');
+const { defaultHome, protectedRoots, resolveInstallPaths, REPO_ROOT } = require('../scripts/install-paths');
+const { ensureVersionedInstall, WELCOME_ID } = require('../scripts/versioned-seed');
+const { assertCheckoutSeedIntact } = require('./support/checkout-seed');
 const { detectStorageMode } = require('../server/storage-mode');
 
 const LIVE = '11111111-1111-4111-8111-111111111111';
@@ -18,7 +20,6 @@ const OTHER = '22222222-2222-4222-8222-222222222222';
 const LIVE_TEXT = '# Live Show\n[ADA]\nFIRST CUE\n';
 const OTHER_TEXT = '# Saved Show\n[ADA]\nSECOND CUE\n';
 const WELCOME = '2d0f0937-fc36-4d27-a31e-d047c2fd5623';
-const INDEX_LIVE = 'ee04e849-90d4-4eeb-b2a6-562b06067a32';
 
 function sha256(filePath) {
   return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
@@ -58,14 +59,14 @@ function entryCount(dir) {
   return fs.readdirSync(dir).length;
 }
 
-function request(port, method, route, body) {
+function request(port, method, route, body, headers) {
   return new Promise((resolve, reject) => {
     const req = http.request({
       host: '127.0.0.1',
       port,
       method,
       path: route,
-      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      headers: Object.assign(body ? { 'Content-Type': 'application/json' } : {}, headers || {}),
     }, (res) => {
       const chunks = [];
       res.on('data', (chunk) => chunks.push(chunk));
@@ -210,29 +211,109 @@ test('setup fails when the repository seed is missing', (t) => {
   assert.equal(fs.existsSync(path.join(parent, 'home', 'library')), false);
 });
 
-test('npm start fails closed when setup has not been run', async (t) => {
+test('seed install refuses a data directory that already has unrelated files', (t) => {
   const parent = makeParent(t);
-  const child = spawn(process.execPath, [path.join(REPO_ROOT, 'scripts', 'start-installed.js')], {
-    env: Object.assign({}, process.env, {
-      ADAPT_PROMPTER_HOME: path.join(parent, 'home'),
-      ADAPT_PROMPTER_DATA: '',
-      ADAPT_PROMPTER_CONFIG: '',
-      ADAPT_PROMPTER_BACKUP: '',
-      PORT: '0',
-      PROMPTER_STAFF_TOKEN: '',
-    }),
-    stdio: ['ignore', 'pipe', 'pipe'],
+  const paths = resolveInstallPaths({ home: path.join(parent, 'home'), env: {} });
+  assert.equal(paths.ok, true, paths.error);
+  fs.mkdirSync(paths.dataRoot, { recursive: true });
+  fs.writeFileSync(path.join(paths.dataRoot, 'keep.txt'), 'leave this file\n');
+  const result = ensureVersionedInstall(paths);
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'destination-not-empty');
+  assert.equal(fs.readFileSync(path.join(paths.dataRoot, 'keep.txt'), 'utf8'), 'leave this file\n');
+  assert.equal(fs.existsSync(path.join(paths.libraryDir, 'migration.json')), false);
+});
+
+test('npm start installs the committed seed and keeps a saved production across restarts', async (t) => {
+  const parent = makeParent(t);
+  const home = path.join(parent, 'home');
+  const support = path.join(os.homedir(), 'Library', 'Application Support', 'ADAPT Stage Prompter');
+  const supportBefore = fs.existsSync(support) ? fs.statSync(support).mtimeMs : null;
+  const liveCounts = new Map(protectedRoots().map((root) => [root, entryCount(root)]));
+  const env = Object.assign({}, process.env, {
+    ADAPT_PROMPTER_HOME: home,
+    ADAPT_PROMPTER_DATA: '',
+    ADAPT_PROMPTER_CONFIG: '',
+    ADAPT_PROMPTER_BACKUP: '',
+    PORT: '0',
+    PROMPTER_STAFF_TOKEN: '',
   });
-  let stderr = '';
-  child.stderr.setEncoding('utf8');
-  child.stderr.on('data', (chunk) => { stderr += chunk; });
-  const code = await new Promise((resolve) => child.on('exit', resolve));
-  assert.equal(code, 1);
-  const parsed = JSON.parse(stderr);
-  assert.equal(parsed.ok, false);
-  assert.equal(parsed.code, 'config-required');
-  assert.match(parsed.error, /npm run setup/);
+  const starter = path.join(REPO_ROOT, 'scripts', 'start-installed.js');
+  const first = spawn(process.execPath, [starter], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+  t.after(() => stopChild(first));
+  const firstReady = await firstJson(first, 60000);
+  assert.equal(firstReady.ok, true, JSON.stringify(firstReady));
+  assert.equal(firstReady.host, '127.0.0.1');
+  const listed = await request(firstReady.port, 'GET', '/api/library');
+  assert.equal(listed.status, 200, JSON.stringify(listed.body));
+  assert.equal(listed.body.liveId, WELCOME_ID);
+  assert.ok(listed.body.scripts.some((script) => script.id === WELCOME_ID && script.title.startsWith('WELCOME')));
+  assert.equal(listed.body.scripts.some((script) => script.title === 'Test'), false);
+  const version = await request(
+    firstReady.port,
+    'GET',
+    `/api/library/${WELCOME_ID}/versions/ec466c0e-e4dc-451e-a80d-b80a29c9b945`,
+  );
+  assert.equal(version.status, 200, JSON.stringify(version.body));
+  assert.equal(version.body.version.parentVersionId, '5d7e83b1-d687-4195-8bcd-c69fd5a42e69');
+  const image = await request(
+    firstReady.port,
+    'GET',
+    `/api/live/assets/${WELCOME_ID}/fc7b02fc-c40d-4b80-9797-917385e0cba2`,
+  );
+  assert.equal(image.status, 200);
+  assert.ok(image.raw.length > 1000);
+  const title = `Seed persistence ${crypto.randomBytes(4).toString('hex')}`;
+  const created = await request(firstReady.port, 'POST', '/api/library', JSON.stringify({
+    title,
+    text: '# Seed Check\n[ADA]\nFIRST DRAFT\n',
+  }));
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  const edited = '# Seed Check\n[ADA]\nSAVED AFTER RESTART\n';
+  const saved = await request(firstReady.port, 'PUT', `/api/library/${created.body.script.id}`, JSON.stringify({
+    text: edited,
+    expectedRevision: created.body.script.revision,
+  }));
+  assert.equal(saved.status, 200, JSON.stringify(saved.body));
+  const published = await request(
+    firstReady.port,
+    'POST',
+    `/api/library/${created.body.script.id}/live`,
+    JSON.stringify({ expectedRevision: saved.body.script.revision }),
+  );
+  assert.equal(published.status, 200, JSON.stringify(published.body));
+  const live = await request(firstReady.port, 'GET', '/script');
+  assert.match(live.raw, /SAVED AFTER RESTART/);
+  const markerAfterBoot = fs.readFileSync(path.join(home, 'library', 'data', 'library', 'migration.json'));
+  await stopChild(first);
+
+  async function startAgain() {
+    const child = spawn(process.execPath, [starter], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+    t.after(() => stopChild(child));
+    const ready = await firstJson(child, 60000);
+    assert.equal(ready.ok, true, JSON.stringify(ready));
+    return { child, ready };
+  }
+  const second = await startAgain();
+  const afterRestart = await request(second.ready.port, 'GET', '/api/library');
+  assert.ok(afterRestart.body.scripts.some((script) => script.id === created.body.script.id && script.title === title));
+  assert.equal(afterRestart.body.liveId, created.body.script.id);
+  const liveAgain = await request(second.ready.port, 'GET', '/script');
+  assert.match(liveAgain.raw, /SAVED AFTER RESTART/);
+  assert.equal(fs.readFileSync(path.join(home, 'library', 'data', 'library', 'migration.json')).equals(markerAfterBoot), true);
+  await stopChild(second.child);
+
+  const third = await startAgain();
+  const stillThere = await request(third.ready.port, 'GET', '/api/library');
+  assert.equal(stillThere.body.liveId, created.body.script.id);
+  assert.equal(stillThere.body.scripts.some((script) => script.title === 'Test'), false);
+  assert.equal(fs.readFileSync(path.join(home, 'library', 'data', 'library', 'migration.json')).equals(markerAfterBoot), true);
   assert.equal(fs.existsSync(path.join(REPO_ROOT, 'data', 'library', 'migration.json')), false);
+  assert.equal(fs.existsSync(path.join(REPO_ROOT, 'data', 'library', '.writer.lock')), false);
+  assertCheckoutSeedIntact(REPO_ROOT);
+  protectedRoots().forEach((root) => assert.equal(entryCount(root), liveCounts.get(root)));
+  if (supportBefore === null) assert.equal(fs.existsSync(support), false);
+  else assert.equal(fs.statSync(support).mtimeMs, supportBefore);
 });
 
 test('a fresh clone of the repository seed installs, saves, and restarts', async (t) => {
@@ -252,7 +333,6 @@ test('a fresh clone of the repository seed installs, saves, and restarts', async
   const installed = runSetup({ repoRoot: clone, home, env: {} });
   assert.equal(installed.ok, true, installed.error);
   assert.equal(installed.productionId, WELCOME);
-  assert.notEqual(installed.productionId, INDEX_LIVE);
   assert.equal(fs.existsSync(path.join(home, 'backups', 'legacy-before-migration', 'backup-manifest.json')), true);
   assert.equal(fs.existsSync(path.join(home, 'backups', '.adapt-restore-check')), false);
   assert.equal(fs.existsSync(path.join(REPO_ROOT, 'data', 'library', 'migration.json')), false);

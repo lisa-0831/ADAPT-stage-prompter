@@ -1,4 +1,5 @@
 const test = require('node:test');
+const { assertCheckoutSeedIntact } = require('./support/checkout-seed');
 const assert = require('node:assert/strict');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -33,7 +34,6 @@ const REAL_FILES = [
   'script.previous.txt.meta.json',
   'data/library/index.json',
   'data/library/scripts/2d0f0937-fc36-4d27-a31e-d047c2fd5623.txt',
-  'data/library/scripts/ee04e849-90d4-4eeb-b2a6-562b06067a32.txt',
   'images/Title_Card.jpeg',
   'images/Cap_Back2.jpeg',
   'images/Cap_Back3.jpeg',
@@ -497,8 +497,7 @@ test('reads and listings do not change files', (t) => {
 
 test('the store refuses a root inside the repository', () => {
   assert.throws(() => createVersionStore({ root: REPO }), VersionStoreError);
-  assert.equal(fs.existsSync(path.join(REPO, 'data', 'library', 'productions')), false);
-  assert.equal(fs.existsSync(path.join(REPO, 'data', 'library', 'migration.json')), false);
+  assertCheckoutSeedIntact(REPO);
 });
 
 test('repository production files stay byte-identical', () => {

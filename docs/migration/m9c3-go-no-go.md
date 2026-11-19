@@ -44,6 +44,6 @@ Local regression of the application code is not one of these rows. It does not o
 - `scripts/backup-storage.js create` against that same root
 - Any public listener for the current WebSocket protocol
 
-`npm run setup` copies the Legacy seed in this repository into a new directory outside the checkout. It refuses `~/ADAPT-stage-prompter-data`, `~/ADAPT-stage-prompter-config`, and `~/ADAPT-stage-prompter-backups`. That install is not a production cutover and does not change this NO-GO.
+`npm start` copies the Versioned seed already in this repository into a new directory outside the checkout and listens on `127.0.0.1`. `npm run setup` remains the optional Legacy migrator. Both refuse `~/ADAPT-stage-prompter-data`, `~/ADAPT-stage-prompter-config`, and `~/ADAPT-stage-prompter-backups`. Neither is a production cutover, and neither changes this NO-GO. The security choices that remain open are in [security-ux-decisions.md](security-ux-decisions.md).
 
 `preflight` against the real root is also out of scope until the backup gate is passed. Taking the lock there creates `data/library/.writer.lock`.

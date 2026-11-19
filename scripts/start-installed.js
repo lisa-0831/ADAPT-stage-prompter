@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
 const { startPersistentRuntime } = require('../server/persistent-runtime');
 const { resolveInstallPaths } = require('./install-paths');
+const { ensureVersionedInstall } = require('./versioned-seed');
 
-// Starts the installed Versioned Library. A missing authorization file is
-// a failed start. This command does not open the Legacy seed in the checkout
-// and it does not listen on every interface.
+// Starts the Versioned Library. The first start copies the committed seed
+// into durable storage and writes the local authorization there. A later
+// start reuses that library. This command does not migrate Legacy text,
+// does not open the checkout as the live library, and listens on loopback.
 
 function fail(code, message) {
   process.stderr.write(`${JSON.stringify({ ok: false, code, error: message })}\n`);
@@ -27,26 +27,9 @@ function portFromEnv(env) {
 function configPathFromEnv(env) {
   const paths = resolveInstallPaths({ env });
   if (!paths.ok) fail(paths.code, paths.error);
-  let stat;
-  try {
-    stat = fs.lstatSync(paths.runtimeConfigPath);
-  } catch (err) {
-    if (err && err.code === 'ENOENT') {
-      fail(
-        'config-required',
-        'The Versioned Library is not installed. Run npm run setup first. This command does not open the Legacy library in the checkout.',
-      );
-    }
-    fail('config-invalid', 'The runtime authorization could not be read.');
-  }
-  if (!stat.isFile() || stat.isSymbolicLink()) {
-    fail('config-invalid', 'The runtime authorization must be a regular file.');
-  }
-  const resolved = fs.realpathSync(paths.runtimeConfigPath);
-  if (resolved !== path.resolve(paths.runtimeConfigPath)) {
-    fail('config-invalid', 'The runtime authorization path must already be canonical.');
-  }
-  return resolved;
+  const installed = ensureVersionedInstall(paths);
+  if (!installed.ok) fail(installed.code, installed.error);
+  return paths.runtimeConfigPath;
 }
 
 async function main() {

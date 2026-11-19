@@ -60,7 +60,7 @@ Commit, the first persistent start, and any rollback after the audience has used
 
     Compare the restore with the manifest. NO-GO on any mismatch. Leave the restore directory intact until the window closes.
 
-11. **Confirm the source manifest.** The migration authorization's `sourceManifest` is the SHA-256 of every Legacy input in the persistent root: `script.txt`, the previous script and metadata, `data/library/index.json`, each `data/library/scripts/*.txt`, and each shared image under `images/`. No extra file is listed and none is missing. `expectedLiveProductionId` is the production whose saved script bytes equal `script.txt`. For the current ADAPT library that production is WELCOME, not the stored `liveId` of Test. Recompute the hashes in the window. Do not reuse M9B version or asset ids.
+11. **Confirm the source manifest.** The migration authorization's `sourceManifest` is the SHA-256 of every Legacy input in the persistent root: `script.txt`, the previous script and metadata, `data/library/index.json`, each `data/library/scripts/*.txt`, and each shared image under `images/`. No extra file is listed and none is missing. `expectedLiveProductionId` is the production whose saved script bytes equal `script.txt`. For the current ADAPT library that production is WELCOME. Recompute the hashes in the window. Do not reuse M9B version or asset ids.
 
 12. **Place the snapshot.** The persistent root is outside the application checkout. It already contains the verified Legacy snapshot from step 9's source. Do not migrate the git checkout.
 
@@ -70,7 +70,7 @@ Commit, the first persistent start, and any rollback after the audience has used
     node scripts/migrate-persistent.js preflight --config <migration-authorization>
     ```
 
-    NO-GO unless `ok` is true, `liveProductionId` is WELCOME's id, Test is a separate production, and `migration.json` is absent. `live-id-drift` is expected and is not a reason to follow the stored `liveId`.
+    NO-GO unless `ok` is true, `liveProductionId` is WELCOME's id, and `migration.json` is absent. A stored `liveId` that does not match those bytes is drift, and it is not a reason to follow the stored `liveId`.
 
 14. **Prepare and verify.**
 
@@ -102,7 +102,7 @@ Commit, the first persistent start, and any rollback after the audience has used
     node scripts/start-persistent.js --config <runtime-authorization> --port <port> --bind <approved-address>
     ```
 
-    The first listen installs Live State. WELCOME's migrated head is the active show. When WELCOME's script contains legacy `images/` lines, that head is v2. Test remains a separate production. `GET /script/previous` is 404 because `previousActivation` is null.
+    The first listen installs Live State. WELCOME's migrated head is the active show. When WELCOME's script contains legacy `images/` lines, that head is v2. `GET /script/previous` is 404 because `previousActivation` is null.
 
 21. **Check the show.** From an approved client, Controller, Actor, and Audience show the same cue. Shared images load. A cue change on the Controller reaches Actor and Audience. WebSocket reconnects.
 

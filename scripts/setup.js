@@ -14,10 +14,10 @@ const {
 } = require('../server/storage-backup');
 const { resolveInstallPaths } = require('./install-paths');
 
-// One-time installation. The checkout stays the Legacy seed. This command
-// copies that seed to a directory outside the checkout, backs it up, checks
-// the copy, and commits the existing persistent migration. A second run
-// leaves an installed library where it is.
+// Optional Legacy migration. Normal startup does not use this command.
+// It copies the Legacy script files, not the committed productions, into an
+// empty directory, backs that copy up, and runs the existing migration.
+// A second run leaves an installed library where it is.
 
 const REQUIRED = [
   'script.txt',

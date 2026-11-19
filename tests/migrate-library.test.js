@@ -1,4 +1,5 @@
 const test = require('node:test');
+const { assertCheckoutSeedIntact } = require('./support/checkout-seed');
 const assert = require('node:assert/strict');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -48,7 +49,6 @@ const REAL_FILES = [
   'script.previous.txt.meta.json',
   'data/library/index.json',
   'data/library/scripts/2d0f0937-fc36-4d27-a31e-d047c2fd5623.txt',
-  'data/library/scripts/ee04e849-90d4-4eeb-b2a6-562b06067a32.txt',
   'images/Title_Card.jpeg',
   'images/Cap_Back2.jpeg',
   'images/Cap_Back3.jpeg',
@@ -513,9 +513,7 @@ test('repository production files stay byte-identical', () => {
   REAL_FILES.forEach((relative) => {
     assert.equal(hashBuffer(fs.readFileSync(path.join(REPO, relative))), before[relative]);
   });
-  ['data/library/migration.json', 'data/library/productions', 'data/library/migration-work', 'data/live-journal'].forEach((relative) => {
-    assert.equal(fs.existsSync(path.join(REPO, relative)), false);
-  });
+  assertCheckoutSeedIntact(REPO);
 });
 
 const UNICODE_TITLE = '  欢迎 — “Café”  ';
