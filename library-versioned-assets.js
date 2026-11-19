@@ -647,6 +647,12 @@ function createVersionedAssetManager(options) {
           referenced: false,
         };
         if (requestId) entry.uploadRequestId = requestId;
+        if (typeof body.legacyPath === 'string' && /^images\/[A-Za-z0-9._-]+$/.test(body.legacyPath)) {
+          entry.legacyPath = body.legacyPath;
+        }
+        if (body.imageSource === 'current-shared-file' || body.imageSource === 'verified-snapshot') {
+          entry.imageSource = body.imageSource;
+        }
         const next = Object.assign({}, fresh.manifest || { productionId }, {
           productionId,
           assets: fresh.assets.concat([entry]),

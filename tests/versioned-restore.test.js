@@ -257,23 +257,358 @@ test('restore copies an older committed version into a new head and leaves live 
   assert.equal(metadata(paths, CREATED).headVersionId, V4);
 });
 
-test('a shared images reference is refused and the historical version stays readable', async (t) => {
+test('a verified shared image restores as a new owned version and leaves the original alone', async (t) => {
   const paths = commitImageFixture(t);
   const service = openService(paths);
   t.after(() => service.close());
   const listed = await service.listProductionVersions(LIVE);
   const original = listed.versions.find((version) => version.origin === 'original');
   const migrated = listed.versions.find((version) => version.origin === 'migrated');
-  const namesBefore = fs.readdirSync(path.join(paths.libraryDir, 'productions', LIVE, 'versions'));
   const source = versionBytes(paths, LIVE, original.versionId);
-  const refused = await restore(service, LIVE, original.versionId, migrated.versionId, V4);
-  assert.equal(refused.code, 'legacy-image');
+  const migratedBytes = versionBytes(paths, LIVE, migrated.versionId);
+  const liveFile = fs.readFileSync(path.join(paths.libraryDir, 'live-state.json'));
+  const mirror = fs.readFileSync(paths.scriptFile);
+  const detail = await service.readProductionVersion({ productionId: LIVE, versionId: original.versionId });
+  assert.equal(detail.images.sharedRestore.status, 'verified');
+  assert.equal(detail.images.sharedRestore.basis, 'stored-copy');
+  assert.equal(detail.images.sharedRestore.historicalProof, false);
+  assert.match(detail.images.sharedRestore.description, /does not prove they are the images from the original save/);
+  assert.doesNotMatch(detail.images.sharedRestore.description, /identical to the originals|historical original|proven historical/i);
+  const edited = await service.saveVersion({
+    productionId: LIVE,
+    expectedVersionId: migrated.versionId,
+    newVersionId: V3,
+    text: '# Scene\r\n[ADA]\r\nEDITED\r\n',
+    createdAt: '2026-09-01T00:00:00.000Z',
+  });
+  assert.equal(edited.ok, true, edited.error);
+  const restored = await restore(service, LIVE, original.versionId, V3, V4);
+  assert.equal(restored.ok, true, restored.error);
+  assert.equal(restored.unchanged, false);
+  assert.equal(restored.parentVersionId, V3);
+  assert.equal(restored.imageIntegrity, 'verified');
+  assert.equal(restored.imagesCopied, 0);
+  const saved = versionBytes(paths, LIVE, V4).toString('utf8');
+  assert.equal(saved.includes('library:'), true);
+  assert.equal(saved.includes('images/'), false);
+  assert.equal(versionBytes(paths, LIVE, original.versionId).equals(source), true);
+  assert.equal(versionBytes(paths, LIVE, migrated.versionId).equals(migratedBytes), true);
+  const document = JSON.parse(fs.readFileSync(versionFile(paths, LIVE, V4, 'version.json'), 'utf8'));
+  assert.equal(document.parentVersionId, V3);
+  assert.equal(document.imageRestoration.integrity, 'verified');
+  assert.equal(document.imageRestoration.sourceVersionId, original.versionId);
+  const manifest = JSON.parse(fs.readFileSync(path.join(
+    paths.libraryDir, 'productions', LIVE, 'assets', 'manifest.json',
+  ), 'utf8'));
+  assert.equal(manifest.productionId, LIVE);
+  const assetHashes = new Map();
+  document.assetIds.forEach((assetId) => {
+    const entry = manifest.assets.find((asset) => (asset.assetId || asset.id) === assetId);
+    assert.ok(entry, assetId);
+    const filePath = path.join(paths.libraryDir, 'productions', LIVE, 'assets', entry.file);
+    assert.equal(filePath.startsWith(path.join(paths.libraryDir, 'productions', LIVE, 'assets')), true);
+    assert.equal(fs.existsSync(filePath), true);
+    assetHashes.set(assetId, sha256(fs.readFileSync(filePath)));
+  });
+  assert.equal(fs.readFileSync(path.join(paths.libraryDir, 'live-state.json')).equals(liveFile), true);
+  assert.equal(fs.readFileSync(paths.scriptFile).equals(mirror), true);
+  await service.close();
+  const again = openService(paths);
+  t.after(() => again.close());
+  const reread = await again.readProductionVersion({ productionId: LIVE, versionId: V4 });
+  assert.equal(reread.ok, true, reread.error);
+  assert.equal(reread.version.text, saved);
+  assert.equal(reread.version.imageRestoration.integrity, 'verified');
+  assetHashes.forEach((hash, assetId) => {
+    const entry = manifest.assets.find((asset) => (asset.assetId || asset.id) === assetId);
+    const filePath = path.join(paths.libraryDir, 'productions', LIVE, 'assets', entry.file);
+    assert.equal(sha256(fs.readFileSync(filePath)), hash);
+  });
+});
+
+test('a late retry of the same restore id does not save a second version', async (t) => {
+  const paths = commitImageFixture(t);
+  const started = await listenApp(t, paths);
+  const service = started.service;
+  const created = await service.createProduction({
+    productionId: CREATED,
+    versionId: V1,
+    title: 'Retry Room',
+    text: '# Scene\n[ADA]\nFIRST\n',
+    createdAt: '2026-08-01T00:00:00.000Z',
+  });
+  assert.equal(created.ok, true, created.error);
+  const edited = await service.saveVersion({
+    productionId: CREATED,
+    expectedVersionId: V1,
+    newVersionId: V2,
+    text: '# Scene\n[ADA]\nSECOND\n',
+    createdAt: '2026-08-02T00:00:00.000Z',
+  });
+  assert.equal(edited.ok, true, edited.error);
+  const liveBefore = fs.readFileSync(path.join(paths.libraryDir, 'live-state.json'));
+  const [first, second] = await Promise.all([
+    restore(service, CREATED, V1, V2, V4),
+    restore(service, CREATED, V1, V2, V4),
+  ]);
+  const results = [first, second];
+  assert.equal(results.filter((result) => result.ok && result.alreadyRestored !== true && result.unchanged !== true).length, 1);
+  assert.equal(results.filter((result) => result.ok && result.alreadyRestored === true).length, 1);
+  assert.equal(metadata(paths, CREATED).headVersionId, V4);
+  assert.equal(fs.readdirSync(path.join(paths.libraryDir, 'productions', CREATED, 'versions')).filter((name) => !name.startsWith('.')).length, 3);
+  const retry = await fetch(`${started.base}/api/library/${CREATED}/versions/${V1}/restore`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Staff-Token': TOKEN,
+      'X-Version-Id': V4,
+    },
+    body: JSON.stringify({ expectedVersionId: V2 }),
+  });
+  const retryBody = await retry.json();
+  assert.equal(retry.status, 200);
+  assert.equal(retryBody.alreadyRestored, true);
+  assert.equal(retryBody.restoredVersionId, V4);
+  assert.equal(retryBody.savedHeadVersionId, V4);
+  assert.equal(fs.readdirSync(path.join(paths.libraryDir, 'productions', CREATED, 'versions')).filter((name) => !name.startsWith('.')).length, 3);
+
+  const listed = await service.listProductionVersions(LIVE);
+  const original = listed.versions.find((version) => version.origin === 'original');
+  const migrated = listed.versions.find((version) => version.origin === 'migrated');
+  const source = versionBytes(paths, LIVE, original.versionId);
+  fs.writeFileSync(path.join(paths.root, 'images', 'Title_Card.jpeg'), Buffer.concat([
+    jpegBytes().subarray(0, jpegBytes().length - 3),
+    Buffer.from([7]),
+    jpegBytes().subarray(jpegBytes().length - 2),
+  ]));
+  const copied = await service.restoreSavedVersion({
+    productionId: LIVE,
+    sourceVersionId: original.versionId,
+    expectedVersionId: migrated.versionId,
+    newVersionId: V5,
+    createdAt: '2026-11-16T15:04:00.000Z',
+    confirmCurrentImages: true,
+  });
+  assert.equal(copied.ok, true, copied.error);
+  assert.equal(copied.imageIntegrity, 'current-shared');
+  const manifestAfterCopy = JSON.parse(fs.readFileSync(path.join(
+    paths.libraryDir, 'productions', LIVE, 'assets', 'manifest.json',
+  ), 'utf8'));
+  const copiedIds = manifestAfterCopy.assets.map((asset) => asset.assetId || asset.id);
+  const late = await service.restoreSavedVersion({
+    productionId: LIVE,
+    sourceVersionId: original.versionId,
+    expectedVersionId: migrated.versionId,
+    newVersionId: V5,
+    createdAt: '2026-11-16T15:05:00.000Z',
+    confirmCurrentImages: true,
+  });
+  assert.equal(late.alreadyRestored, true);
+  assert.equal(late.imagesCopied, 0);
+  assert.equal(metadata(paths, LIVE).headVersionId, V5);
+  const manifestAfterRetry = JSON.parse(fs.readFileSync(path.join(
+    paths.libraryDir, 'productions', LIVE, 'assets', 'manifest.json',
+  ), 'utf8'));
+  assert.deepEqual(manifestAfterRetry.assets.map((asset) => asset.assetId || asset.id), copiedIds);
+  assert.equal(versionBytes(paths, LIVE, original.versionId).equals(source), true);
+  const conflict = await restore(service, LIVE, original.versionId, migrated.versionId, '88888888-8888-4888-8888-888888888888');
+  assert.equal(conflict.code, 'conflict');
+  assert.equal(fs.existsSync(versionFile(paths, LIVE, '88888888-8888-4888-8888-888888888888', 'script.txt')), false);
+  assert.equal(fs.readFileSync(path.join(paths.libraryDir, 'live-state.json')).equals(liveBefore), true);
+
+  await service.close();
+  const again = openService(paths);
+  t.after(() => again.close());
+  const plain = await again.readProductionVersion({ productionId: CREATED, versionId: V4 });
+  const shared = await again.readProductionVersion({ productionId: LIVE, versionId: V5 });
+  assert.equal(plain.ok, true, plain.error);
+  assert.equal(plain.version.text.includes('FIRST'), true);
+  assert.equal(shared.version.imageRestoration.integrity, 'current-shared');
+  const reopenedManifest = JSON.parse(fs.readFileSync(path.join(
+    paths.libraryDir, 'productions', LIVE, 'assets', 'manifest.json',
+  ), 'utf8'));
+  const owned = reopenedManifest.assets.find((asset) => asset.imageSource === 'current-shared-file');
+  assert.equal(owned.legacyPath, 'images/Title_Card.jpeg');
+  assert.equal(sha256(fs.readFileSync(path.join(
+    paths.libraryDir, 'productions', LIVE, 'assets', owned.file,
+  ))), owned.contentHash);
+  assert.equal(fs.readFileSync(path.join(paths.libraryDir, 'live-state.json')).equals(liveBefore), true);
+});
+
+test('an unverified shared image waits for confirmation and then copies the current file', async (t) => {
+  const paths = commitImageFixture(t);
+  const service = openService(paths);
+  t.after(() => service.close());
+  const listed = await service.listProductionVersions(LIVE);
+  const original = listed.versions.find((version) => version.origin === 'original');
+  const migrated = listed.versions.find((version) => version.origin === 'migrated');
+  const source = versionBytes(paths, LIVE, original.versionId);
+  const namesBefore = fs.readdirSync(path.join(paths.libraryDir, 'productions', LIVE, 'versions'));
+  const manifestBefore = fs.readFileSync(path.join(paths.libraryDir, 'productions', LIVE, 'assets', 'manifest.json'));
+  fs.writeFileSync(path.join(paths.root, 'images', 'Title_Card.jpeg'), Buffer.concat([
+    jpegBytes().subarray(0, jpegBytes().length - 3),
+    Buffer.from([4]),
+    jpegBytes().subarray(jpegBytes().length - 2),
+  ]));
+  const held = await restore(service, LIVE, original.versionId, migrated.versionId, V4);
+  assert.equal(held.code, 'confirmation-required');
+  assert.equal(held.imageIntegrity, 'current-shared');
   assert.equal(versionBytes(paths, LIVE, original.versionId).equals(source), true);
   assert.deepEqual(fs.readdirSync(path.join(paths.libraryDir, 'productions', LIVE, 'versions')), namesBefore);
+  assert.equal(fs.readFileSync(path.join(paths.libraryDir, 'productions', LIVE, 'assets', 'manifest.json')).equals(manifestBefore), true);
+  const restored = await service.restoreSavedVersion({
+    productionId: LIVE,
+    sourceVersionId: original.versionId,
+    expectedVersionId: migrated.versionId,
+    newVersionId: V4,
+    createdAt: '2026-11-16T15:00:00.000Z',
+    confirmCurrentImages: true,
+  });
+  assert.equal(restored.ok, true, restored.error);
+  assert.equal(restored.imageIntegrity, 'current-shared');
+  assert.equal(restored.imagesCopied, 1);
+  assert.equal(restored.parentVersionId, migrated.versionId);
+  assert.equal(versionBytes(paths, LIVE, original.versionId).equals(source), true);
+  const document = JSON.parse(fs.readFileSync(versionFile(paths, LIVE, V4, 'version.json'), 'utf8'));
+  assert.equal(document.imageRestoration.integrity, 'current-shared');
+  const manifest = JSON.parse(fs.readFileSync(path.join(
+    paths.libraryDir, 'productions', LIVE, 'assets', 'manifest.json',
+  ), 'utf8'));
+  const copied = manifest.assets.find((asset) => asset.imageSource === 'current-shared-file');
+  assert.ok(copied);
+  assert.equal(copied.legacyPath, 'images/Title_Card.jpeg');
+  assert.equal(manifest.productionId, LIVE);
+  const liveFile = fs.readFileSync(path.join(paths.libraryDir, 'live-state.json'));
+  await service.close();
+  const again = openService(paths);
+  t.after(() => again.close());
+  const reread = await again.readProductionVersion({ productionId: LIVE, versionId: V4 });
+  assert.equal(reread.version.imageRestoration.images[0].integrity, 'current-shared');
+  assert.equal(fs.readFileSync(path.join(paths.libraryDir, 'live-state.json')).equals(liveFile), true);
+});
+
+test('a missing or unsafe shared image is refused without a partial restore', async (t) => {
+  const paths = commitImageFixture(t);
+  const service = openService(paths);
+  t.after(() => service.close());
+  const listed = await service.listProductionVersions(LIVE);
+  const original = listed.versions.find((version) => version.origin === 'original');
+  const migrated = listed.versions.find((version) => version.origin === 'migrated');
+  const source = versionBytes(paths, LIVE, original.versionId);
+  const namesBefore = fs.readdirSync(path.join(paths.libraryDir, 'productions', LIVE, 'versions'));
+  const manifestBefore = fs.readFileSync(path.join(paths.libraryDir, 'productions', LIVE, 'assets', 'manifest.json'));
+  fs.rmSync(path.join(paths.root, 'images', 'Title_Card.jpeg'));
+  const missing = await restore(service, LIVE, original.versionId, migrated.versionId, V4);
+  assert.equal(missing.code, 'missing-image');
+  assert.equal(missing.sharedImages.some((image) => image.name === 'Title_Card.jpeg' && image.code === 'missing-image'), true);
+  fs.writeFileSync(path.join(paths.root, 'images', 'Title_Card.jpeg'), jpegBytes());
+  fs.symlinkSync(path.join(paths.root, 'images', 'Title_Card.jpeg'), path.join(paths.root, 'images', 'Linked.jpeg'));
+  const unsafeText = '# Scene\r\n@image: images/Linked.jpeg\r\n[ADA]\r\nHéllo\r\n';
+  const head = metadata(paths, LIVE);
+  const unsafeId = V2;
+  fs.mkdirSync(path.dirname(versionFile(paths, LIVE, unsafeId, 'script.txt')), { recursive: true });
+  fs.writeFileSync(versionFile(paths, LIVE, unsafeId, 'script.txt'), unsafeText);
+  writeJson(versionFile(paths, LIVE, unsafeId, 'version.json'), {
+    schema: 1,
+    id: unsafeId,
+    productionId: LIVE,
+    contentHash: sha256(Buffer.from(unsafeText)),
+    parentVersionId: original.versionId,
+    origin: 'original',
+    role: 'v1',
+    legacyImagePolicy: 'shared-images',
+    assetIds: [],
+    createdAt: '2026-09-04T00:00:00.000Z',
+  });
+  head.versions.push({
+    id: unsafeId,
+    role: 'v1',
+    origin: 'original',
+    parentVersionId: original.versionId,
+    contentHash: sha256(Buffer.from(unsafeText)),
+    createdAt: '2026-09-04T00:00:00.000Z',
+  });
+  writeJson(path.join(paths.libraryDir, 'productions', LIVE, 'metadata.json'), head);
+  const linked = await restore(service, LIVE, unsafeId, migrated.versionId, V5);
+  assert.equal(linked.code, 'unsafe-image');
+  const traversalText = '# Scene\r\n@image: images/../Title_Card.jpeg\r\n[ADA]\r\nHéllo\r\n';
+  fs.mkdirSync(path.dirname(versionFile(paths, LIVE, '99999999-9999-4999-8999-999999999991', 'script.txt')), { recursive: true });
+  fs.writeFileSync(versionFile(paths, LIVE, '99999999-9999-4999-8999-999999999991', 'script.txt'), traversalText);
+  writeJson(versionFile(paths, LIVE, '99999999-9999-4999-8999-999999999991', 'version.json'), {
+    schema: 1,
+    id: '99999999-9999-4999-8999-999999999991',
+    productionId: LIVE,
+    contentHash: sha256(Buffer.from(traversalText)),
+    parentVersionId: original.versionId,
+    origin: 'original',
+    role: 'v1',
+    legacyImagePolicy: 'shared-images',
+    assetIds: [],
+    createdAt: '2026-09-05T00:00:00.000Z',
+  });
+  const recorded = metadata(paths, LIVE);
+  recorded.versions.push({
+    id: '99999999-9999-4999-8999-999999999991',
+    role: 'v1',
+    origin: 'original',
+    parentVersionId: original.versionId,
+    contentHash: sha256(Buffer.from(traversalText)),
+    createdAt: '2026-09-05T00:00:00.000Z',
+  });
+  writeJson(path.join(paths.libraryDir, 'productions', LIVE, 'metadata.json'), recorded);
+  const traversal = await restore(service, LIVE, '99999999-9999-4999-8999-999999999991', migrated.versionId, '99999999-9999-4999-8999-999999999992');
+  assert.equal(traversal.code, 'unsafe-image');
+  assert.equal(versionBytes(paths, LIVE, original.versionId).equals(source), true);
   assert.equal(metadata(paths, LIVE).headVersionId, migrated.versionId);
-  const preview = await service.readProductionVersion({ productionId: LIVE, versionId: original.versionId });
-  assert.equal(preview.ok, true, preview.error);
-  assert.equal(preview.version.text, liveText());
+  assert.equal(fs.existsSync(versionFile(paths, LIVE, V4, 'script.txt')), false);
+  assert.equal(fs.readFileSync(path.join(paths.libraryDir, 'productions', LIVE, 'assets', 'manifest.json')).equals(manifestBefore), true);
+  assert.ok(namesBefore.includes(original.versionId));
+});
+
+test('a failed shared-image copy does not leave a new version or asset', async (t) => {
+  const paths = commitImageFixture(t);
+  const service = openService(paths);
+  t.after(() => service.close());
+  const listed = await service.listProductionVersions(LIVE);
+  const original = listed.versions.find((version) => version.origin === 'original');
+  const migrated = listed.versions.find((version) => version.origin === 'migrated');
+  const manifestBefore = fs.readFileSync(path.join(paths.libraryDir, 'productions', LIVE, 'assets', 'manifest.json'));
+  fs.writeFileSync(path.join(paths.root, 'images', 'Title_Card.jpeg'), Buffer.concat([
+    jpegBytes().subarray(0, jpegBytes().length - 3),
+    Buffer.from([5]),
+    jpegBytes().subarray(jpegBytes().length - 2),
+  ]));
+  const failed = await service.restoreSavedVersion({
+    productionId: LIVE,
+    sourceVersionId: original.versionId,
+    expectedVersionId: migrated.versionId,
+    newVersionId: V4,
+    createdAt: '2026-11-16T15:00:00.000Z',
+    confirmCurrentImages: true,
+    failAt: 'after-assets',
+  });
+  assert.equal(failed.code, 'storage-failure');
+  assert.equal(metadata(paths, LIVE).headVersionId, migrated.versionId);
+  assert.equal(fs.existsSync(versionFile(paths, LIVE, V4, 'script.txt')), false);
+  const manifestAfter = JSON.parse(fs.readFileSync(path.join(
+    paths.libraryDir, 'productions', LIVE, 'assets', 'manifest.json',
+  ), 'utf8'));
+  const manifestOriginal = JSON.parse(manifestBefore.toString('utf8'));
+  assert.deepEqual(
+    manifestAfter.assets.map((asset) => asset.assetId || asset.id),
+    manifestOriginal.assets.map((asset) => asset.assetId || asset.id),
+  );
+  assert.equal(manifestAfter.assets.some((asset) => asset.imageSource === 'current-shared-file'), false);
+  const stale = await service.restoreSavedVersion({
+    productionId: LIVE,
+    sourceVersionId: original.versionId,
+    expectedVersionId: V3,
+    newVersionId: V5,
+    createdAt: '2026-11-16T15:00:00.000Z',
+    confirmCurrentImages: true,
+  });
+  assert.equal(stale.code, 'conflict');
+  assert.equal(metadata(paths, LIVE).headVersionId, migrated.versionId);
 });
 
 test('owned historical assets are verified and left in place', async (t) => {

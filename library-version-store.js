@@ -236,9 +236,28 @@ function openVersionStore(options, readOnly) {
     };
   }
 
+  function storedRestoration(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    if (value.integrity !== 'verified' && value.integrity !== 'current-shared') return null;
+    const sourceVersionId = canonicalId(value.sourceVersionId);
+    if (!sourceVersionId || !Array.isArray(value.images) || !value.images.length) return null;
+    const images = [];
+    for (let index = 0; index < value.images.length; index += 1) {
+      const image = value.images[index];
+      const assetId = canonicalId(image && image.assetId);
+      const name = image && typeof image.name === 'string' && /^[A-Za-z0-9._-]{1,120}$/.test(image.name)
+        ? image.name
+        : null;
+      if (!assetId || !name) return null;
+      if (image.integrity !== 'verified' && image.integrity !== 'current-shared') return null;
+      images.push({ name, assetId, integrity: image.integrity });
+    }
+    return { sourceVersionId, integrity: value.integrity, images };
+  }
+
   function publicVersion(loaded) {
     const doc = loaded.doc;
-    return {
+    const version = {
       schema: doc.schema == null ? null : doc.schema,
       id: loaded.id,
       productionId: doc.productionId,
@@ -250,6 +269,9 @@ function openVersionStore(options, readOnly) {
       assetIds: Array.isArray(doc.assetIds) ? doc.assetIds.slice() : [],
       role: doc.role || null,
     };
+    const restoration = storedRestoration(doc.imageRestoration);
+    if (restoration) version.imageRestoration = restoration;
+    return version;
   }
 
   function generationOf(metadata) {
@@ -499,8 +521,8 @@ function openVersionStore(options, readOnly) {
     }
   }
 
-  function versionDocument(productionId, versionId, parentVersionId, createdAt, contentHash, assetIds, legacyImagePolicy) {
-    return {
+  function versionDocument(productionId, versionId, parentVersionId, createdAt, contentHash, assetIds, legacyImagePolicy, imageRestoration) {
+    const document = {
       schema: SCHEMA,
       id: versionId,
       productionId,
@@ -512,6 +534,8 @@ function openVersionStore(options, readOnly) {
       contentHash,
       assetIds,
     };
+    if (imageRestoration) document.imageRestoration = imageRestoration;
+    return document;
   }
 
   function sameDocument(existing, expected) {
@@ -527,7 +551,8 @@ function openVersionStore(options, readOnly) {
       && existing.contentHash === expected.contentHash
       && Array.isArray(existing.assetIds)
       && existing.assetIds.length === expected.assetIds.length
-      && existing.assetIds.every((id, index) => id === expected.assetIds[index]);
+      && existing.assetIds.every((id, index) => id === expected.assetIds[index])
+      && JSON.stringify(existing.imageRestoration || null) === JSON.stringify(expected.imageRestoration || null);
   }
 
   function nextMetadata(metadata, summary, createdAt) {
@@ -633,6 +658,7 @@ function openVersionStore(options, readOnly) {
       contentHash,
       references.assetIds,
       references.legacyImagePolicy,
+      storedRestoration(body.imageRestoration),
     );
 
     const again = loadMetadata(productionId);

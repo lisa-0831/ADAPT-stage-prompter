@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const { timingSafeEqual } = require('crypto');
 const { hashText, isValidScriptId } = require('../script-library');
+const { loggedImageIntegrity } = require('./shared-image-restore');
 
 // Fixture-only HTTP adapter for the versioned library service.
 //
@@ -57,6 +58,10 @@ const STATUS = {
   'invalid-image-reference': 400,
   'foreign-asset': 400,
   'legacy-image': 400,
+  'confirmation-required': 409,
+  'missing-image': 409,
+  'unsafe-image': 400,
+  'invalid-image': 400,
   'generation-required': 400,
   'revision-required': 400,
   'invalid-clock': 400,
@@ -227,6 +232,15 @@ function sendError(res, result) {
   };
   if (result && result.imageStatus) body.imageStatus = result.imageStatus;
   if (result && result.sharedLegacyImages != null) body.sharedLegacyImages = Boolean(result.sharedLegacyImages);
+  if (result && result.imageIntegrity) body.imageIntegrity = result.imageIntegrity;
+  if (Number.isInteger(result && result.imagesCopied)) body.imagesCopied = result.imagesCopied;
+  if (Array.isArray(result && result.sharedImages)) {
+    body.sharedImages = result.sharedImages.map((image) => ({
+      name: image && image.name ? image.name : 'An image reference',
+      integrity: image && image.integrity ? image.integrity : null,
+      code: image && image.code ? image.code : null,
+    }));
+  }
   if (Array.isArray(result && result.blocking)) {
     body.blocking = result.blocking.map((item) => item && item.code).filter(Boolean);
   }
@@ -535,21 +549,35 @@ function registerVersionedHttpRoutes(options) {
   });
 
   app.post('/api/library/:id/versions/:versionId/restore', requireStaff, async (req, res) => {
+    const started = Date.now();
     const productionId = canonicalRouteId(req.params.id);
     const sourceVersionId = canonicalRouteId(req.params.versionId);
+    function logRestoreResponse(code, extra) {
+      const info = extra || {};
+      const sharedCount = Array.isArray(info.sharedImages) ? info.sharedImages.length : '-';
+      const integrity = loggedImageIntegrity(info.imageIntegrity);
+      const proof = info.imageIntegrity ? 'no' : '-';
+      const copied = Number.isInteger(info.imagesCopied) ? info.imagesCopied : '-';
+      console.log(`[library] restore response production=${productionId || '-'} source=${sourceVersionId || '-'} result=${code} shared=${sharedCount} integrity=${integrity} historicalProof=${proof} imagesCopied=${copied} ms=${Date.now() - started}`);
+    }
     if (!productionId || !sourceVersionId) {
+      logRestoreResponse('invalid-id');
       return res.status(400).json({ ok: false, code: 'invalid-id', error: 'That production or version id is not valid.' });
     }
     const body = jsonBody(req);
     const versionHeader = headerId(req, 'X-Version-Id');
+    console.log(`[library] restore request production=${productionId} source=${sourceVersionId} new=${versionHeader.id || '-'}`);
     if (!versionHeader.id) {
+      logRestoreResponse('invalid-id');
       return res.status(400).json({ ok: false, code: 'invalid-id', error: 'A restored version needs its own id.' });
     }
     if (typeof body.expectedVersionId !== 'string') {
+      logRestoreResponse('invalid-id');
       return res.status(400).json({ ok: false, code: 'invalid-id', error: 'The saved head that was reviewed is required.' });
     }
     const stamp = createdAt();
     if (!stamp) {
+      logRestoreResponse('invalid-clock');
       return res.status(400).json({ ok: false, code: 'invalid-clock', error: 'A version needs a creation time.' });
     }
     const restored = await invoke(res, () => service.restoreSavedVersion({
@@ -558,9 +586,15 @@ function registerVersionedHttpRoutes(options) {
       expectedVersionId: body.expectedVersionId,
       newVersionId: versionHeader.id,
       createdAt: stamp,
+      confirmCurrentImages: body.confirmCurrentImages === true,
+      failAt: faultAt(req),
     }));
-    if (!restored) return undefined;
+    if (!restored) {
+      logRestoreResponse('unconfirmed');
+      return undefined;
+    }
     if (restored.code === 'orphan-version') {
+      logRestoreResponse('orphan-version', restored);
       return res.status(409).json({
         ok: false,
         code: 'orphan-version',
@@ -573,6 +607,7 @@ function registerVersionedHttpRoutes(options) {
       });
     }
     if (restored.code === 'conflict') {
+      logRestoreResponse('conflict', restored);
       return res.status(409).json({
         ok: false,
         code: 'conflict',
@@ -580,8 +615,13 @@ function registerVersionedHttpRoutes(options) {
         currentVersionId: restored.currentVersionId || null,
       });
     }
-    if (!restored.ok) return sendError(res, restored);
-    return res.status(restored.unchanged ? 200 : 201).json(restored);
+    if (!restored.ok) {
+      logRestoreResponse(restored.code || 'failed', restored);
+      return sendError(res, restored);
+    }
+    const replay = restored.alreadyRestored === true;
+    logRestoreResponse(replay ? 'already-restored' : (restored.unchanged ? 'unchanged' : 'restored'), restored);
+    return res.status(restored.unchanged || replay ? 200 : 201).json(restored);
   });
 
   app.get('/api/library/:id/assets', requireStaff, async (req, res) => {

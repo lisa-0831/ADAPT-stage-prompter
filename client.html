@@ -213,7 +213,7 @@
     <div id="library-history" hidden>
       <button type="button" class="btn" id="library-history-back">Back to library</button>
       <h3 id="library-history-title">Version History</h3>
-      <p class="library-note" id="library-history-note">These are saved versions of this production, newest creation time first. A missing creation time is listed after dated versions. Preview does not change the live show. Restore as New Saved Version keeps every older version and does not set the result live.</p>
+      <p class="library-note" id="library-history-note">These are saved versions of this production, newest first. Version 1 is the earliest saved copy. A version without a recorded save time says so. Preview does not change the live show. Restore as New Saved Version keeps every older version and does not set the result live.</p>
       <p id="library-history-status" role="status" aria-live="polite"></p>
       <p id="library-history-warning" class="library-note" hidden></p>
       <div id="library-history-list"></div>
@@ -221,6 +221,10 @@
         <h3 id="library-history-preview-title">Historical preview</h3>
         <p class="library-note">Read only. This text is not in the editor and it is not on stage.</p>
         <p id="library-history-preview-meta" class="library-note"></p>
+        <details id="library-history-preview-technical" class="history-technical">
+          <summary>Technical details</summary>
+          <p id="library-history-preview-id" class="library-note"></p>
+        </details>
         <div id="library-history-preview-images"></div>
         <pre id="library-history-preview-text" tabindex="0"></pre>
         <div class="ctrl-row">

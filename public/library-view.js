@@ -74,6 +74,7 @@ let historyDetail = null;
 let historyRestoreId = null;
 let historyRestoreSource = null;
 let historyBusy = false;
+let historyCheckToken = 0;
 const historyObjectUrls = [];
 
 function manageFileSignature(file) {
@@ -1320,6 +1321,7 @@ function restoreConfirmAction(ui) {
 }
 
 function hideLibraryConfirm() {
+  historyCheckToken += 1;
   const ui = libraryDom();
   const returnFocus = ui.confirm.dataset.mode === 'delete-production' ? libraryDeleteTrigger : null;
   libraryPendingId = null;
@@ -1331,6 +1333,7 @@ function hideLibraryConfirm() {
   ui.confirm.dataset.mode = '';
   ui.confirm.dataset.sourceVersionId = '';
   ui.confirm.dataset.expectedVersionId = '';
+  ui.confirm.dataset.confirmCurrentImages = '';
   ui.confirm.hidden = true;
   ui.confirmStatus.textContent = '';
   ui.confirmStatus.classList.remove('editor-error');
@@ -1667,28 +1670,54 @@ async function reviewLatestBeforeSetLive() {
   }
 }
 
-function shortVersionId(id) {
-  if (typeof id !== 'string' || id.length < 13) return 'Unknown version';
-  return `${id.slice(0, 8)}…${id.slice(-4)}`;
+function savedTimeLabel(createdAt) {
+  if (typeof createdAt !== 'string' || createdAt.trim() === '') return 'Original save time unavailable';
+  const date = new Date(createdAt);
+  if (Number.isNaN(date.getTime())) return 'Original save time unavailable';
+  return `Saved ${date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}`;
 }
 
-function originLabel(origin) {
-  if (origin === 'original') return 'Original';
-  if (origin === 'migrated') return 'Migrated';
-  if (origin === 'edited') return 'Edited';
-  return '';
+function versionSequence(versions) {
+  const list = versions.filter((version) => version && version.versionId);
+  const numbered = new Map();
+  if (list.length && list.every((version) => Number.isInteger(version.sequence) && version.sequence >= 1)) {
+    list.forEach((version) => numbered.set(version.versionId, version.sequence));
+    return numbered;
+  }
+  const children = new Map();
+  list.forEach((version) => children.set(version.versionId, []));
+  const roots = [];
+  list.forEach((version) => {
+    const parent = version.parentVersionId;
+    if (parent && children.has(parent) && parent !== version.versionId) children.get(parent).push(version.versionId);
+    else roots.push(version.versionId);
+  });
+  const seen = new Set();
+  let next = 1;
+  function walk(id) {
+    if (seen.has(id)) return;
+    seen.add(id);
+    numbered.set(id, next);
+    next += 1;
+    (children.get(id) || []).forEach(walk);
+  }
+  roots.forEach(walk);
+  list.forEach((version) => walk(version.versionId));
+  return numbered;
 }
 
 function historyOrder(versions) {
+  const sequence = versionSequence(versions);
   return versions.slice().sort((left, right) => {
-    if (left.createdAt !== right.createdAt) {
-      if (!left.createdAt) return 1;
-      if (!right.createdAt) return -1;
-      return left.createdAt < right.createdAt ? 1 : -1;
-    }
-    if (left.versionId === right.versionId) return 0;
-    return left.versionId < right.versionId ? 1 : -1;
+    const leftNumber = sequence.get(left.versionId) || 0;
+    const rightNumber = sequence.get(right.versionId) || 0;
+    return rightNumber - leftNumber;
   });
+}
+
+function versionLabel(versionId, sequence) {
+  const number = sequence && sequence.get(versionId);
+  return number ? `Version ${number}` : 'Saved version';
 }
 
 function revokeHistoryUrls() {
@@ -1720,15 +1749,17 @@ function hideVersionHistory() {
   ui.historyWarning.textContent = '';
   if (ui.historyPreviewText) ui.historyPreviewText.textContent = '';
   if (ui.historyPreviewImages) ui.historyPreviewImages.replaceChildren();
+  const previewId = doc.getElementById('library-history-preview-id');
+  if (previewId) previewId.textContent = '';
 }
 
 function versionMarks(version) {
   const marks = [];
-  if (version.savedHead) marks.push('Saved head');
-  if (version.live) marks.push('Live now');
+  if (version.savedHead) marks.push('Latest Saved');
+  if (version.live) marks.push('Live Now');
   if (version.previousLive) marks.push('Previous live');
-  const origin = originLabel(version.origin);
-  if (origin) marks.push(origin);
+  if (version.origin === 'original') marks.push('Original');
+  if (version.origin === 'migrated') marks.push('Migrated');
   return marks;
 }
 
@@ -1753,30 +1784,35 @@ function renderHistoryList() {
   ui.historyWarning.textContent = excluded
     ? 'Some incomplete or damaged versions were excluded from history.'
     : '';
-  historyOrder(listing.versions.filter((version) => version && version.committed !== false)).forEach((version) => {
+  const committed = listing.versions.filter((version) => version && version.committed !== false);
+  const sequence = versionSequence(committed);
+  historyOrder(committed).forEach((version) => {
+    const label = versionLabel(version.versionId, sequence);
     const card = doc.createElement('article');
     card.className = 'history-version';
     const title = doc.createElement('h4');
     title.className = 'library-title';
-    title.textContent = shortVersionId(version.versionId);
-    title.title = version.versionId || '';
+    title.textContent = label;
     const when = doc.createElement('p');
     when.className = 'library-meta';
-    when.textContent = version.createdAt
-      ? `Created ${formatModified(version.createdAt)}`
-      : 'Creation time was not recorded';
+    when.textContent = savedTimeLabel(version.createdAt);
     const marks = doc.createElement('p');
     marks.className = 'history-marks';
-    versionMarks(version).forEach((label) => {
+    versionMarks(version).forEach((name) => {
       const mark = doc.createElement('span');
       mark.className = 'history-mark';
-      mark.textContent = label;
+      mark.textContent = name;
       marks.append(mark);
     });
+    const technical = doc.createElement('details');
+    technical.className = 'history-technical';
+    const summary = doc.createElement('summary');
+    summary.textContent = 'Technical details';
     const identity = doc.createElement('p');
     identity.className = 'library-note';
     identity.textContent = `Version id ${version.versionId}`;
-    card.append(title, when, marks, identity);
+    technical.append(summary, identity);
+    card.append(title, when, marks, technical);
     const imageNote = versionImageNote(version);
     if (imageNote) {
       const warning = doc.createElement('p');
@@ -1790,14 +1826,14 @@ function renderHistoryList() {
     preview.type = 'button';
     preview.className = 'btn';
     preview.textContent = 'Preview';
-    preview.setAttribute('aria-label', `Preview version ${shortVersionId(version.versionId)} of ${historyTitle || 'this production'}`);
+    preview.setAttribute('aria-label', `Preview ${label} of ${historyTitle || 'this production'}`);
     preview.disabled = historyBusy;
     preview.addEventListener('click', () => previewHistoricalVersion(version.versionId));
     const restore = doc.createElement('button');
     restore.type = 'button';
     restore.className = 'btn';
     restore.textContent = 'Restore as New Saved Version';
-    restore.setAttribute('aria-label', `Restore version ${shortVersionId(version.versionId)} of ${historyTitle || 'this production'} as a new saved version`);
+    restore.setAttribute('aria-label', `Restore ${label} of ${historyTitle || 'this production'} as a new saved version`);
     restore.disabled = historyBusy;
     restore.addEventListener('click', () => beginHistoryRestore(version.versionId));
     actions.append(preview, restore);
@@ -1869,6 +1905,8 @@ function hideHistoricalPreview() {
   ui.historyPreviewText.textContent = '';
   ui.historyPreviewImages.replaceChildren();
   ui.historyPreviewMeta.textContent = '';
+  const previewId = doc.getElementById('library-history-preview-id');
+  if (previewId) previewId.textContent = '';
   renderHistoryList();
   const back = doc.getElementById('library-history-back');
   if (back) back.focus();
@@ -1884,9 +1922,10 @@ function previewImageStatus(images) {
     lines.push(`Shared image ${image.reference || 'reference'}: the file can still change, and it was not copied into this version.`);
   });
   (images.ownedImages || []).forEach((image) => {
+    const name = image && image.name ? image.name : 'A saved image';
     lines.push(image.available
-      ? `Owned image ${shortVersionId(image.assetId)} is available from this production.`
-      : `Owned image ${shortVersionId(image.assetId)} is missing or damaged.`);
+      ? `${name} is available from this production.`
+      : `${name} is missing or damaged.`);
   });
   if (!lines.length) lines.push('This version does not add an image warning.');
   return lines.join(' ');
@@ -1913,14 +1952,19 @@ async function previewHistoricalVersion(versionId) {
   }
   historyDetail = body;
   revokeHistoryUrls();
+  const sequence = versionSequence((historyListing && historyListing.versions) || []);
+  const label = versionLabel(versionId, sequence);
   ui.historyPreview.hidden = false;
-  ui.historyPreviewTitle.textContent = `Historical preview: ${shortVersionId(versionId)}`;
+  ui.historyPreviewTitle.textContent = `Historical preview: ${label}`;
   ui.historyPreviewMeta.textContent = [
     historyTitle,
+    label,
+    savedTimeLabel(body.version.createdAt),
     versionMarks(body.version).join(', ') || 'Saved version',
-    `Version id ${versionId}`,
     previewImageStatus(body.images),
   ].join('. ') + '.';
+  const previewId = doc.getElementById('library-history-preview-id');
+  if (previewId) previewId.textContent = `Version id ${versionId}`;
   ui.historyPreviewText.textContent = body.version.text;
   ui.historyPreviewImages.replaceChildren();
   const owned = body.images && Array.isArray(body.images.ownedImages) ? body.images.ownedImages : [];
@@ -1934,13 +1978,15 @@ async function previewHistoricalVersion(versionId) {
       const url = objectUrls.createObjectURL(blob);
       historyObjectUrls.push(url);
       const picture = doc.createElement('img');
-      picture.alt = `Owned image ${shortVersionId(image.assetId)} for this historical version`;
+      picture.alt = image.name ? `Saved image ${image.name}` : 'Saved image for this historical version';
       picture.src = url;
       ui.historyPreviewImages.append(picture);
     } catch (err) {
       const missing = doc.createElement('p');
       missing.className = 'library-note';
-      missing.textContent = `Owned image ${shortVersionId(image.assetId)} could not be shown.`;
+      missing.textContent = image.name
+        ? `${image.name} could not be shown.`
+        : 'A saved image could not be shown.';
       ui.historyPreviewImages.append(missing);
     }
   }
@@ -1970,7 +2016,8 @@ function beginHistoryRestore(versionId) {
   ui.confirmHeading.textContent = 'Restore this saved version?';
   const message = doc.createElement('p');
   message.className = 'editor-confirm-message';
-  message.textContent = `Restore ${shortVersionId(versionId)} into ${historyTitle}.`;
+  const sequence = versionSequence((listing && listing.versions) || []);
+  message.textContent = `Restore ${versionLabel(versionId, sequence)} into ${historyTitle}.`;
   const notes = doc.createElement('ul');
   notes.className = 'editor-confirm-notes';
   [
@@ -1993,6 +2040,151 @@ function beginHistoryRestore(versionId) {
   ui.confirm.dataset.mode = 'restore-saved';
   ui.confirm.dataset.sourceVersionId = versionId;
   ui.confirm.dataset.expectedVersionId = listing.savedHeadVersionId;
+  ui.confirm.dataset.confirmCurrentImages = '';
+  if (source.legacyImagePolicy === 'shared-images') prepareSharedRestore(versionId);
+}
+
+function withTimeout(work, ms) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const err = new Error('The restore took too long.');
+      err.code = 'timeout';
+      reject(err);
+    }, ms);
+    Promise.resolve(work).then((value) => {
+      clearTimeout(timer);
+      resolve(value);
+    }, (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+  });
+}
+
+function sharedImageSentence(image) {
+  const name = image && image.name ? image.name : 'An image';
+  if (!image || image.code === 'missing-image') return `${name} is missing.`;
+  if (image.code === 'unsafe-image') return `${name} is not a safe image file.`;
+  if (image.code) return `${name} is not a usable image.`;
+  return '';
+}
+
+function presentSharedRestore(versionId, report) {
+  const ui = libraryDom();
+  if (ui.confirm.dataset.sourceVersionId !== versionId || ui.confirm.hidden) return;
+  const status = report && report.status;
+  ui.confirm.setAttribute('aria-busy', 'false');
+  ui.confirmNo.disabled = false;
+  ui.confirmStatus.textContent = '';
+  ui.confirmStatus.classList.remove('editor-error');
+  if (!report || status === 'blocked' || report.code) {
+    const images = report && Array.isArray(report.images) ? report.images : [];
+    const sentences = images.map(sharedImageSentence).filter(Boolean);
+    ui.confirmBody.replaceChildren();
+    const refused = doc.createElement('p');
+    refused.className = 'editor-confirm-message';
+    refused.textContent = 'This version cannot be restored. Preview is still available.';
+    ui.confirmBody.append(refused);
+    ui.confirmStatus.classList.add('editor-error');
+    ui.confirmStatus.textContent = `${sentences.join(' ') || 'An image in that version cannot be restored.'} Nothing was saved. The original version and the live show were not changed.`;
+    ui.confirmYes.textContent = 'Not restored';
+    ui.confirmYes.disabled = true;
+    ui.confirmNo.focus();
+    return;
+  }
+  if (status === 'current-shared') {
+    ui.confirmBody.replaceChildren();
+    const warning = doc.createElement('p');
+    warning.className = 'editor-confirm-message';
+    warning.textContent = 'This older version uses shared images. The images are still available, but we cannot verify that they are identical to the originals.';
+    const choice = doc.createElement('p');
+    choice.className = 'editor-confirm-message';
+    choice.textContent = 'You can restore the script using the images currently available. This will create a new saved version without changing the original historical version.';
+    ui.confirmBody.append(warning, choice);
+    ui.confirmYes.textContent = 'Restore Using Current Images';
+    ui.confirmYes.disabled = false;
+    ui.confirm.dataset.confirmCurrentImages = 'true';
+    ui.confirmYes.focus();
+    return;
+  }
+  if (status === 'verified') {
+    const notes = ui.confirmBody.querySelector('ul');
+    if (notes) {
+      const item = doc.createElement('li');
+      item.textContent = report && report.description
+        ? report.description
+        : 'The shared images match a copy stored with this production. That match does not prove they are the images from the original save. Restore will keep those stored copies with this production. The original version stays unchanged.';
+      notes.append(item);
+    }
+  }
+  ui.confirmYes.textContent = 'Restore as New Saved Version';
+  ui.confirmYes.disabled = false;
+  ui.confirmYes.focus();
+}
+
+async function prepareSharedRestore(versionId) {
+  const token = historyCheckToken;
+  const ui = libraryDom();
+  const productionId = historyProductionId;
+  ui.confirmYes.disabled = true;
+  ui.confirmYes.textContent = 'Checking…';
+  ui.confirm.setAttribute('aria-busy', 'true');
+  try {
+    const response = await withTimeout(libraryFetch(`/api/library/${productionId}/versions/${versionId}`), 30000);
+    const body = await readLibraryJson(response);
+    if (token !== historyCheckToken || ui.confirm.dataset.sourceVersionId !== versionId) return;
+    if (!response.ok || !body || body.ok !== true) {
+      presentSharedRestore(versionId, { status: 'blocked', images: [] });
+      ui.confirmStatus.textContent = restoreFailureMessage(response, body);
+      return;
+    }
+    const report = body.images && body.images.sharedRestore;
+    presentSharedRestore(versionId, report || { status: 'verified', images: [] });
+  } catch (err) {
+    if (token !== historyCheckToken || ui.confirm.dataset.sourceVersionId !== versionId) return;
+    presentSharedRestore(versionId, { status: 'blocked', images: [] });
+    ui.confirmStatus.textContent = err && err.code === 'timeout'
+      ? 'Checking the images took too long. Nothing was saved, and the live show was not changed.'
+      : 'The images could not be checked. Nothing was saved, and the live show was not changed.';
+  }
+}
+
+function restoreAttemptKey(productionId, sourceVersionId) {
+  return `prompter-restore-attempt:${productionId}:${sourceVersionId}`;
+}
+
+function storedRestoreAttempt(productionId, sourceVersionId) {
+  if (!staffStorage || typeof staffStorage.getItem !== 'function') return null;
+  try {
+    const value = staffStorage.getItem(restoreAttemptKey(productionId, sourceVersionId));
+    return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value)
+      ? value
+      : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+function rememberRestoreAttempt(productionId, sourceVersionId, versionId) {
+  if (!staffStorage || typeof staffStorage.setItem !== 'function' || !versionId) return;
+  try { staffStorage.setItem(restoreAttemptKey(productionId, sourceVersionId), versionId); }
+  catch (err) { /* The in-memory id still covers this page. */ }
+}
+
+function forgetRestoreAttempt(productionId, sourceVersionId) {
+  if (!staffStorage || typeof staffStorage.removeItem !== 'function') return;
+  try { staffStorage.removeItem(restoreAttemptKey(productionId, sourceVersionId)); }
+  catch (err) { /* The in-memory id is cleared separately. */ }
+}
+
+function stopHistoryRestore(ui, message) {
+  ui.confirmStatus.classList.add('editor-error');
+  ui.confirmStatus.textContent = message;
+  ui.confirmYes.textContent = 'Not restored';
+  ui.confirmYes.disabled = true;
+  ui.confirmNo.disabled = false;
+  ui.confirm.setAttribute('aria-busy', 'false');
+  if (typeof ui.confirmNo.focus === 'function') ui.confirmNo.focus();
 }
 
 function restoreFailureMessage(response, body) {
@@ -2005,6 +2197,12 @@ function restoreFailureMessage(response, body) {
   }
   if (code === 'legacy-image') {
     return 'This version can be previewed, but it still uses a shared images/ file. Restore did not copy that image or rewrite the script. The saved head and the live show were not changed.';
+  }
+  if (code === 'confirmation-required') {
+    return 'This older version uses shared images. The images are still available, but we cannot verify that they are identical to the originals. You can restore the script using the images currently available. This will create a new saved version without changing the original historical version.';
+  }
+  if (code === 'missing-image' || code === 'unsafe-image' || code === 'invalid-image') {
+    return body.error || 'An image in that version cannot be restored. Nothing was saved, and the live show was not changed.';
   }
   if (code === 'orphan-version') {
     return 'That version is incomplete and is not part of saved history. It was not restored, and the live show was not changed.';
@@ -2039,9 +2237,10 @@ async function runHistoryRestore() {
   const expectedVersionId = ui.confirm.dataset.expectedVersionId;
   if (!productionId || !sourceVersionId || !expectedVersionId) return;
   if (historyRestoreSource !== sourceVersionId || !historyRestoreId) {
-    historyRestoreId = newRequestId();
+    historyRestoreId = storedRestoreAttempt(productionId, sourceVersionId) || newRequestId();
     historyRestoreSource = sourceVersionId;
   }
+  rememberRestoreAttempt(productionId, sourceVersionId, historyRestoreId);
   if (!historyRestoreId) {
     ui.confirmStatus.classList.add('editor-error');
     ui.confirmStatus.textContent = 'A new version id could not be created. Nothing was restored, and the live show was not changed.';
@@ -2055,39 +2254,51 @@ async function runHistoryRestore() {
   ui.confirmYes.textContent = 'Restoring…';
   const attemptId = historyRestoreId;
   try {
-    const response = await libraryFetch(`/api/library/${productionId}/versions/${sourceVersionId}/restore`, {
+    const response = await withTimeout(libraryFetch(`/api/library/${productionId}/versions/${sourceVersionId}/restore`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-Version-Id': attemptId,
       },
-      body: JSON.stringify({ expectedVersionId }),
-    });
+      body: JSON.stringify({
+        expectedVersionId,
+        confirmCurrentImages: ui.confirm.dataset.confirmCurrentImages === 'true',
+      }),
+    }), 30000);
     const body = await readLibraryJson(response);
     if (!response.ok || !body || body.ok !== true) {
-      ui.confirmStatus.classList.add('editor-error');
-      ui.confirmStatus.textContent = restoreFailureMessage(response, body);
-      ui.confirmYes.disabled = true;
-      ui.confirmNo.disabled = false;
-      ui.confirmNo.focus();
+      if (body && body.code === 'confirmation-required') {
+        presentSharedRestore(sourceVersionId, { status: 'current-shared', images: body.sharedImages || [] });
+        return;
+      }
+      stopHistoryRestore(ui, restoreFailureMessage(response, body));
       if (body && body.code === 'conflict') await loadVersionHistory('');
       return;
     }
     historyRestoreId = null;
     historyRestoreSource = null;
+    forgetRestoreAttempt(productionId, sourceVersionId);
     const unchanged = body.unchanged === true;
-    const message = unchanged
-      ? 'This text is already the saved head. Another version was not created. The live show was not changed.'
-      : `Saved a new version from ${shortVersionId(sourceVersionId)}. It is the saved head now and it is not live. Actor and Audience screens were not changed.`;
+    const alreadyRestored = body.alreadyRestored === true;
+    const stillHead = !body.restoredVersionId || body.savedHeadVersionId === body.restoredVersionId;
+    let message;
+    if (alreadyRestored && stillHead) {
+      message = 'That restore was already saved. Another version was not created. It is the latest saved version and it is not live. Actor and Audience screens were not changed.';
+    } else if (alreadyRestored) {
+      message = 'That restore was already saved. Another version was not created. The latest saved version was left as it is, and the live show was not changed.';
+    } else if (unchanged) {
+      message = 'This text is already the saved head. Another version was not created. The live show was not changed.';
+    } else {
+      message = `Saved a new version from ${versionLabel(sourceVersionId, versionSequence((historyListing && historyListing.versions) || []))}. It is the latest saved version and it is not live. Actor and Audience screens were not changed.`;
+    }
     hideLibraryConfirm();
     await refreshLibrary(message);
     if (historyProductionId === productionId) await loadVersionHistory(message);
     noteSavedHead(productionId, { unchanged, message, savedHeadVersionId: body.savedHeadVersionId });
   } catch (err) {
-    ui.confirmStatus.classList.add('editor-error');
-    ui.confirmStatus.textContent = 'The server did not confirm the result. This restore was not reported as rolled back. The same new version id will be kept if you try this restoration again. The live show was not changed.';
-    ui.confirmYes.disabled = true;
-    ui.confirmNo.disabled = false;
+    stopHistoryRestore(ui, err && err.code === 'timeout'
+      ? 'The restore took too long and was not confirmed. The same new version id will be kept if you try this restoration again. The live show was not changed.'
+      : 'The server did not confirm the result. This restore was not reported as rolled back. The same new version id will be kept if you try this restoration again. The live show was not changed.');
   } finally {
     historyBusy = false;
     libraryGuard.finish();

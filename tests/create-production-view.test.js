@@ -901,10 +901,12 @@ test('version history lists committed versions and a missing endpoint stays off 
         ok: true,
         productionId: NEW_ID,
         savedHeadVersionId: head,
-        order: 'createdAt,versionId',
+        order: 'lineage',
         versions: [
           {
             versionId: older,
+            parentVersionId: null,
+            sequence: 1,
             createdAt: '2026-01-01T00:00:00.000Z',
             origin: 'original',
             committed: true,
@@ -916,6 +918,8 @@ test('version history lists committed versions and a missing endpoint stays off 
           },
           {
             versionId: head,
+            parentVersionId: older,
+            sequence: 2,
             createdAt: null,
             origin: 'edited',
             committed: true,
@@ -937,12 +941,17 @@ test('version history lists committed versions and a missing endpoint stays off 
   const parts = [];
   walk(ids['library-history-list'], (el) => { if (el.textContent) parts.push(el.textContent); });
   const list = parts.join('\n');
-  assert.match(list, /Saved head/);
-  assert.match(list, /Live now/);
+  assert.match(list, /Version 2/);
+  assert.match(list, /Version 1/);
+  assert.ok(list.indexOf('Version 2') < list.indexOf('Version 1'));
+  assert.match(list, /Latest Saved/);
+  assert.match(list, /Live Now/);
   assert.match(list, /Previous live/);
   assert.match(list, /Original/);
-  assert.match(list, /Edited/);
-  assert.match(list, /Creation time was not recorded/);
+  assert.doesNotMatch(list, /Edited/);
+  assert.match(list, /Original save time unavailable/);
+  assert.match(list, /Technical details/);
+  assert.match(list, new RegExp(head));
   assert.match(list, /shared image/i);
   assert.match(ids['library-history-warning'].textContent, /excluded from history/);
   assert.equal(list.includes('/tmp/secret'), false);

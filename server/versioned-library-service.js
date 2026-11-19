@@ -14,6 +14,15 @@ const { createVersionedLiveOperations } = require('./versioned-live-operations')
 const { detectStorageMode, StorageModeError } = require('./storage-mode');
 const { assessWritableRoot } = require('./writable-root');
 const { acquireStorageWriter, StorageWriterLockError } = require('./storage-writer-lock');
+const {
+  CURRENT_SHARED_CONFIRMATION,
+  STORED_COPY_DESCRIPTION,
+  assessSharedImages,
+  loggedImageIntegrity,
+  publicSharedImages,
+  rewriteSharedImageLines,
+  sharedBlockMessage,
+} = require('./shared-image-restore');
 
 // Application-facing coordinator for one versioned library root.
 //
@@ -45,9 +54,9 @@ const HTTP_ADAPTER_CONTRACT = Object.freeze({
     'GET /api/library': 'listProductions. live comes from live-state.json. Do not use index.json liveId. 200.',
     'POST /api/library': 'createProduction when trackIfCurrent is not true, then the existing separate image uploads. trackIfCurrent true returns the live production when its saved head is that live script. It does not create a duplicate or activate anything. 201 for a new production. An upload failure leaves the production in place.',
     'GET /api/library/:id': 'readProduction. 404 when missing. The saved-head content hash is the legacy revision.',
-    'GET /api/library/:id/versions': 'listProductionVersions. Staff only. Committed history is separate from orphans. Saved head comes from production metadata. Live and previous live come from verified live state. 200.',
+    'GET /api/library/:id/versions': 'listProductionVersions. Staff only. Committed history is separate from orphans. sequence follows parentVersionId, then the metadata record order. The list is newest first. Saved head comes from production metadata. Live and previous live come from verified live state. createdAt is returned only when the version recorded one. 200.',
     'GET /api/library/:id/versions/:versionId': 'readProductionVersion. Staff only. Returns that version\'s stored text. It does not substitute the saved head or the live version, and it does not activate, broadcast, or write. 404 when missing. 409 when the directory is an orphan.',
-    'POST /api/library/:id/versions/:versionId/restore': 'restoreSavedVersion. Staff only. Copies one committed version into a new saved head through saveVersion. The new parentVersionId is the previous saved head. sourceVersionId is returned on this response and is not stored. Identical text leaves the head in place. A shared images/ reference is legacy-image and writes nothing. Live state, the mirror, and the cue stay as they are. 201 for a new version. 200 when unchanged. 409 when the saved head moved or the directory is an orphan.',
+    'POST /api/library/:id/versions/:versionId/restore': 'restoreSavedVersion. Staff only. Copies one committed version into a new saved head through saveVersion. The new parentVersionId is the previous saved head. sourceVersionId is returned on this response. A shared images/ version is restored only after every referenced image is read from images/ inside the installation. A hash that matches a stored owned snapshot reuses that copy and does not claim the file is the original save. Available images without that match need confirmCurrentImages and are copied as new owned assets. Missing or unsafe images write nothing. The same new version id is returned again instead of saving a second copy. Identical text leaves the head in place. Live state, the mirror, and the cue stay as they are. 201 for a new version. 200 when unchanged or already restored. 409 when the saved head moved, confirmation is required, or the directory is an orphan.',
     'PUT /api/library/:id': 'Split a title change and a text change. Rename uses metadata generation. Save uses the saved-head version id. If one succeeds and the other conflicts, return 409 partial with the field that was saved. Do not drop either field.',
     'GET /api/library/:id/assets': 'listAssets. Staff only. 200.',
     'POST /api/library/:id/assets': 'uploadAsset. 201. Same asset id and bytes is the stored asset. Different bytes is 409 conflict.',
@@ -1042,14 +1051,41 @@ function createVersionedLibraryService(options) {
     });
   }
 
-  function compareHistory(left, right) {
-    if (left.createdAt !== right.createdAt) {
-      if (!left.createdAt) return 1;
-      if (!right.createdAt) return -1;
-      return left.createdAt < right.createdAt ? -1 : 1;
+  function lineageSequence(entries) {
+    const list = [];
+    (entries || []).forEach((entry) => {
+      if (!entry) return;
+      const versionId = canonicalId(entry.versionId || entry.id);
+      if (!versionId) return;
+      const parent = entry.parentVersionId == null ? null : canonicalId(entry.parentVersionId);
+      list.push({
+        versionId,
+        parentVersionId: parent && parent !== versionId ? parent : null,
+      });
+    });
+    const children = new Map();
+    list.forEach((entry) => children.set(entry.versionId, []));
+    const roots = [];
+    list.forEach((entry) => {
+      if (entry.parentVersionId && children.has(entry.parentVersionId)) {
+        children.get(entry.parentVersionId).push(entry.versionId);
+      } else {
+        roots.push(entry.versionId);
+      }
+    });
+    const sequence = new Map();
+    const seen = new Set();
+    let next = 1;
+    function walk(id) {
+      if (seen.has(id)) return;
+      seen.add(id);
+      sequence.set(id, next);
+      next += 1;
+      (children.get(id) || []).forEach(walk);
     }
-    if (left.versionId === right.versionId) return 0;
-    return left.versionId < right.versionId ? -1 : 1;
+    roots.forEach(walk);
+    list.forEach((entry) => walk(entry.versionId));
+    return sequence;
   }
 
   function liveLabels(productionId, versionId, contentHash, headId, liveRecord) {
@@ -1138,6 +1174,7 @@ function createVersionedLibraryService(options) {
       origin: version.version.origin || null,
       role: version.version.role || null,
       legacyImagePolicy: version.version.legacyImagePolicy || null,
+      imageRestoration: version.version.imageRestoration || null,
       imageBytesImmutable: images.imageBytesImmutable,
       committed: true,
     }, liveLabels(productionId, version.version.id, version.version.contentHash, headId, liveRecord));
@@ -1205,7 +1242,11 @@ function createVersionedLibraryService(options) {
         }
         versions.push(historySummary(id, version, headId, liveRecord));
       });
-      versions.sort(compareHistory);
+      const sequence = lineageSequence(versions);
+      versions.forEach((version) => {
+        version.sequence = sequence.get(version.versionId) || 0;
+      });
+      versions.sort((left, right) => right.sequence - left.sequence);
       const orphans = store.listOrphans(id);
       const orphanRows = orphans.ok
         ? orphans.orphans.map((orphan) => ({
@@ -1225,7 +1266,7 @@ function createVersionedLibraryService(options) {
         ok: true,
         productionId: id,
         savedHeadVersionId: headId,
-        order: 'createdAt,versionId',
+        order: 'lineage',
         versions,
         orphans: orphanRows,
         diagnostics,
@@ -1234,8 +1275,28 @@ function createVersionedLibraryService(options) {
     });
   }
 
+  async function versionImageReport(productionId, version) {
+    const images = historyImages(productionId, version);
+    if (!(images.sharedImages && images.sharedImages.length) && images.legacyImagePolicy !== 'shared-images') {
+      return images;
+    }
+    const plan = await sharedRestorePlan(productionId, version.text);
+    images.sharedRestore = {
+      status: plan.status || 'blocked',
+      integrity: plan.integrity || null,
+      basis: plan.status === 'verified' ? 'stored-copy' : (plan.status === 'current-shared' ? 'current-file' : null),
+      historicalProof: false,
+      description: plan.status === 'verified'
+        ? STORED_COPY_DESCRIPTION
+        : (plan.status === 'current-shared' ? CURRENT_SHARED_CONFIRMATION : null),
+      code: plan.ok ? null : (plan.code || null),
+      images: publicSharedImages(plan.images),
+    };
+    return images;
+  }
+
   function readProductionVersion(input) {
-    return exclusive(() => {
+    return exclusive(async () => {
       const body = input || {};
       const id = canonicalId(body.productionId);
       const versionId = canonicalId(body.versionId);
@@ -1272,6 +1333,7 @@ function createVersionedLibraryService(options) {
       const formatted = validate(version.text);
       const liveRecord = readLiveRecord();
       const summary = historySummary(id, version, production.production.headVersionId, liveRecord);
+      summary.sequence = lineageSequence(production.production.versions).get(versionId) || 0;
       return {
         ok: true,
         productionId: id,
@@ -1286,62 +1348,158 @@ function createVersionedLibraryService(options) {
             })),
           },
         }),
-        images: historyImages(id, version),
+        images: await versionImageReport(id, version),
         liveState: publicLiveState(liveRecord),
       };
     });
   }
 
+  async function sharedRestorePlan(productionId, text) {
+    const manifest = readManifestAssets(productionId);
+    if (!manifest.ok) return manifest;
+    const snapshots = [];
+    for (let index = 0; index < manifest.assets.length; index += 1) {
+      const entry = manifest.assets[index];
+      const legacyPath = entry && entry.legacyPath;
+      const assetId = canonicalId(entry && (entry.assetId || entry.id));
+      const recorded = typeof entry.contentHash === 'string' ? entry.contentHash.toLowerCase() : '';
+      if (typeof legacyPath !== 'string' || !/^images\/[A-Za-z0-9._-]+$/.test(legacyPath)) continue;
+      if (!assetId || !/^[0-9a-f]{64}$/.test(recorded)) continue;
+      const stored = await assets.readAsset(productionId, assetId);
+      if (!stored.ok || stored.contentHash !== recorded) continue;
+      snapshots.push({ legacyPath, assetId, contentHash: recorded });
+    }
+    return assessSharedImages({
+      scriptFile: path.resolve(scriptFile),
+      maxImageBytes,
+      text,
+      snapshots,
+    });
+  }
+
+  async function removeCopiedAssets(productionId, assetIds) {
+    const ids = Array.isArray(assetIds) ? assetIds : [];
+    for (let index = 0; index < ids.length; index += 1) {
+      try {
+        const removed = await assets.deleteAsset({ productionId, assetId: ids[index] });
+        if (!removed.ok) {
+          console.log(`[library] restore cleanup production=${productionId} asset=${ids[index]} result=${removed.code || 'failed'}`);
+        }
+      } catch (err) {
+        console.log(`[library] restore cleanup production=${productionId} asset=${ids[index]} result=${err && err.code ? err.code : 'failed'}`);
+      }
+    }
+  }
+
+  async function copySharedImages(productionId, plan) {
+    const assignments = new Map();
+    const createdIds = [];
+    const images = [];
+    let copied = 0;
+    let reused = 0;
+    try {
+      for (let index = 0; index < plan.images.length; index += 1) {
+        const image = plan.images[index];
+        let assetId = image.assetId;
+        if (image.integrity === 'verified' && assetId) {
+          reused += 1;
+        } else {
+          const uploaded = await assets.uploadAsset({
+            productionId,
+            name: image.name,
+            body: image.bytes,
+            legacyPath: image.legacyPath,
+            imageSource: 'current-shared-file',
+          });
+          if (!uploaded.ok) {
+            await removeCopiedAssets(productionId, createdIds);
+            return uploaded;
+          }
+          assetId = uploaded.asset && uploaded.asset.assetId;
+          if (!assetId) {
+            await removeCopiedAssets(productionId, createdIds);
+            return fail('storage-failure', 'A shared image could not be stored. Nothing was saved.');
+          }
+          createdIds.push(assetId);
+          copied += 1;
+        }
+        assignments.set(image.legacyPath, assetId);
+        images.push({ name: image.name, assetId, integrity: image.integrity });
+      }
+    } catch (err) {
+      await removeCopiedAssets(productionId, createdIds);
+      console.log(`[library] restore copy failed production=${productionId} error=${err && err.code ? err.code : 'failed'}`);
+      return fail('storage-failure', 'The shared images could not be copied. Nothing was saved.');
+    }
+    return { ok: true, assignments, createdIds, images, copied, reused };
+  }
+
   function restoreSavedVersion(input) {
+    const queuedAt = Date.now();
     return exclusive(async () => {
+      const startedAt = Date.now();
       const body = input || {};
       const productionId = canonicalId(body.productionId);
       const sourceVersionId = canonicalId(body.sourceVersionId);
       const expectedVersionId = canonicalId(body.expectedVersionId);
       const newVersionId = canonicalId(body.newVersionId);
-      if (!productionId || !sourceVersionId || !expectedVersionId || !newVersionId) {
-        return fail('invalid-id', 'The production and version ids are not valid.');
+      const logDetails = {
+        shared: 'no',
+        integrity: '-',
+        historicalProof: '-',
+        imagesCopied: '-',
+        imagesReused: '-',
+      };
+      function finish(result) {
+        const outcome = result && result.ok
+          ? (result.alreadyRestored ? 'already-restored' : (result.unchanged ? 'unchanged' : 'restored'))
+          : ((result && result.code) || 'failed');
+        const created = result && result.ok && !result.unchanged
+          ? (result.alreadyRestored ? (result.restoredVersionId || newVersionId) : (result.savedHeadVersionId || newVersionId))
+          : '-';
+        console.log(
+          `[library] restore ${outcome} production=${productionId || '-'} source=${sourceVersionId || '-'} head=${expectedVersionId || '-'} requested=${newVersionId || '-'} created=${created} shared=${logDetails.shared} integrity=${logDetails.integrity} historicalProof=${logDetails.historicalProof} imagesCopied=${logDetails.imagesCopied} imagesReused=${logDetails.imagesReused} waitedMs=${startedAt - queuedAt} workMs=${Date.now() - startedAt}${result && !result.ok ? ` error=${result.code || 'failed'}` : ''}`,
+        );
+        return result;
       }
-      if (newVersionId === sourceVersionId || newVersionId === expectedVersionId) {
-        return fail('invalid-id', 'A restored version needs its own id.');
+      if (!productionId || !sourceVersionId || !expectedVersionId || !newVersionId) {
+        return finish(fail('invalid-id', 'The production and version ids are not valid.'));
+      }
+      if (newVersionId === sourceVersionId) {
+        return finish(fail('invalid-id', 'A restored version needs its own id.'));
       }
       if (typeof body.createdAt !== 'string' || Number.isNaN(Date.parse(body.createdAt))) {
-        return fail('invalid-clock', 'A version needs a creation time.');
+        return finish(fail('invalid-clock', 'A version needs a creation time.'));
       }
       const production = store.readProduction(productionId);
       if (!production.ok) {
-        return fail(
+        return finish(fail(
           production.code === 'missing-parent' ? 'missing-production' : (production.code || 'missing-production'),
           production.error || 'That production could not be read.',
-        );
+        ));
       }
       const headId = production.production.headVersionId;
-      if (expectedVersionId !== headId) {
-        return fail('conflict', 'The production changed after this version was opened.', {
-          currentVersionId: headId,
-        });
-      }
       const recorded = production.production.versions.some((entry) => canonicalId(entry && entry.id) === sourceVersionId);
       if (!recorded) {
         const orphans = store.listOrphans(productionId);
         const orphan = orphans.ok && orphans.orphans.find((entry) => entry.id === sourceVersionId);
         if (orphan) {
-          return fail('orphan-version', 'That version is not part of the saved history.', {
+          return finish(fail('orphan-version', 'That version is not part of the saved history.', {
             versionId: sourceVersionId,
             complete: orphan.complete === true,
-          });
+          }));
         }
-        return fail('missing-version', 'That version could not be found.');
+        return finish(fail('missing-version', 'That version could not be found.'));
       }
       const source = store.readVersion(productionId, sourceVersionId);
       if (!source.ok) {
-        return fail(
+        return finish(fail(
           source.code === 'missing-parent' ? 'missing-version' : (source.code || 'corrupt-version'),
           source.error || 'That version could not be read.',
-        );
+        ));
       }
       if (source.version.productionId !== productionId || source.version.id !== sourceVersionId) {
-        return fail('corrupt-version', 'That version names a different production or version.');
+        return finish(fail('corrupt-version', 'That version names a different production or version.'));
       }
       const sourceFile = path.join(library.real, 'productions', productionId, 'versions', sourceVersionId, 'script.txt');
       const beforeBytes = fs.readFileSync(sourceFile);
@@ -1350,24 +1508,130 @@ function createVersionedLibraryService(options) {
         const message = formatted.errors[0] && formatted.errors[0].message
           ? formatted.errors[0].message
           : 'This script could not be saved.';
-        return fail('invalid-script', message);
+        return finish(fail('invalid-script', message));
       }
-      const images = store.describeImages(productionId, source.text);
-      if (!images.ok) return images;
-      if (images.legacyImages.length) {
-        return fail('legacy-image', 'A new version cannot keep a shared images/ reference.');
+      const described = store.describeImages(productionId, source.text);
+      if (!described.ok) {
+        const code = described.code === 'invalid-image-reference' || described.code === 'unsafe-path'
+          ? 'unsafe-image'
+          : (described.code || 'failed');
+        if (code === 'unsafe-image' || code === 'invalid-image') {
+          logDetails.shared = 'yes';
+          logDetails.historicalProof = 'no';
+          logDetails.integrity = 'blocked';
+        }
+        return finish(fail(code, described.error || 'An image in that version cannot be restored.'));
       }
-      const saved = await store.saveVersion({
+      const committed = production.production.versions.some((entry) => canonicalId(entry && entry.id) === newVersionId);
+      if (committed) {
+        const prior = store.readVersion(productionId, newVersionId);
+        if (!prior.ok) return finish(prior);
+        const priorRestoration = prior.version.imageRestoration || null;
+        const sameImageRestore = Boolean(priorRestoration && priorRestoration.sourceVersionId === sourceVersionId);
+        const sameTextRestore = !priorRestoration && prior.text === source.text;
+        if (!sameImageRestore && !sameTextRestore) {
+          return finish(fail('version-exists', 'That version id already exists and was not overwritten.'));
+        }
+        logDetails.shared = priorRestoration ? 'yes' : 'no';
+        logDetails.integrity = loggedImageIntegrity(priorRestoration ? priorRestoration.integrity : null);
+        logDetails.historicalProof = priorRestoration ? 'no' : '-';
+        logDetails.imagesCopied = 0;
+        logDetails.imagesReused = priorRestoration ? priorRestoration.images.length : 0;
+        return finish({
+          ok: true,
+          alreadyRestored: true,
+          unchanged: false,
+          sourceVersionId,
+          savedHeadVersionId: headId,
+          restoredVersionId: newVersionId,
+          version: prior.version,
+          parentVersionId: prior.version.parentVersionId,
+          imageIntegrity: priorRestoration ? priorRestoration.integrity : null,
+          imagesCopied: 0,
+          sharedImages: priorRestoration ? priorRestoration.images.map((image) => ({
+            name: image.name,
+            integrity: image.integrity,
+            code: null,
+          })) : [],
+          liveState: publicLiveState(readLiveRecord()),
+        });
+      }
+      if (newVersionId === expectedVersionId) {
+        return finish(fail('invalid-id', 'A restored version needs its own id.'));
+      }
+      if (expectedVersionId !== headId) {
+        return finish(fail('conflict', 'The production changed after this version was opened.', {
+          currentVersionId: headId,
+        }));
+      }
+      let text = source.text;
+      let restoration = null;
+      let createdAssetIds = [];
+      if (described.legacyImages.length || source.version.legacyImagePolicy === 'shared-images') {
+        const plan = await sharedRestorePlan(productionId, source.text);
+        logDetails.shared = 'yes';
+        logDetails.historicalProof = 'no';
+        logDetails.integrity = loggedImageIntegrity(plan.integrity || plan.status);
+        if (!plan.ok && plan.status !== 'blocked') return finish(plan);
+        if (!plan.ok || plan.status === 'blocked') {
+          return finish(fail(plan.code || 'missing-image', sharedBlockMessage(plan.images), {
+            imageIntegrity: 'blocked',
+            sharedImages: publicSharedImages(plan.images),
+          }));
+        }
+        if (plan.status !== 'none') {
+          if (plan.integrity === 'current-shared' && body.confirmCurrentImages !== true) {
+            return finish(fail('confirmation-required', CURRENT_SHARED_CONFIRMATION, {
+              imageIntegrity: 'current-shared',
+              sharedImages: publicSharedImages(plan.images),
+            }));
+          }
+          if (body.failAt === 'before-assets') {
+            return finish(fail('storage-failure', 'The shared images were not copied. Nothing was saved.'));
+          }
+          const copied = await copySharedImages(productionId, plan);
+          if (!copied.ok) return finish(copied);
+          createdAssetIds = copied.createdIds;
+          logDetails.imagesCopied = copied.copied;
+          logDetails.imagesReused = copied.reused;
+          if (body.failAt === 'after-assets') {
+            await removeCopiedAssets(productionId, createdAssetIds);
+            return finish(fail('storage-failure', 'The shared images were not kept. Nothing was saved.'));
+          }
+          const rewritten = rewriteSharedImageLines(source.text, productionId, copied.assignments);
+          if (!rewritten.ok) {
+            await removeCopiedAssets(productionId, createdAssetIds);
+            return finish(rewritten);
+          }
+          text = rewritten.text;
+          restoration = {
+            sourceVersionId,
+            integrity: plan.integrity,
+            images: copied.images,
+          };
+        }
+      }
+      const savedInput = {
         productionId,
         expectedVersionId: headId,
         newVersionId,
-        text: source.text,
+        text,
         createdAt: body.createdAt,
-      });
-      if (!fs.readFileSync(sourceFile).equals(beforeBytes)) {
-        return fail('corrupt-version', 'The historical version changed during restore.');
+      };
+      if (restoration) savedInput.imageRestoration = restoration;
+      let saved;
+      try {
+        saved = await store.saveVersion(savedInput);
+      } catch (err) {
+        await removeCopiedAssets(productionId, createdAssetIds);
+        console.log(`[library] restore save failed production=${productionId} error=${err && err.code ? err.code : 'failed'}`);
+        return finish(fail('storage-failure', 'The restored version could not be saved. The original version was not changed.'));
       }
-      if (!saved.ok) return saved;
+      if (!saved.ok || saved.unchanged) await removeCopiedAssets(productionId, createdAssetIds);
+      if (!fs.readFileSync(sourceFile).equals(beforeBytes)) {
+        return finish(fail('corrupt-version', 'The historical version changed during restore.'));
+      }
+      if (!saved.ok) return finish(saved);
       const result = {
         ok: true,
         unchanged: Boolean(saved.unchanged),
@@ -1376,8 +1640,15 @@ function createVersionedLibraryService(options) {
         version: saved.version,
         liveState: publicLiveState(readLiveRecord()),
       };
-      if (!saved.unchanged) result.parentVersionId = saved.version.parentVersionId;
-      return result;
+      if (!saved.unchanged) {
+        result.parentVersionId = saved.version.parentVersionId;
+        if (restoration) {
+          result.imageIntegrity = restoration.integrity;
+          result.imagesCopied = createdAssetIds.length;
+          result.sharedImages = publicSharedImages(restoration.images);
+        }
+      }
+      return finish(result);
     });
   }
 

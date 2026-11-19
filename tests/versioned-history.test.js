@@ -197,7 +197,7 @@ test('migrated history keeps original and migrated versions distinct from the sa
   const head = metadata(paths, LIVE);
   const listed = await service.listProductionVersions(LIVE);
   assert.equal(listed.ok, true, listed.code);
-  assert.equal(listed.order, 'createdAt,versionId');
+  assert.equal(listed.order, 'lineage');
   assert.equal(listed.savedHeadVersionId, head.headVersionId);
   assert.equal(listed.versions.length, 2);
   const original = listed.versions.find((version) => version.origin === 'original');
@@ -218,9 +218,11 @@ test('migrated history keeps original and migrated versions distinct from the sa
   assert.equal(original.legacyImagePolicy, 'shared-images');
   assert.equal(original.imageBytesImmutable, false);
   assert.equal(migrated.imageBytesImmutable, true);
+  assert.equal(original.sequence, 1);
+  assert.equal(migrated.sequence, 2);
   assert.deepEqual(
     listed.versions.map((version) => version.versionId),
-    [original, migrated].map((version) => version.versionId).sort(),
+    [migrated.versionId, original.versionId],
   );
 
   const detail = await service.readProductionVersion({
@@ -316,13 +318,83 @@ test('a created production lists only its own committed versions', async (t) => 
   stored.versions.reverse();
   fs.writeFileSync(file, `${JSON.stringify(stored, null, 2)}\n`);
   const listed = await service.listProductionVersions(CREATED);
-  assert.deepEqual(listed.versions.map((version) => version.versionId), [CREATED_V1, LATER]);
+  assert.equal(listed.order, 'lineage');
+  assert.equal(listed.versions.find((version) => version.versionId === CREATED_V1).sequence, 1);
+  assert.equal(listed.versions.find((version) => version.versionId === LATER).sequence, 2);
+  assert.deepEqual(listed.versions.map((version) => version.versionId), [LATER, CREATED_V1]);
   assert.equal(listed.versions.filter((version) => version.savedHead).length, 1);
   assert.equal(listed.versions.every((version) => version.live === false), true);
   const detail = await service.readProductionVersion({ productionId: CREATED, versionId: CREATED_V1 });
   assert.equal(detail.version.text, '# Created\n[ADA]\nCREATED\n');
   assert.equal(detail.version.origin, 'original');
   assert.equal(detail.version.role, 'v1');
+});
+
+test('an earlier timestamp does not move a newer saved version behind its parent', async (t) => {
+  const paths = commitImageFixture(t);
+  const service = openService(paths);
+  t.after(() => service.close());
+  const created = await service.createProduction({
+    productionId: CREATED,
+    versionId: CREATED_V1,
+    title: 'Created Room',
+    text: '# Created\n[ADA]\nCREATED\n',
+    createdAt: '2026-08-02T00:00:00.000Z',
+  });
+  assert.equal(created.ok, true, created.code);
+  const second = await service.saveVersion({
+    productionId: CREATED,
+    expectedVersionId: CREATED_V1,
+    newVersionId: LATER,
+    text: '# Created\n[ADA]\nLATER\n',
+    createdAt: '2026-08-01T00:00:00.000Z',
+  });
+  assert.equal(second.ok, true, second.code);
+  const file = path.join(paths.libraryDir, 'productions', CREATED, 'metadata.json');
+  const stored = JSON.parse(fs.readFileSync(file, 'utf8'));
+  stored.versions.reverse();
+  fs.writeFileSync(file, `${JSON.stringify(stored, null, 2)}\n`);
+  const listed = await service.listProductionVersions(CREATED);
+  assert.deepEqual(listed.versions.map((version) => version.versionId), [LATER, CREATED_V1]);
+  assert.deepEqual(listed.versions.map((version) => version.sequence), [2, 1]);
+  assert.equal(listed.versions[0].createdAt, '2026-08-01T00:00:00.000Z');
+  assert.equal(listed.versions[1].createdAt, '2026-08-02T00:00:00.000Z');
+  assert.equal(fs.readFileSync(path.join(
+    paths.libraryDir, 'productions', CREATED, 'versions', CREATED_V1, 'script.txt',
+  ), 'utf8'), '# Created\n[ADA]\nCREATED\n');
+});
+
+test('a library save records the server time instead of a time sent by the browser', async (t) => {
+  const paths = commitImageFixture(t);
+  const { base } = await listenApp(t, paths);
+  const before = await send(base, `/api/library/${LIVE}/versions`, { 'X-Staff-Token': TOKEN });
+  assert.equal(before.status, 200);
+  const head = before.body.versions.find((version) => version.savedHead);
+  const originalCreatedAt = head.createdAt;
+  const savedId = '99999999-9999-4999-8999-999999999999';
+  const response = await fetch(`${base}/api/library/${LIVE}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Staff-Token': TOKEN,
+      'X-Version-Id': savedId,
+    },
+    body: JSON.stringify({
+      text: '# Scene\n[ADA]\nSERVER TIME\n',
+      expectedRevision: head.contentHash,
+      createdAt: '1999-01-01T00:00:00.000Z',
+    }),
+  });
+  const body = await response.json();
+  assert.equal(response.status, 200, JSON.stringify(body));
+  const after = await send(base, `/api/library/${LIVE}/versions`, { 'X-Staff-Token': TOKEN });
+  const saved = after.body.versions.find((version) => version.versionId === savedId);
+  const unchanged = after.body.versions.find((version) => version.versionId === head.versionId);
+  assert.equal(saved.createdAt, '2026-06-06T00:00:10.000Z');
+  assert.notEqual(saved.createdAt, '1999-01-01T00:00:00.000Z');
+  assert.equal(saved.sequence, head.sequence + 1);
+  assert.equal(after.body.versions[0].versionId, savedId);
+  assert.equal(unchanged.createdAt, originalCreatedAt);
 });
 
 test('corrupt, orphan, foreign, and symlink versions stay out of committed history', async (t) => {

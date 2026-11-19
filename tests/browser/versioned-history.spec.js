@@ -19,7 +19,8 @@ test('versioned history can be read without moving the live show', async ({ brow
     const listed = await audience.page.request.get(`${fixture.baseURL}/api/library/${fixture.liveId}/versions`);
     expect(listed.status()).toBe(200);
     const history = await listed.json();
-    expect(history.order).toBe('createdAt,versionId');
+    expect(history.order).toBe('lineage');
+    expect(history.versions[0].sequence).toBeGreaterThan(0);
     const head = history.versions.find((version) => version.savedHead);
     expect(head.live).toBe(true);
     expect(head).not.toHaveProperty('description');
